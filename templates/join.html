@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Join {{ plan.title }} — crab.travel{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto text-center">
+  <h1 class="text-2xl font-bold mb-2">{{ plan.title }}</h1>
+  <p class="text-gray-500 dark:text-gray-400 text-sm mb-1">Organized by {{ plan.organizer_name }}</p>
+  {% if plan.destination %}
+  <p class="text-gray-600 dark:text-gray-300 mb-1">{{ plan.destination }}</p>
+  {% endif %}
+  {% if plan.start_date %}
+  <p class="text-gray-500 dark:text-gray-400 text-sm mb-4">
+    {{ plan.start_date.strftime('%b %d') }}{% if plan.end_date %} – {{ plan.end_date.strftime('%b %d, %Y') }}{% endif %}
+  </p>
+  {% endif %}
+  {% if plan.description %}
+  <p class="text-gray-600 dark:text-gray-300 text-sm mb-6">{{ plan.description }}</p>
+  {% endif %}
+
+  {% if already_member %}
+  <p class="text-green-600 dark:text-green-400 font-medium mb-4">You're already in this plan!</p>
+  <a href="/plan/{{ plan.plan_id }}" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 inline-block">
+    View Plan
+  </a>
+  {% else %}
+  <form id="join-form" class="mt-8 space-y-4 text-left">
+    <div>
+      <label class="block font-semibold mb-2 text-sm">Your name</label>
+      <input type="text" name="display_name" required placeholder="What should the group call you?"
+        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+    </div>
+    <div>
+      <label class="block font-semibold mb-2 text-sm">Email <span class="font-normal text-gray-400">(optional)</span></label>
+      <input type="email" name="email" placeholder="For trip updates"
+        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+    </div>
+    <button type="submit" class="w-full bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+      Join Plan
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not already_member %}
+<script>
+document.getElementById('join-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var form = e.target;
+  var data = {
+    display_name: form.display_name.value,
+    email: form.email.value || null,
+  };
+  var res = await fetch('/join/{{ plan.invite_token }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  var result = await res.json();
+  if (result.success) {
+    window.location.href = '/plan/{{ plan.plan_id }}/preferences';
+  } else {
+    alert(result.error || 'Failed to join');
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

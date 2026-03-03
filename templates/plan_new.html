@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}New Plan — crab.travel{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Create a Plan</h1>
+
+<form id="plan-form" class="max-w-2xl space-y-6">
+  <div>
+    <label class="block font-semibold mb-2 text-sm">What's the plan?</label>
+    <input type="text" name="title" required placeholder="e.g. Phoenix 2026, Nashville Bachelor Party"
+      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+  </div>
+
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Type</label>
+    <div class="flex flex-wrap gap-2">
+      {% for t in [('trip', 'Trip'), ('event', 'Event'), ('monthly', 'Monthly')] %}
+      <label class="cursor-pointer">
+        <input type="radio" name="plan_type" value="{{ t[0] }}" class="peer hidden" {% if t[0] == 'trip' %}checked{% endif %}>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ t[1] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Destination</label>
+    <input type="text" name="destination" placeholder="e.g. Phoenix, AZ"
+      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <label class="block font-semibold mb-2 text-sm">Start date</label>
+      <input type="date" name="start_date"
+        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+    </div>
+    <div>
+      <label class="block font-semibold mb-2 text-sm">End date</label>
+      <input type="date" name="end_date"
+        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+    </div>
+  </div>
+
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Headcount</label>
+    <input type="number" name="headcount" min="2" max="100" placeholder="e.g. 15"
+      class="w-32 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+  </div>
+
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Description</label>
+    <textarea name="description" rows="3" placeholder="What's the vibe? Any details your crew should know..."
+      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm"></textarea>
+  </div>
+
+  <button type="submit" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+    Create Plan
+  </button>
+</form>
+
+<script>
+document.getElementById('plan-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var form = e.target;
+  var data = {
+    title: form.title.value,
+    plan_type: form.plan_type.value,
+    destination: form.destination.value || null,
+    start_date: form.start_date.value || null,
+    end_date: form.end_date.value || null,
+    headcount: form.headcount.value ? parseInt(form.headcount.value) : null,
+    description: form.description.value || null,
+  };
+  var res = await fetch('/api/plan/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  var result = await res.json();
+  if (result.success) {
+    window.location.href = '/plan/' + result.data.plan_id;
+  } else {
+    alert(result.error || 'Failed to create plan');
+  }
+});
+</script>
+{% endblock %}

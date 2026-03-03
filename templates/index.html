@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}crab.travel — Group Travel, Made Easy{% endblock %}
+{% block content %}
+<div class="text-center py-16 md:py-24">
+  <h1 class="text-4xl md:text-5xl font-bold mb-4">🦀 crab.travel</h1>
+  <p class="text-xl text-gray-600 dark:text-gray-400 mb-8 max-w-lg mx-auto">
+    Plan group trips without the spreadsheets and group text chaos.
+    AI-powered recommendations matched to everyone's preferences.
+  </p>
+  <a href="/login" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors">
+    Get Started
+  </a>
+  <div class="mt-16 grid md:grid-cols-3 gap-8 text-left max-w-3xl mx-auto">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Share a link</h3>
+      <p class="text-gray-600 dark:text-gray-400 text-sm">Create a plan, share the invite link. No app download needed — everyone joins in seconds.</p>
+    </div>
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Preferences match</h3>
+      <p class="text-gray-600 dark:text-gray-400 text-sm">Each member shares their budget, interests, and dietary needs. AI finds options that work for the whole group.</p>
+    </div>
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Split costs</h3>
+      <p class="text-gray-600 dark:text-gray-400 text-sm">Track who paid what. See who owes whom. No more Venmo math.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

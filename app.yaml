@@ -1,0 +1,23 @@
+runtime: python312
+entrypoint: gunicorn -b :$PORT --timeout 120 --workers 1 --threads 2 app:app
+
+instance_class: F2
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2
+
+beta_settings:
+  cloud_sql_instances: kumori-404602:us-central1:kumori
+
+env_variables:
+  FLASK_ENV: production
+  GAE_ENV: standard
+
+handlers:
+  - url: /static
+    static_dir: static
+    expiration: "30d"
+  - url: /.*
+    script: auto
+    secure: always
