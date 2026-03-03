@@ -87,6 +87,30 @@
       class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
   </div>
 
+  <!-- Home Airport -->
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Home airport</label>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">IATA code — used for flight price estimates on group trips</p>
+    <input type="text" name="home_airport" placeholder="e.g. PHX, JFK, LAX" maxlength="4"
+      value="{{ profile.home_airport or '' }}"
+      class="w-32 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm uppercase">
+  </div>
+
+  <!-- Calendar Sync -->
+  <div>
+    <label class="block font-semibold mb-2 text-sm">Google Calendar</label>
+    {% if profile and profile.calendar_synced %}
+    <p class="text-sm text-green-600 dark:text-green-400 mb-2">Calendar synced</p>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Sync your calendar so we can find dates that work for everyone.</p>
+    {% endif %}
+    <button type="button" onclick="syncCalendar()" id="cal-sync-btn"
+      class="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+      {{ 'Re-sync Calendar' if profile and profile.calendar_synced else 'Sync Calendar' }}
+    </button>
+    <span id="cal-sync-status" class="ml-3 text-sm hidden"></span>
+  </div>
+
   <!-- Bio -->
   <div>
     <label class="block font-semibold mb-2 text-sm">Anything else we should know?</label>
@@ -119,6 +143,7 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     dietary_needs: form.dietary_needs.value || null,
     mobility_notes: form.mobility_notes.value || null,
     home_location: form.home_location.value || null,
+    home_airport: form.home_airport.value || null,
     bio: form.bio.value || null,
   };
   var res = await fetch('/api/profile', {
@@ -132,5 +157,34 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     setTimeout(function() { status.classList.add('hidden'); }, 2000);
   }
 });
+
+async function syncCalendar() {
+  var btn = document.getElementById('cal-sync-btn');
+  var status = document.getElementById('cal-sync-status');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  status.className = 'ml-3 text-sm text-blue-600 dark:text-blue-400';
+  status.textContent = 'Connecting to Google Calendar...';
+  status.classList.remove('hidden');
+
+  try {
+    var res = await fetch('/api/calendar/sync', { method: 'POST' });
+    var result = await res.json();
+    if (result.success) {
+      status.className = 'ml-3 text-sm text-green-600 dark:text-green-400';
+      status.textContent = result.data.event_count + ' events found, ' + result.data.free_windows.length + ' free windows';
+      btn.textContent = 'Re-sync Calendar';
+    } else {
+      status.className = 'ml-3 text-sm text-red-600 dark:text-red-400';
+      status.textContent = result.error || 'Sync failed';
+      btn.textContent = 'Try Again';
+    }
+  } catch (e) {
+    status.className = 'ml-3 text-sm text-red-600 dark:text-red-400';
+    status.textContent = 'Network error';
+    btn.textContent = 'Try Again';
+  }
+  btn.disabled = false;
+}
 </script>
 {% endblock %}

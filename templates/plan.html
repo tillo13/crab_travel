@@ -4,48 +4,24 @@
 <div class="flex items-center justify-between mb-6">
   <div>
     <h1 class="text-2xl font-bold">{{ plan.title }}</h1>
-    <p class="text-gray-500 dark:text-gray-400 text-sm">{{ plan.organizer_name }} · {{ plan.plan_type }}</p>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">
+      {{ plan.organizer_name }}
+      {% if plan.timeframe %} · {{ plan.timeframe }}{% endif %}
+    </p>
   </div>
   {% if is_organizer %}
   <span class="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">Organizer</span>
   {% endif %}
 </div>
 
-<!-- Plan details -->
-<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    {% if plan.destination %}
-    <div>
-      <span class="text-gray-500 dark:text-gray-400 block">Destination</span>
-      <span class="font-medium">{{ plan.destination }}</span>
-    </div>
-    {% endif %}
-    {% if plan.start_date %}
-    <div>
-      <span class="text-gray-500 dark:text-gray-400 block">Dates</span>
-      <span class="font-medium">{{ plan.start_date.strftime('%b %d') }}{% if plan.end_date %} – {{ plan.end_date.strftime('%b %d') }}{% endif %}</span>
-    </div>
-    {% endif %}
-    {% if plan.headcount %}
-    <div>
-      <span class="text-gray-500 dark:text-gray-400 block">Headcount</span>
-      <span class="font-medium">{{ plan.headcount }}</span>
-    </div>
-    {% endif %}
-    <div>
-      <span class="text-gray-500 dark:text-gray-400 block">Members</span>
-      <span class="font-medium">{{ members|length }}</span>
-    </div>
-  </div>
-  {% if plan.description %}
-  <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">{{ plan.description }}</p>
-  {% endif %}
-</div>
+{% if plan.description %}
+<p class="text-sm text-gray-600 dark:text-gray-300 mb-6">{{ plan.description }}</p>
+{% endif %}
 
 <!-- Invite link -->
 {% if is_organizer %}
 <div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <label class="block font-semibold mb-2 text-sm">Invite link</label>
+  <label class="block font-semibold mb-2 text-sm">Invite link — share with your crew</label>
   <div class="flex gap-2">
     <input type="text" id="invite-link" readonly
       value="{{ request.host_url }}join/{{ plan.invite_token }}"
@@ -56,10 +32,10 @@
 </div>
 {% endif %}
 
-<!-- Members + preference status -->
+<!-- Members -->
 <div class="mb-6">
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold">Members</h2>
+    <h2 class="text-lg font-semibold">Members ({{ all_prefs|length }})</h2>
     <a href="/plan/{{ plan.plan_id }}/preferences" class="text-blue-600 dark:text-blue-400 text-sm hover:underline">My Preferences</a>
   </div>
   {% if all_prefs %}
@@ -71,12 +47,15 @@
         {% if m.role == 'organizer' %}
         <span class="ml-2 text-xs text-blue-600 dark:text-blue-400">organizer</span>
         {% endif %}
+        {% if m.home_airport %}
+        <span class="ml-2 text-xs text-gray-400">{{ m.home_airport }}</span>
+        {% endif %}
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3">
         {% if m.completed %}
         <span class="text-xs text-green-600 dark:text-green-400">prefs done</span>
         {% else %}
-        <span class="text-xs text-gray-400">pending</span>
+        <span class="text-xs text-gray-400">prefs pending</span>
         {% endif %}
       </div>
     </div>
@@ -87,8 +66,100 @@
   {% endif %}
 </div>
 
-<!-- Preference summary + Generate button -->
-{% if is_organizer and all_prefs %}
+<!-- Calendar Sync + Availability -->
+<div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold">Availability</h2>
+    <button onclick="syncMyCalendar()" id="sync-cal-btn"
+      class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Sync My Calendar</button>
+  </div>
+  <p id="sync-status" class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+    Sync your Google Calendar so we can find dates that work for everyone.
+  </p>
+  <div id="availability-grid">
+    <p class="text-sm text-gray-400">Loading availability...</p>
+  </div>
+</div>
+
+<!-- Destination Suggestions -->
+{% if not plan.locked_destination %}
+<div class="mb-6">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold">Destinations</h2>
+    <button onclick="document.getElementById('suggest-modal').classList.remove('hidden')"
+      class="text-sm text-blue-600 dark:text-blue-400 hover:underline">+ Suggest a Destination</button>
+  </div>
+
+  <div id="destinations-list">
+    <p class="text-sm text-gray-400">Loading destinations...</p>
+  </div>
+
+  <div class="mt-3">
+    <button onclick="suggestAnywhere()" id="anywhere-btn"
+      class="text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
+      Not sure? Let AI suggest destinations based on group preferences
+    </button>
+    <div id="anywhere-results" class="mt-3 hidden"></div>
+  </div>
+</div>
+
+{% if is_organizer %}
+  <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+    <h3 class="font-semibold text-sm text-blue-800 dark:text-blue-300 mb-2">Ready to lock in?</h3>
+    <p class="text-xs text-blue-600 dark:text-blue-400 mb-3">Once locked, the destination and dates are set and AI will generate detailed recommendations.</p>
+    <div class="flex gap-2 items-end flex-wrap">
+      <div>
+        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">Destination</label>
+        <input type="text" id="lock-dest" placeholder="e.g. Phoenix, AZ"
+          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm w-48">
+      </div>
+      <div>
+        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">Start date</label>
+        <input type="date" id="lock-start"
+          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm">
+      </div>
+      <div>
+        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">End date</label>
+        <input type="date" id="lock-end"
+          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm">
+      </div>
+      <button onclick="lockPlan()" id="lock-btn"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Lock It In</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Suggest destination modal -->
+<div id="suggest-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+  <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+    <h3 class="text-lg font-semibold mb-4">Suggest a Destination</h3>
+    <input type="text" id="dest-input" placeholder="e.g. Reykjavik, Iceland"
+      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 text-sm mb-4">
+    <div class="flex gap-2 justify-end">
+      <button onclick="document.getElementById('suggest-modal').classList.add('hidden')"
+        class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button>
+      <button onclick="submitDestination()" id="submit-dest-btn"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Research It</button>
+    </div>
+    <p id="dest-status" class="text-sm mt-2 hidden"></p>
+  </div>
+</div>
+{% endif %}
+
+<!-- Locked destination info (if locked) -->
+{% if plan.locked_destination %}
+<div class="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 p-4 mb-6">
+  <h3 class="font-semibold text-green-800 dark:text-green-300 mb-1">Locked In</h3>
+  <p class="text-sm text-green-700 dark:text-green-400">
+    {{ plan.locked_destination }}
+    {% if plan.locked_start_date %} · {{ plan.locked_start_date.strftime('%b %d') }}{% if plan.locked_end_date %} – {{ plan.locked_end_date.strftime('%b %d') }}{% endif %}{% endif %}
+  </p>
+</div>
+{% endif %}
+
+<!-- Preference summary + Generate button (only after lock-in) -->
+{% if is_organizer and plan.locked_destination and all_prefs %}
 {% set completed_count = all_prefs|selectattr('completed')|list|length %}
 {% set total_count = all_prefs|length %}
 <div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
@@ -111,7 +182,7 @@
 </div>
 {% endif %}
 
-<!-- Recommendations -->
+<!-- Recommendations (post lock-in) -->
 {% if recs %}
 <div class="mb-6">
   <h2 class="text-lg font-semibold mb-3">Recommendations</h2>
@@ -179,6 +250,253 @@ function copyInvite() {
     btn.textContent = 'Copied!';
     setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
   });
+}
+
+async function syncMyCalendar() {
+  var btn = document.getElementById('sync-cal-btn');
+  var status = document.getElementById('sync-status');
+  btn.textContent = 'Syncing...';
+  status.textContent = 'Scanning your Google Calendar...';
+  status.className = 'text-sm text-blue-600 dark:text-blue-400 mb-3';
+
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/sync-calendar', { method: 'POST' });
+    var result = await res.json();
+    if (result.success) {
+      status.textContent = 'Calendar synced! Found ' + result.data.windows + ' free windows.';
+      status.className = 'text-sm text-green-600 dark:text-green-400 mb-3';
+      btn.textContent = 'Re-sync';
+      loadAvailability();
+    } else {
+      status.textContent = result.error || 'Sync failed';
+      status.className = 'text-sm text-red-600 dark:text-red-400 mb-3';
+      btn.textContent = 'Try Again';
+    }
+  } catch (e) {
+    status.textContent = 'Network error';
+    status.className = 'text-sm text-red-600 dark:text-red-400 mb-3';
+    btn.textContent = 'Try Again';
+  }
+}
+
+async function loadAvailability() {
+  var grid = document.getElementById('availability-grid');
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/availability');
+    var result = await res.json();
+    if (result.success && result.data.windows.length > 0) {
+      var html = '<div class="space-y-2">';
+      result.data.windows.forEach(function(w) {
+        var pct = Math.round((w.available_count / w.total_members) * 100);
+        var color = pct >= 80 ? 'green' : (pct >= 50 ? 'yellow' : 'gray');
+        html += '<div class="flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-600">';
+        html += '<div>';
+        html += '<span class="font-medium text-sm">' + w.start + ' to ' + w.end + '</span>';
+        html += '<span class="ml-2 text-xs text-gray-400">' + w.days + ' days</span>';
+        html += '</div>';
+        html += '<div class="flex items-center gap-2">';
+        html += '<div class="w-24 bg-gray-200 dark:bg-gray-600 rounded-full h-2">';
+        html += '<div class="bg-' + color + '-500 h-2 rounded-full" style="width:' + pct + '%"></div>';
+        html += '</div>';
+        html += '<span class="text-xs font-medium">' + w.available_count + '/' + w.total_members + '</span>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+      grid.innerHTML = html;
+    } else {
+      grid.innerHTML = '<p class="text-sm text-gray-400">No availability data yet. Members need to sync their calendars.</p>';
+    }
+  } catch (e) {
+    grid.innerHTML = '<p class="text-sm text-gray-400">Could not load availability.</p>';
+  }
+}
+
+// Load availability and destinations on page load
+loadAvailability();
+{% if not plan.locked_destination %}loadDestinations(); loadVotes();{% endif %}
+
+async function loadDestinations() {
+  var list = document.getElementById('destinations-list');
+  if (!list) return;
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/destinations');
+    var result = await res.json();
+    if (result.success && result.data.destinations.length > 0) {
+      var html = '<div class="space-y-3">';
+      result.data.destinations.forEach(function(d) {
+        var card = d.destination_data?.card;
+        var research = d.destination_data?.research;
+        html += '<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">';
+        html += '<div class="flex items-start justify-between gap-3">';
+        html += '<div class="flex-1">';
+        html += '<div class="flex items-center gap-2 mb-1">';
+        html += '<span class="font-semibold">' + d.destination_name + '</span>';
+        if (d.status === 'researching') {
+          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">Researching...</span>';
+        }
+        if (d.compatibility_score) {
+          var color = d.compatibility_score >= 80 ? 'green' : (d.compatibility_score >= 60 ? 'yellow' : 'gray');
+          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-' + color + '-100 dark:bg-' + color + '-900 text-' + color + '-700 dark:text-' + color + '-300">' + d.compatibility_score + '% match</span>';
+        }
+        html += '</div>';
+        if (card) {
+          if (card.summary) html += '<p class="text-sm text-gray-600 dark:text-gray-300 mb-2">' + card.summary + '</p>';
+          if (card.weather_note) html += '<p class="text-xs text-gray-400 mb-1">' + card.weather_note + '</p>';
+          if (card.estimated_total_per_person) html += '<p class="text-sm font-medium text-blue-600 dark:text-blue-400">' + card.estimated_total_per_person + ' per person</p>';
+        }
+        if (research && research.flights) {
+          html += '<div class="mt-2 text-xs text-gray-500 dark:text-gray-400">';
+          Object.entries(research.flights).forEach(function([airport, fdata]) {
+            if (fdata.cheapest) {
+              html += '<span class="mr-3">' + airport + ': $' + Math.round(fdata.cheapest.price_usd) + '</span>';
+            }
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+        // Vote buttons + suggested by
+        html += '<div class="flex flex-col items-end gap-1">';
+        html += '<div class="flex items-center gap-1">';
+        html += '<button onclick="vote(\'destination\', \'' + d.suggestion_id + '\', 1)" class="vote-btn text-lg px-1 hover:scale-125 transition-transform" data-key="destination:' + d.suggestion_id + '" data-dir="up">&#x1F44D;</button>';
+        html += '<span class="text-xs font-medium min-w-[2rem] text-center" id="score-destination-' + d.suggestion_id + '">0</span>';
+        html += '<button onclick="vote(\'destination\', \'' + d.suggestion_id + '\', -1)" class="vote-btn text-lg px-1 hover:scale-125 transition-transform" data-key="destination:' + d.suggestion_id + '" data-dir="down">&#x1F44E;</button>';
+        html += '</div>';
+        html += '<div class="text-xs text-gray-400">' + (d.suggested_by_name || '') + '</div>';
+        html += '</div>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+      list.innerHTML = html;
+    } else {
+      list.innerHTML = '<p class="text-sm text-gray-400">No destinations suggested yet. Be the first!</p>';
+    }
+  } catch (e) {
+    list.innerHTML = '<p class="text-sm text-gray-400">Could not load destinations.</p>';
+  }
+}
+
+async function submitDestination() {
+  var input = document.getElementById('dest-input');
+  var btn = document.getElementById('submit-dest-btn');
+  var status = document.getElementById('dest-status');
+  if (!input.value.trim()) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Researching...';
+  status.textContent = 'Searching flights, hotels, and activities...';
+  status.className = 'text-sm mt-2 text-blue-600 dark:text-blue-400';
+
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-destination', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ destination: input.value.trim() }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      document.getElementById('suggest-modal').classList.add('hidden');
+      input.value = '';
+      loadDestinations();
+    } else {
+      status.textContent = result.error || 'Research failed';
+      status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
+    }
+  } catch (e) {
+    status.textContent = 'Network error';
+    status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Research It';
+}
+
+async function suggestAnywhere() {
+  var btn = document.getElementById('anywhere-btn');
+  var results = document.getElementById('anywhere-results');
+  btn.textContent = 'Thinking...';
+
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-anywhere', { method: 'POST' });
+    var result = await res.json();
+    if (result.success && result.data.suggestions.length > 0) {
+      var html = '<div class="space-y-2">';
+      result.data.suggestions.forEach(function(s) {
+        html += '<div class="flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-600">';
+        html += '<div>';
+        html += '<span class="font-medium text-sm">' + s.destination + '</span>';
+        html += '<p class="text-xs text-gray-500 dark:text-gray-400">' + s.reason + '</p>';
+        if (s.estimated_cost) html += '<p class="text-xs text-blue-600 dark:text-blue-400">' + s.estimated_cost + '</p>';
+        html += '</div>';
+        html += '<button onclick="quickSuggest(\'' + s.destination.replace(/'/g, "\\'") + '\')" class="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Research</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+      results.innerHTML = html;
+      results.classList.remove('hidden');
+    }
+  } catch (e) {}
+  btn.textContent = 'Not sure? Let AI suggest destinations based on group preferences';
+}
+
+async function quickSuggest(dest) {
+  document.getElementById('dest-input').value = dest;
+  document.getElementById('suggest-modal').classList.remove('hidden');
+}
+
+async function vote(targetType, targetId, voteVal) {
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/vote', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, vote: voteVal }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      updateVoteScores(result.data.tallies);
+    }
+  } catch (e) {}
+}
+
+function updateVoteScores(tallies) {
+  tallies.forEach(function(t) {
+    var el = document.getElementById('score-' + t.target_type + '-' + t.target_id);
+    if (el) el.textContent = t.score > 0 ? '+' + t.score : t.score;
+  });
+}
+
+async function loadVotes() {
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/votes');
+    var result = await res.json();
+    if (result.success) {
+      updateVoteScores(result.data.tallies);
+    }
+  } catch (e) {}
+}
+
+async function lockPlan() {
+  var dest = document.getElementById('lock-dest').value.trim();
+  if (!dest) { alert('Enter a destination'); return; }
+  var startDate = document.getElementById('lock-start').value || null;
+  var endDate = document.getElementById('lock-end').value || null;
+
+  if (!confirm('Lock in ' + dest + '? This sets the destination and dates for the group.')) return;
+
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/lock', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ destination: dest, start_date: startDate, end_date: endDate }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      window.location.reload();
+    } else {
+      alert(result.error || 'Lock failed');
+    }
+  } catch (e) {
+    alert('Network error');
+  }
 }
 
 async function generateRecs() {

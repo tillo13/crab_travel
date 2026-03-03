@@ -1,55 +1,31 @@
 {% extends "base.html" %}
 {% block title %}New Plan — crab.travel{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">Create a Plan</h1>
+<h1 class="text-2xl font-bold mb-2">Start a Plan</h1>
+<p class="text-gray-500 dark:text-gray-400 text-sm mb-8">Name it and invite your crew. Dates, destinations, and details will come from the group.</p>
 
 <form id="plan-form" class="max-w-2xl space-y-6">
   <div>
-    <label class="block font-semibold mb-2 text-sm">What's the plan?</label>
-    <input type="text" name="title" required placeholder="e.g. Phoenix 2026, Nashville Bachelor Party"
+    <label class="block font-semibold mb-2 text-sm">What's the plan called?</label>
+    <input type="text" name="title" required placeholder="e.g. Summer 2026 Trip, Nashville Reunion"
       class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
   </div>
 
   <div>
-    <label class="block font-semibold mb-2 text-sm">Type</label>
+    <label class="block font-semibold mb-2 text-sm">Rough timeframe</label>
     <div class="flex flex-wrap gap-2">
-      {% for t in [('trip', 'Trip'), ('event', 'Event'), ('monthly', 'Monthly')] %}
+      {% for val, label in [('next-month', 'Next Month'), ('next-3-months', 'Next 3 Months'), ('spring', 'Spring'), ('summer', 'Summer'), ('fall', 'Fall'), ('winter', 'Winter'), ('anytime', 'Anytime')] %}
       <label class="cursor-pointer">
-        <input type="radio" name="plan_type" value="{{ t[0] }}" class="peer hidden" {% if t[0] == 'trip' %}checked{% endif %}>
-        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ t[1] }}</span>
+        <input type="radio" name="timeframe" value="{{ val }}" class="peer hidden" {% if val == 'anytime' %}checked{% endif %}>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ label }}</span>
       </label>
       {% endfor %}
     </div>
   </div>
 
   <div>
-    <label class="block font-semibold mb-2 text-sm">Destination</label>
-    <input type="text" name="destination" placeholder="e.g. Phoenix, AZ"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-  </div>
-
-  <div class="grid grid-cols-2 gap-4">
-    <div>
-      <label class="block font-semibold mb-2 text-sm">Start date</label>
-      <input type="date" name="start_date"
-        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-    </div>
-    <div>
-      <label class="block font-semibold mb-2 text-sm">End date</label>
-      <input type="date" name="end_date"
-        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-    </div>
-  </div>
-
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Headcount</label>
-    <input type="number" name="headcount" min="2" max="100" placeholder="e.g. 15"
-      class="w-32 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-  </div>
-
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Description</label>
-    <textarea name="description" rows="3" placeholder="What's the vibe? Any details your crew should know..."
+    <label class="block font-semibold mb-2 text-sm">Description <span class="font-normal text-gray-400">(optional)</span></label>
+    <textarea name="description" rows="2" placeholder="Any context for the group..."
       class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm"></textarea>
   </div>
 
@@ -64,11 +40,7 @@ document.getElementById('plan-form').addEventListener('submit', async function(e
   var form = e.target;
   var data = {
     title: form.title.value,
-    plan_type: form.plan_type.value,
-    destination: form.destination.value || null,
-    start_date: form.start_date.value || null,
-    end_date: form.end_date.value || null,
-    headcount: form.headcount.value ? parseInt(form.headcount.value) : null,
+    timeframe: form.timeframe.value,
     description: form.description.value || null,
   };
   var res = await fetch('/api/plan/create', {

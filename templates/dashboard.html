@@ -15,12 +15,13 @@
         <div>
           <h3 class="font-semibold">{{ p.title }}</h3>
           <p class="text-sm text-gray-500 dark:text-gray-400">
-            {% if p.destination %}{{ p.destination }}{% endif %}
-            {% if p.start_date %} · {{ p.start_date.strftime('%b %d') }}{% if p.end_date %} – {{ p.end_date.strftime('%b %d') }}{% endif %}{% endif %}
+            {% if p.locked_destination %}{{ p.locked_destination }}{% endif %}
+            {% if p.timeframe and not p.locked_destination %}{{ p.timeframe }}{% endif %}
+            {% if p.locked_start_date %} · {{ p.locked_start_date.strftime('%b %d') }}{% if p.locked_end_date %} – {{ p.locked_end_date.strftime('%b %d') }}{% endif %}{% endif %}
           </p>
         </div>
         <div class="text-right">
-          <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">{{ p.plan_type }}</span>
+          <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">{{ p.status or 'planning' }}</span>
           <p class="text-xs text-gray-400 mt-1">{{ p.member_count }} member{{ 's' if p.member_count != 1 }}</p>
         </div>
       </div>

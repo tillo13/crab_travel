@@ -103,10 +103,26 @@ def init_database():
                 full_name VARCHAR(255),
                 picture_url TEXT,
                 home_location VARCHAR(500),
+                home_airport VARCHAR(10),
+                google_access_token TEXT,
+                google_refresh_token TEXT,
+                calendar_synced BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Migrate existing tables — add new columns if missing
+        for col, col_type, default in [
+            ('home_airport', 'VARCHAR(10)', None),
+            ('google_access_token', 'TEXT', None),
+            ('google_refresh_token', 'TEXT', None),
+            ('calendar_synced', 'BOOLEAN', 'FALSE'),
+        ]:
+            try:
+                default_clause = f" DEFAULT {default}" if default else ""
+                cursor.execute(f"ALTER TABLE crab.users ADD COLUMN IF NOT EXISTS {col} {col_type}{default_clause}")
+            except Exception:
+                pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS crab.user_profiles (
@@ -137,12 +153,26 @@ def init_database():
                 end_date DATE,
                 headcount INTEGER,
                 description TEXT,
+                timeframe VARCHAR(30),
+                locked_destination VARCHAR(500),
+                locked_start_date DATE,
+                locked_end_date DATE,
                 invite_token VARCHAR(64) UNIQUE NOT NULL,
                 status VARCHAR(20) DEFAULT 'planning',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        for col, col_type in [
+            ('timeframe', 'VARCHAR(30)'),
+            ('locked_destination', 'VARCHAR(500)'),
+            ('locked_start_date', 'DATE'),
+            ('locked_end_date', 'DATE'),
+        ]:
+            try:
+                cursor.execute(f"ALTER TABLE crab.plans ADD COLUMN IF NOT EXISTS {col} {col_type}")
+            except Exception:
+                pass
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_plans_organizer ON crab.plans(organizer_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_plans_invite_token ON crab.plans(invite_token)")
 
@@ -180,6 +210,51 @@ def init_database():
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.member_availability (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES crab.users(pk_id),
+                available_start DATE NOT NULL,
+                available_end DATE NOT NULL,
+                source VARCHAR(20) DEFAULT 'calendar',
+                UNIQUE(plan_id, user_id, available_start, available_end)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_member_avail_plan ON crab.member_availability(plan_id)")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.destination_suggestions (
+                pk_id SERIAL PRIMARY KEY,
+                suggestion_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                suggested_by INTEGER REFERENCES crab.users(pk_id),
+                destination_name VARCHAR(500) NOT NULL,
+                destination_data JSONB DEFAULT '{}',
+                avg_flight_cost INTEGER,
+                avg_hotel_cost INTEGER,
+                avg_total_cost INTEGER,
+                compatibility_score INTEGER,
+                status VARCHAR(20) DEFAULT 'researching',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dest_suggestions_plan ON crab.destination_suggestions(plan_id)")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.votes (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES crab.users(pk_id),
+                target_type VARCHAR(30) NOT NULL,
+                target_id VARCHAR(100) NOT NULL,
+                vote SMALLINT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(plan_id, user_id, target_type, target_id)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_votes_plan ON crab.votes(plan_id)")
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS crab.recommendations (
                 pk_id SERIAL PRIMARY KEY,
                 recommendation_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -211,7 +286,7 @@ def init_database():
 
 # ── User CRUD ────────────────────────────────────────────────
 
-def upsert_user(google_userinfo):
+def upsert_user(google_userinfo, access_token=None, refresh_token=None):
     conn = None
     cursor = None
     try:
@@ -225,7 +300,7 @@ def upsert_user(google_userinfo):
                 full_name = EXCLUDED.full_name,
                 picture_url = EXCLUDED.picture_url,
                 updated_at = NOW()
-            RETURNING pk_id, google_id, email, full_name, picture_url
+            RETURNING pk_id, google_id, email, full_name, picture_url, home_airport
         """, (
             google_userinfo.get('sub'),
             google_userinfo.get('email'),
@@ -233,6 +308,16 @@ def upsert_user(google_userinfo):
             google_userinfo.get('picture'),
         ))
         user = cursor.fetchone()
+        # Store OAuth tokens if provided (for Calendar API)
+        if access_token:
+            token_sql = "UPDATE crab.users SET google_access_token = %s, updated_at = NOW()"
+            token_params = [access_token]
+            if refresh_token:
+                token_sql += ", google_refresh_token = %s"
+                token_params.append(refresh_token)
+            token_sql += " WHERE pk_id = %s"
+            token_params.append(user['pk_id'])
+            cursor.execute(token_sql, token_params)
         # Create profile row if it doesn't exist
         cursor.execute("""
             INSERT INTO crab.user_profiles (user_id)
@@ -260,7 +345,9 @@ def get_user_profile(user_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT u.*, p.interests, p.dietary_needs, p.mobility_notes,
+            SELECT u.pk_id, u.google_id, u.email, u.full_name, u.picture_url,
+                   u.home_location, u.home_airport, u.calendar_synced,
+                   p.interests, p.dietary_needs, p.mobility_notes,
                    p.travel_style, p.accommodation_preference, p.budget_comfort,
                    p.bio, p.completed as profile_completed
             FROM crab.users u
@@ -300,18 +387,101 @@ def update_user_profile(user_id, data):
             data.get('bio'),
             user_id,
         ))
-        # Update home_location on users table
-        if data.get('home_location'):
-            cursor.execute("""
-                UPDATE crab.users SET home_location = %s, updated_at = NOW()
-                WHERE pk_id = %s
-            """, (data['home_location'], user_id))
+        # Update home_location and home_airport on users table
+        if data.get('home_location') or data.get('home_airport'):
+            update_parts = []
+            update_vals = []
+            if data.get('home_location'):
+                update_parts.append("home_location = %s")
+                update_vals.append(data['home_location'])
+            if data.get('home_airport'):
+                update_parts.append("home_airport = %s")
+                update_vals.append(data['home_airport'].upper().strip())
+            update_parts.append("updated_at = NOW()")
+            update_vals.append(user_id)
+            cursor.execute(f"UPDATE crab.users SET {', '.join(update_parts)} WHERE pk_id = %s", update_vals)
         conn.commit()
         return True
     except Exception as e:
         if conn:
             conn.rollback()
         logger.error(f"❌ Update profile failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_user_tokens(user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT google_access_token, google_refresh_token, calendar_synced
+            FROM crab.users WHERE pk_id = %s
+        """, (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"❌ Get user tokens failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_user_tokens(user_id, access_token, refresh_token=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if refresh_token:
+            cursor.execute("""
+                UPDATE crab.users SET google_access_token = %s, google_refresh_token = %s, updated_at = NOW()
+                WHERE pk_id = %s
+            """, (access_token, refresh_token, user_id))
+        else:
+            cursor.execute("""
+                UPDATE crab.users SET google_access_token = %s, updated_at = NOW()
+                WHERE pk_id = %s
+            """, (access_token, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Update user tokens failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def set_user_calendar_synced(user_id, synced=True):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.users SET calendar_synced = %s, updated_at = NOW()
+            WHERE pk_id = %s
+        """, (synced, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Set calendar synced failed: {e}")
         return False
     finally:
         if cursor:
@@ -329,19 +499,14 @@ def create_plan(organizer_id, data, invite_token):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            INSERT INTO crab.plans (organizer_id, plan_type, title, destination,
-                start_date, end_date, headcount, description, invite_token)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING plan_id, title, invite_token
         """, (
             organizer_id,
-            data.get('plan_type', 'trip'),
             data['title'],
-            data.get('destination'),
-            data.get('start_date') or None,
-            data.get('end_date') or None,
-            data.get('headcount') or None,
             data.get('description'),
+            data.get('timeframe'),
             invite_token,
         ))
         plan = cursor.fetchone()
@@ -366,13 +531,14 @@ def get_plans_for_user(user_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT p.*, COUNT(m.pk_id) as member_count
+            SELECT DISTINCT p.*, COUNT(m2.pk_id) as member_count
             FROM crab.plans p
-            LEFT JOIN crab.plan_members m ON m.plan_id = p.plan_id
-            WHERE p.organizer_id = %s
+            LEFT JOIN crab.plan_members m ON m.plan_id = p.plan_id AND m.user_id = %s
+            LEFT JOIN crab.plan_members m2 ON m2.plan_id = p.plan_id
+            WHERE p.organizer_id = %s OR m.user_id = %s
             GROUP BY p.pk_id
             ORDER BY p.created_at DESC
-        """, (user_id,))
+        """, (user_id, user_id, user_id))
         return [dict(r) for r in cursor.fetchall()]
     except Exception as e:
         logger.error(f"❌ Get plans failed: {e}")
@@ -601,11 +767,14 @@ def get_all_plan_preferences(plan_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT m.display_name, m.pk_id as member_id, m.role,
+            SELECT COALESCE(u.full_name, m.display_name) as display_name,
+                   m.pk_id as member_id, m.role, m.user_id,
+                   u.home_airport,
                    p.budget_min, p.budget_max, p.accommodation_style,
                    p.dietary_needs, p.interests, p.mobility_notes,
                    p.room_preference, p.notes, p.completed
             FROM crab.plan_members m
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
             LEFT JOIN crab.plan_preferences p ON p.member_id = m.pk_id
             WHERE m.plan_id = %s
             ORDER BY m.joined_at
@@ -614,6 +783,355 @@ def get_all_plan_preferences(plan_id):
     except Exception as e:
         logger.error(f"❌ Get all preferences failed: {e}")
         return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Availability CRUD ──────────────────────────────────────
+
+def save_member_availability(plan_id, user_id, windows, source='calendar'):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Clear old entries for this source
+        cursor.execute("""
+            DELETE FROM crab.member_availability
+            WHERE plan_id = %s AND user_id = %s AND source = %s
+        """, (plan_id, user_id, source))
+        for w in windows:
+            cursor.execute("""
+                INSERT INTO crab.member_availability (plan_id, user_id, available_start, available_end, source)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            """, (plan_id, user_id, w['start'], w['end'], source))
+        conn.commit()
+        logger.info(f"💾 Saved {len(windows)} availability windows for user {user_id} in plan {plan_id}")
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Save availability failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_plan_availability(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT a.*, u.full_name, u.home_airport
+            FROM crab.member_availability a
+            JOIN crab.users u ON u.pk_id = a.user_id
+            WHERE a.plan_id = %s
+            ORDER BY a.available_start
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get availability failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_availability_overlap(plan_id):
+    """Find date ranges where the most members are available."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Get all availability windows
+        cursor.execute("""
+            SELECT user_id, available_start, available_end
+            FROM crab.member_availability
+            WHERE plan_id = %s
+        """, (plan_id,))
+        rows = cursor.fetchall()
+        if not rows:
+            return []
+
+        # Get total member count
+        cursor.execute("SELECT COUNT(DISTINCT user_id) as total FROM crab.plan_members WHERE plan_id = %s", (plan_id,))
+        total = cursor.fetchone()['total']
+
+        # Build date→user count map
+        from datetime import timedelta, date as date_type
+        date_users = {}
+        for r in rows:
+            d = r['available_start']
+            while d <= r['available_end']:
+                if d not in date_users:
+                    date_users[d] = set()
+                date_users[d].add(r['user_id'])
+                d += timedelta(days=1)
+
+        if not date_users:
+            return []
+
+        # Find contiguous windows with counts
+        sorted_dates = sorted(date_users.keys())
+        windows = []
+        window_start = sorted_dates[0]
+        prev_date = sorted_dates[0]
+        prev_count = len(date_users[sorted_dates[0]])
+
+        for d in sorted_dates[1:]:
+            count = len(date_users[d])
+            if d == prev_date + timedelta(days=1) and count == prev_count:
+                prev_date = d
+            else:
+                windows.append({
+                    'start': window_start.isoformat(),
+                    'end': prev_date.isoformat(),
+                    'days': (prev_date - window_start).days + 1,
+                    'available_count': prev_count,
+                    'total_members': total,
+                })
+                window_start = d
+                prev_date = d
+                prev_count = count
+
+        windows.append({
+            'start': window_start.isoformat(),
+            'end': prev_date.isoformat(),
+            'days': (prev_date - window_start).days + 1,
+            'available_count': prev_count,
+            'total_members': total,
+        })
+
+        # Sort by most people available, then longest duration
+        windows.sort(key=lambda w: (-w['available_count'], -w['days']))
+        return windows
+    except Exception as e:
+        logger.error(f"❌ Get availability overlap failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Destination Suggestion CRUD ─────────────────────────────
+
+def create_destination_suggestion(plan_id, user_id, destination_name):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.destination_suggestions (plan_id, suggested_by, destination_name)
+            VALUES (%s, %s, %s)
+            RETURNING suggestion_id, destination_name, status
+        """, (plan_id, user_id, destination_name))
+        row = cursor.fetchone()
+        conn.commit()
+        return dict(row)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Create destination suggestion failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_destination_suggestion(suggestion_id, data):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.destination_suggestions SET
+                destination_data = %s, avg_flight_cost = %s, avg_hotel_cost = %s,
+                avg_total_cost = %s, compatibility_score = %s, status = %s
+            WHERE suggestion_id = %s
+        """, (
+            psycopg2.extras.Json(data.get('destination_data', {})),
+            data.get('avg_flight_cost'),
+            data.get('avg_hotel_cost'),
+            data.get('avg_total_cost'),
+            data.get('compatibility_score'),
+            data.get('status', 'ready'),
+            suggestion_id,
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Update destination suggestion failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_destination_suggestions(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT d.*, u.full_name as suggested_by_name
+            FROM crab.destination_suggestions d
+            LEFT JOIN crab.users u ON u.pk_id = d.suggested_by
+            WHERE d.plan_id = %s
+            ORDER BY d.created_at
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get destination suggestions failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_destination_suggestion_by_id(suggestion_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("SELECT * FROM crab.destination_suggestions WHERE suggestion_id = %s", (suggestion_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"❌ Get suggestion failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Vote CRUD ──────────────────────────────────────────────
+
+def upsert_vote(plan_id, user_id, target_type, target_id, vote):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO crab.votes (plan_id, user_id, target_type, target_id, vote)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (plan_id, user_id, target_type, target_id) DO UPDATE SET
+                vote = EXCLUDED.vote, created_at = NOW()
+        """, (plan_id, user_id, target_type, target_id, vote))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Upsert vote failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_vote_tallies(plan_id, target_type=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        sql = """
+            SELECT target_type, target_id,
+                   SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) as upvotes,
+                   SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) as downvotes,
+                   SUM(vote) as score
+            FROM crab.votes
+            WHERE plan_id = %s
+        """
+        params = [plan_id]
+        if target_type:
+            sql += " AND target_type = %s"
+            params.append(target_type)
+        sql += " GROUP BY target_type, target_id ORDER BY score DESC"
+        cursor.execute(sql, params)
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get vote tallies failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_user_votes(plan_id, user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT target_type, target_id, vote
+            FROM crab.votes
+            WHERE plan_id = %s AND user_id = %s
+        """, (plan_id, user_id))
+        return {f"{r['target_type']}:{r['target_id']}": r['vote'] for r in cursor.fetchall()}
+    except Exception as e:
+        logger.error(f"❌ Get user votes failed: {e}")
+        return {}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def lock_plan(plan_id, destination, start_date=None, end_date=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.plans SET
+                locked_destination = %s, locked_start_date = %s, locked_end_date = %s,
+                status = 'locked', updated_at = NOW()
+            WHERE plan_id = %s
+        """, (destination, start_date, end_date, plan_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Lock plan failed: {e}")
+        return False
     finally:
         if cursor:
             cursor.close()

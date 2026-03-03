@@ -77,8 +77,8 @@ def generate_recommendations(plan, all_prefs):
     prompt = f"""You are a group travel advisor. Generate recommendations for this trip.
 
 TRIP: {plan['title']}
-DESTINATION: {plan.get('destination', 'Not specified')}
-DATES: {plan.get('start_date', '?')} to {plan.get('end_date', '?')}
+DESTINATION: {plan.get('locked_destination') or plan.get('destination', 'Not specified')}
+DATES: {plan.get('locked_start_date') or plan.get('start_date', '?')} to {plan.get('locked_end_date') or plan.get('end_date', '?')}
 GROUP SIZE: {summary['total_members']} people ({summary['member_count']} have filled preferences)
 
 GROUP PREFERENCES:
@@ -132,3 +132,111 @@ Be specific — use real places if you know the destination, otherwise create re
     except Exception as e:
         logger.error(f"❌ AI generation failed: {e}")
         return None, str(e)
+
+
+def generate_destination_card(destination_name, research_data, group_prefs):
+    """Use Claude to synthesize Amadeus data into a readable destination card."""
+    flights_summary = []
+    for airport, fdata in (research_data.get('flights') or {}).items():
+        cheapest = fdata.get('cheapest')
+        if cheapest:
+            flights_summary.append(f"From {airport}: ${cheapest['price_usd']:.0f} ({cheapest['stops']} stops)")
+        else:
+            flights_summary.append(f"From {airport}: no flights found")
+
+    hotels_summary = [h['name'] for h in (research_data.get('hotels') or [])[:5]]
+    activities_summary = [a['name'] for a in (research_data.get('activities') or [])[:5]]
+
+    # Build group context
+    pref_summary = aggregate_preferences(group_prefs) if group_prefs else None
+    group_context = ""
+    if pref_summary:
+        interests = ', '.join([f"{n} ({c})" for n, c in pref_summary.get('top_interests', [])[:5]])
+        group_context = f"""
+GROUP ({pref_summary['member_count']} members):
+- Budget: {pref_summary.get('budget', 'Not specified')}
+- Top interests: {interests}
+- Dietary: {', '.join(pref_summary.get('dietary_needs', [])) or 'None'}
+- Mobility: {', '.join(pref_summary.get('mobility_notes', [])) or 'None'}"""
+
+    prompt = f"""Synthesize this travel research into a destination assessment for a group trip.
+
+DESTINATION: {destination_name}
+{group_context}
+
+FLIGHT DATA:
+{chr(10).join(flights_summary) if flights_summary else 'No flight data available'}
+
+HOTELS FOUND: {', '.join(hotels_summary) if hotels_summary else 'None'}
+ACTIVITIES FOUND: {', '.join(activities_summary) if activities_summary else 'None'}
+
+Return ONLY valid JSON:
+{{
+  "summary": "2-3 sentence overview of this destination for the group",
+  "weather_note": "Brief weather/season context",
+  "highlights": ["3-4 key reasons this destination could work"],
+  "concerns": ["Any potential issues for the group"],
+  "estimated_total_per_person": "Rough estimate in USD for a 5-day trip (flights + hotel + activities)",
+  "compatibility_score": 75
+}}
+
+compatibility_score: 1-100 based on how well this destination fits the group's preferences and budget."""
+
+    system = "You are a travel research analyst. Respond with valid JSON only."
+
+    try:
+        text, _, _ = generate_text(prompt, system=system, max_tokens=1024, temperature=0.5)
+        text = text.strip()
+        if text.startswith('```'):
+            text = text.split('\n', 1)[1]
+        if text.endswith('```'):
+            text = text.rsplit('```', 1)[0]
+        return json.loads(text.strip())
+    except Exception as e:
+        logger.error(f"❌ Destination card generation failed: {e}")
+        return None
+
+
+def suggest_destinations(group_prefs, budget_hint=None):
+    """Ask Claude to suggest destinations based on group preferences."""
+    pref_summary = aggregate_preferences(group_prefs) if group_prefs else None
+    if not pref_summary:
+        return []
+
+    interests = ', '.join([f"{n} ({c})" for n, c in pref_summary.get('top_interests', [])[:8]])
+
+    prompt = f"""Suggest 5 travel destinations for this group.
+
+GROUP ({pref_summary['member_count']} members):
+- Budget: {pref_summary.get('budget', budget_hint or 'Moderate')}
+- Top interests: {interests}
+- Dietary considerations: {', '.join(pref_summary.get('dietary_needs', [])) or 'None'}
+- Mobility considerations: {', '.join(pref_summary.get('mobility_notes', [])) or 'None'}
+
+Return ONLY valid JSON:
+{{
+  "suggestions": [
+    {{
+      "destination": "City, Country",
+      "reason": "Why this works for the group (1-2 sentences)",
+      "estimated_cost": "Rough per-person estimate for 5 days"
+    }}
+  ]
+}}
+
+Be creative but practical. Mix well-known and unexpected destinations. Consider the group's interests and budget."""
+
+    system = "You are a creative travel advisor. Respond with valid JSON only."
+
+    try:
+        text, _, _ = generate_text(prompt, system=system, max_tokens=1024, temperature=0.8)
+        text = text.strip()
+        if text.startswith('```'):
+            text = text.split('\n', 1)[1]
+        if text.endswith('```'):
+            text = text.rsplit('```', 1)[0]
+        data = json.loads(text.strip())
+        return data.get('suggestions', [])
+    except Exception as e:
+        logger.error(f"❌ Destination suggestion failed: {e}")
+        return []
