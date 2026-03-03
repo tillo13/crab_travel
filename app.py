@@ -55,6 +55,7 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if AUTH_ENABLED and 'user' not in session:
+            logger.info(f"🚫 login_required blocked: session keys={list(session.keys())}, path={request.path}")
             return redirect('/login')
         return f(*args, **kwargs)
     return decorated
@@ -115,11 +116,15 @@ def auth_callback():
     if not AUTH_ENABLED:
         return redirect('/')
     try:
+        logger.info(f"🔑 Auth callback hit, args: {dict(request.args)}")
         token = google_auth.authorize_access_token()
+        logger.info(f"🔑 Token received: {bool(token)}")
         if token:
             user_info = token.get('userinfo')
+            logger.info(f"🔑 User info: {user_info}")
             if user_info:
                 db_user = upsert_user(user_info)
+                logger.info(f"🔑 DB user: {db_user}")
                 if db_user:
                     session.permanent = True
                     session['user'] = {
@@ -128,8 +133,14 @@ def auth_callback():
                         'name': db_user['full_name'],
                         'picture': db_user['picture_url'],
                     }
-                    logger.info(f"🔑 Login: {db_user['email']}")
+                    logger.info(f"🔑 Session set for: {db_user['email']}, session keys: {list(session.keys())}")
                     return redirect('/dashboard')
+                else:
+                    logger.error("🔑 DB upsert returned None")
+            else:
+                logger.error("🔑 No userinfo in token")
+        else:
+            logger.error("🔑 No token received")
     except Exception as e:
         logger.error(f"❌ Auth callback error: {e}")
     return redirect('/login')
