@@ -457,34 +457,36 @@ def api_suggest_destination(plan_id):
     if not suggestion:
         return jsonify({'error': 'Failed to create suggestion'}), 500
 
-    # Get member airports for flight research
-    all_prefs = get_all_plan_preferences(plan_id)
-    airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
+    # Kick off research in background thread
+    import threading
+    suggestion_id = suggestion['suggestion_id']
 
-    # Research the destination via Amadeus
-    research = research_destination(destination_name, airports)
+    def _do_research():
+        try:
+            all_prefs = get_all_plan_preferences(plan_id)
+            airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
+            research = research_destination(destination_name, airports)
+            card = generate_destination_card(destination_name, research, all_prefs)
+            update_data = {
+                'destination_data': {'research': research, 'card': card},
+                'avg_flight_cost': research.get('avg_flight_cost'),
+                'compatibility_score': card.get('compatibility_score') if card else None,
+                'status': 'ready',
+            }
+            update_destination_suggestion(suggestion_id, update_data)
+            logger.info(f"🔍 Destination researched: {destination_name} for plan {plan_id}")
+        except Exception as e:
+            logger.error(f"❌ Background research failed for {destination_name}: {e}")
+            update_destination_suggestion(suggestion_id, {'destination_data': {'error': str(e)}, 'status': 'error'})
 
-    # Generate AI synthesis
-    card = generate_destination_card(destination_name, research, all_prefs)
+    threading.Thread(target=_do_research, daemon=True).start()
 
-    # Update suggestion with research results
-    update_data = {
-        'destination_data': {
-            'research': research,
-            'card': card,
-        },
-        'avg_flight_cost': research.get('avg_flight_cost'),
-        'compatibility_score': card.get('compatibility_score') if card else None,
-        'status': 'ready',
-    }
-    update_destination_suggestion(suggestion['suggestion_id'], update_data)
-
-    logger.info(f"🔍 Destination researched: {destination_name} for plan {plan_id} by {user['email']}")
+    # Return immediately — card shows as "researching"
     return jsonify({
         'success': True,
         'data': {
-            'suggestion_id': str(suggestion['suggestion_id']),
-            'card': card,
+            'suggestion_id': str(suggestion_id),
+            'status': 'researching',
         }
     })
 

@@ -371,6 +371,10 @@ async function loadDestinations() {
     } else {
       list.innerHTML = '<p class="text-sm text-gray-400">No destinations suggested yet. Be the first!</p>';
     }
+    // Auto-poll if any are still researching
+    if (result.success && result.data.destinations.some(function(d) { return d.status === 'researching'; })) {
+      pollDestinations();
+    }
   } catch (e) {
     list.innerHTML = '<p class="text-sm text-gray-400">Could not load destinations.</p>';
   }
@@ -398,6 +402,8 @@ async function submitDestination() {
       document.getElementById('suggest-modal').classList.add('hidden');
       input.value = '';
       loadDestinations();
+      // Poll for research completion
+      pollDestinations();
     } else {
       status.textContent = result.error || 'Research failed';
       status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
@@ -408,6 +414,23 @@ async function submitDestination() {
   }
   btn.disabled = false;
   btn.textContent = 'Research It';
+}
+
+var _pollTimer = null;
+function pollDestinations() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(async function() {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/destinations');
+    var result = await res.json();
+    if (result.success) {
+      var stillResearching = result.data.destinations.some(function(d) { return d.status === 'researching'; });
+      loadDestinations();
+      if (!stillResearching) {
+        clearInterval(_pollTimer);
+        _pollTimer = null;
+      }
+    }
+  }, 3000);
 }
 
 async function suggestAnywhere() {
