@@ -16,10 +16,14 @@ def _get_token():
     if _token_cache['token'] and _token_cache['expires_at'] > now + 60:
         return _token_cache['token']
 
-    client_id = get_secret('AMADEUS_CLIENT_ID')
-    client_secret = get_secret('AMADEUS_CLIENT_SECRET')
+    try:
+        client_id = get_secret('AMADEUS_CLIENT_ID')
+        client_secret = get_secret('AMADEUS_CLIENT_SECRET')
+    except Exception:
+        client_id = None
+        client_secret = None
     if not client_id or not client_secret:
-        logger.error("❌ Amadeus credentials not configured")
+        logger.warning("⚠️ Amadeus credentials not configured — flight/hotel data unavailable")
         return None
 
     try:
@@ -175,34 +179,34 @@ def research_destination(destination_name, member_airports, sample_date=None):
         from datetime import datetime, timedelta
         sample_date = (datetime.utcnow() + timedelta(days=60)).strftime('%Y-%m-%d')
 
-    # Look up destination IATA
+    # Look up destination IATA (may fail if Amadeus not configured)
     dest_info = get_city_iata(destination_name)
-    if not dest_info:
-        logger.warning(f"⚠️ Could not find IATA for: {destination_name}")
-        return {'error': f'Could not find airport for {destination_name}'}
+    dest_iata = dest_info['iata'] if dest_info else None
 
-    dest_iata = dest_info['iata']
     result = {
         'destination': destination_name,
         'iata': dest_iata,
-        'lat': dest_info.get('lat'),
-        'lng': dest_info.get('lng'),
+        'lat': dest_info.get('lat') if dest_info else None,
+        'lng': dest_info.get('lng') if dest_info else None,
         'flights': {},
         'hotels': [],
         'activities': [],
     }
 
-    # Search flights from each member's airport
-    if member_airports:
-        unique_airports = list(set(a for a in member_airports if a))
-        result['flights'] = search_flights_multi_origin(unique_airports, dest_iata, sample_date)
+    if dest_iata:
+        # Search flights from each member's airport
+        if member_airports:
+            unique_airports = list(set(a for a in member_airports if a))
+            result['flights'] = search_flights_multi_origin(unique_airports, dest_iata, sample_date)
 
-    # Search hotels
-    result['hotels'] = search_hotels(dest_iata)
+        # Search hotels
+        result['hotels'] = search_hotels(dest_iata)
 
-    # Search activities
-    if dest_info.get('lat') and dest_info.get('lng'):
-        result['activities'] = search_activities(dest_info['lat'], dest_info['lng'])
+        # Search activities
+        if dest_info.get('lat') and dest_info.get('lng'):
+            result['activities'] = search_activities(dest_info['lat'], dest_info['lng'])
+    else:
+        logger.warning(f"⚠️ No IATA for {destination_name} — skipping Amadeus lookups")
 
     # Calculate averages
     flight_prices = [f['cheapest']['price_cents'] for f in result['flights'].values() if f.get('cheapest')]
