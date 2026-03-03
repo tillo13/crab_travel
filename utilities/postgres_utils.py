@@ -179,6 +179,23 @@ def init_database():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.recommendations (
+                pk_id SERIAL PRIMARY KEY,
+                recommendation_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                category VARCHAR(50) NOT NULL,
+                title VARCHAR(500) NOT NULL,
+                description TEXT,
+                price_estimate VARCHAR(100),
+                compatibility_score INTEGER,
+                ai_reasoning TEXT,
+                status VARCHAR(20) DEFAULT 'suggested',
+                generated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recommendations_plan ON crab.recommendations(plan_id)")
+
         conn.commit()
         logger.info("✅ Database initialized")
     except Exception as e:
@@ -597,6 +614,106 @@ def get_all_plan_preferences(plan_id):
     except Exception as e:
         logger.error(f"❌ Get all preferences failed: {e}")
         return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Recommendation CRUD ─────────────────────────────────────
+
+def save_recommendations(plan_id, recs):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for r in recs:
+            cursor.execute("""
+                INSERT INTO crab.recommendations (plan_id, category, title, description,
+                    price_estimate, compatibility_score, ai_reasoning)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                plan_id, r['category'], r['title'], r.get('description'),
+                r.get('price_estimate'), r.get('compatibility_score'),
+                r.get('ai_reasoning'),
+            ))
+        conn.commit()
+        logger.info(f"💾 Saved {len(recs)} recommendations for plan {plan_id}")
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Save recommendations failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_recommendations(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT * FROM crab.recommendations
+            WHERE plan_id = %s
+            ORDER BY category, compatibility_score DESC
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get recommendations failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_recommendation_status(recommendation_id, status):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.recommendations SET status = %s
+            WHERE recommendation_id = %s
+        """, (status, recommendation_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Update recommendation status failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def delete_recommendations_for_plan(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.recommendations WHERE plan_id = %s", (plan_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Delete recommendations failed: {e}")
+        return False
     finally:
         if cursor:
             cursor.close()

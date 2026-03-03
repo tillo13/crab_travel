@@ -13,8 +13,11 @@ from utilities.postgres_utils import (
     create_plan, get_plans_for_user, get_plan_by_id, get_plan_by_invite_token,
     add_plan_member, get_plan_members, get_member_by_token, get_member_for_plan,
     get_plan_preferences, upsert_plan_preferences, get_all_plan_preferences,
+    save_recommendations, get_recommendations, update_recommendation_status,
+    delete_recommendations_for_plan,
 )
 from utilities.invite_utils import generate_token, set_member_cookie, get_member_token_from_cookie
+from utilities.trip_ai import generate_recommendations
 
 # ── App setup ────────────────────────────────────────────────
 
@@ -277,7 +280,8 @@ def view_plan(plan_id):
 
     members = get_plan_members(plan_id)
     all_prefs = get_all_plan_preferences(plan_id)
-    return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs, is_organizer=is_organizer, user=user)
+    recs = get_recommendations(plan_id)
+    return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs, recs=recs, is_organizer=is_organizer, user=user)
 
 
 def _resolve_member(plan_id):
@@ -318,6 +322,44 @@ def api_update_preferences(plan_id):
         logger.info(f"💬 Preferences saved: {member['display_name']} for plan {plan_id}")
         return jsonify({'success': True})
     return jsonify({'error': 'Save failed'}), 500
+
+
+# ── Recommendation routes ───────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/generate', methods=['POST'])
+@api_auth_required
+def api_generate_recs(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can generate recommendations'}), 403
+
+    all_prefs = get_all_plan_preferences(plan_id)
+    recs, error = generate_recommendations(plan, all_prefs)
+    if error:
+        return jsonify({'error': error}), 400
+    if not recs:
+        return jsonify({'error': 'No recommendations generated'}), 500
+
+    # Clear old recs and save new ones
+    delete_recommendations_for_plan(plan_id)
+    save_recommendations(plan_id, recs)
+
+    logger.info(f"🤖 Generated {len(recs)} recs for {plan['title']} by {user['email']}")
+    return jsonify({'success': True, 'data': {'count': len(recs)}})
+
+
+@app.route('/api/recommendation/<recommendation_id>/status', methods=['POST'])
+@api_auth_required
+def api_update_rec_status(recommendation_id):
+    data = request.get_json()
+    status = data.get('status') if data else None
+    if status not in ('approved', 'rejected', 'suggested'):
+        return jsonify({'error': 'Invalid status'}), 400
+    success = update_recommendation_status(recommendation_id, status)
+    if success:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Update failed'}), 500
 
 
 # ── Run ──────────────────────────────────────────────────────

@@ -87,11 +87,19 @@
   {% endif %}
 </div>
 
+<!-- Preference summary + Generate button -->
 {% if is_organizer and all_prefs %}
 {% set completed_count = all_prefs|selectattr('completed')|list|length %}
 {% set total_count = all_prefs|length %}
 <div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <h3 class="font-semibold text-sm mb-2">Preference Summary</h3>
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="font-semibold text-sm">Preference Summary</h3>
+    <button onclick="generateRecs()" id="gen-btn"
+      class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      {% if completed_count == 0 %}disabled{% endif %}>
+      {{ 'Regenerate Recommendations' if recs else 'Generate Recommendations' }}
+    </button>
+  </div>
   <p class="text-sm text-gray-600 dark:text-gray-300">{{ completed_count }}/{{ total_count }} members have filled in preferences.</p>
   {% if completed_count > 0 %}
   {% set budgets = all_prefs|selectattr('budget_min')|list %}
@@ -99,6 +107,67 @@
   <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">Budget range: ${{ (budgets|map(attribute='budget_min')|min // 100) }} – ${{ (budgets|map(attribute='budget_max')|max // 100) }}</p>
   {% endif %}
   {% endif %}
+  <p id="gen-status" class="text-sm mt-2 hidden"></p>
+</div>
+{% endif %}
+
+<!-- Recommendations -->
+{% if recs %}
+<div class="mb-6">
+  <h2 class="text-lg font-semibold mb-3">Recommendations</h2>
+
+  {% for category in ['hotel', 'activity', 'restaurant'] %}
+  {% set cat_recs = recs|selectattr('category', 'equalto', category)|list %}
+  {% if cat_recs %}
+  <h3 class="font-semibold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-4 mb-2">
+    {{ 'Hotels' if category == 'hotel' else ('Activities' if category == 'activity' else 'Restaurants') }}
+  </h3>
+  <div class="space-y-3">
+    {% for r in cat_recs %}
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4
+      {% if r.status == 'approved' %}border-green-400 dark:border-green-600{% elif r.status == 'rejected' %}opacity-50{% endif %}"
+      id="rec-{{ r.recommendation_id }}">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-semibold text-sm">{{ r.title }}</span>
+            {% if r.compatibility_score %}
+            <span class="text-xs px-2 py-0.5 rounded-full
+              {% if r.compatibility_score >= 80 %}bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300
+              {% elif r.compatibility_score >= 60 %}bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300
+              {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300{% endif %}">
+              {{ r.compatibility_score }}% match
+            </span>
+            {% endif %}
+          </div>
+          {% if r.description %}
+          <p class="text-sm text-gray-600 dark:text-gray-300 mb-1">{{ r.description }}</p>
+          {% endif %}
+          {% if r.price_estimate %}
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ r.price_estimate }}</p>
+          {% endif %}
+          {% if r.ai_reasoning %}
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 italic">{{ r.ai_reasoning }}</p>
+          {% endif %}
+        </div>
+        {% if is_organizer %}
+        <div class="flex gap-1 shrink-0">
+          {% if r.status != 'approved' %}
+          <button onclick="setRecStatus('{{ r.recommendation_id }}', 'approved')"
+            class="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200">Approve</button>
+          {% endif %}
+          {% if r.status != 'rejected' %}
+          <button onclick="setRecStatus('{{ r.recommendation_id }}', 'rejected')"
+            class="text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200">Reject</button>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
 </div>
 {% endif %}
 
@@ -110,6 +179,46 @@ function copyInvite() {
     btn.textContent = 'Copied!';
     setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
   });
+}
+
+async function generateRecs() {
+  var btn = document.getElementById('gen-btn');
+  var status = document.getElementById('gen-status');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  status.textContent = 'Asking AI to analyze group preferences...';
+  status.className = 'text-sm mt-2 text-blue-600 dark:text-blue-400';
+
+  try {
+    var res = await fetch('/api/plan/{{ plan.plan_id }}/generate', { method: 'POST' });
+    var result = await res.json();
+    if (result.success) {
+      status.textContent = result.data.count + ' recommendations generated!';
+      status.className = 'text-sm mt-2 text-green-600 dark:text-green-400';
+      setTimeout(function() { window.location.reload(); }, 1000);
+    } else {
+      status.textContent = result.error || 'Generation failed';
+      status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
+      btn.disabled = false;
+      btn.textContent = 'Try Again';
+    }
+  } catch (e) {
+    status.textContent = 'Network error. Try again.';
+    status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
+    btn.disabled = false;
+    btn.textContent = 'Try Again';
+  }
+}
+
+async function setRecStatus(recId, status) {
+  var res = await fetch('/api/recommendation/' + recId + '/status', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: status }),
+  });
+  if (res.ok) {
+    window.location.reload();
+  }
 }
 </script>
 {% endblock %}
