@@ -103,32 +103,7 @@
   </div>
 </div>
 
-{% if is_organizer %}
-  <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
-    <h3 class="font-semibold text-sm text-blue-800 dark:text-blue-300 mb-2">Ready to lock in?</h3>
-    <p class="text-xs text-blue-600 dark:text-blue-400 mb-3">Once locked, the destination and dates are set and AI will generate detailed recommendations.</p>
-    <div class="flex gap-2 items-end flex-wrap">
-      <div>
-        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">Destination</label>
-        <input type="text" id="lock-dest" placeholder="e.g. Phoenix, AZ"
-          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm w-48">
-      </div>
-      <div>
-        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">Start date</label>
-        <input type="date" id="lock-start"
-          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm">
-      </div>
-      <div>
-        <label class="text-xs text-blue-600 dark:text-blue-400 block mb-1">End date</label>
-        <input type="date" id="lock-end"
-          class="px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-700 text-sm">
-      </div>
-      <button onclick="lockPlan()" id="lock-btn"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Lock It In</button>
-    </div>
   </div>
-  {% endif %}
-</div>
 
 <!-- Suggest destination modal -->
 <div id="suggest-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -147,19 +122,8 @@
 </div>
 {% endif %}
 
-<!-- Locked destination info (if locked) -->
-{% if plan.locked_destination %}
-<div class="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 p-4 mb-6">
-  <h3 class="font-semibold text-green-800 dark:text-green-300 mb-1">Locked In</h3>
-  <p class="text-sm text-green-700 dark:text-green-400">
-    {{ plan.locked_destination }}
-    {% if plan.locked_start_date %} · {{ plan.locked_start_date.strftime('%b %d') }}{% if plan.locked_end_date %} – {{ plan.locked_end_date.strftime('%b %d') }}{% endif %}{% endif %}
-  </p>
-</div>
-{% endif %}
-
-<!-- Preference summary + Generate button (only after lock-in) -->
-{% if is_organizer and plan.locked_destination and all_prefs %}
+<!-- Preference summary + Generate button -->
+{% if is_organizer and all_prefs %}
 {% set completed_count = all_prefs|selectattr('completed')|list|length %}
 {% set total_count = all_prefs|length %}
 <div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
@@ -332,7 +296,10 @@ async function loadDestinations() {
         html += '<div class="flex items-center gap-2 mb-1">';
         html += '<span class="font-semibold">' + d.destination_name + '</span>';
         if (d.status === 'researching') {
-          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">Researching...</span>';
+          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 animate-pulse">Researching...</span>';
+        } else if (d.status === 'error') {
+          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">Failed</span>';
+          html += ' <button onclick="retryResearch(\'' + d.suggestion_id + '\', \'' + d.destination_name.replace(/'/g, "\\'") + '\')" class="text-xs text-blue-600 hover:underline ml-1">Retry</button>';
         }
         if (d.compatibility_score) {
           var color = d.compatibility_score >= 80 ? 'green' : (d.compatibility_score >= 60 ? 'yellow' : 'gray');
@@ -417,9 +384,17 @@ async function submitDestination() {
 }
 
 var _pollTimer = null;
+var _pollCount = 0;
 function pollDestinations() {
   if (_pollTimer) clearInterval(_pollTimer);
+  _pollCount = 0;
   _pollTimer = setInterval(async function() {
+    _pollCount++;
+    if (_pollCount > 40) { // stop after ~2 minutes
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+      return;
+    }
     var res = await fetch('/api/plan/{{ plan.plan_id }}/destinations');
     var result = await res.json();
     if (result.success) {
@@ -431,6 +406,19 @@ function pollDestinations() {
       }
     }
   }, 3000);
+}
+
+async function retryResearch(suggestionId, destName) {
+  // Re-suggest same destination (creates new entry, old one stays as error)
+  var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-destination', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ destination: destName }),
+  });
+  if (res.ok) {
+    loadDestinations();
+    pollDestinations();
+  }
 }
 
 async function suggestAnywhere() {
@@ -495,31 +483,6 @@ async function loadVotes() {
       updateVoteScores(result.data.tallies);
     }
   } catch (e) {}
-}
-
-async function lockPlan() {
-  var dest = document.getElementById('lock-dest').value.trim();
-  if (!dest) { alert('Enter a destination'); return; }
-  var startDate = document.getElementById('lock-start').value || null;
-  var endDate = document.getElementById('lock-end').value || null;
-
-  if (!confirm('Lock in ' + dest + '? This sets the destination and dates for the group.')) return;
-
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/lock', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ destination: dest, start_date: startDate, end_date: endDate }),
-    });
-    var result = await res.json();
-    if (result.success) {
-      window.location.reload();
-    } else {
-      alert(result.error || 'Lock failed');
-    }
-  } catch (e) {
-    alert('Network error');
-  }
 }
 
 async function generateRecs() {

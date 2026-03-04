@@ -298,8 +298,8 @@ def view_plan(plan_id):
 
     members = get_plan_members(plan_id)
     all_prefs = get_all_plan_preferences(plan_id)
-    recs = get_recommendations(plan_id) if plan.get('locked_destination') else []
-    destinations = get_destination_suggestions(plan_id) if not plan.get('locked_destination') else []
+    recs = get_recommendations(plan_id)
+    destinations = get_destination_suggestions(plan_id)
     return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
                            recs=recs, destinations=destinations, is_organizer=is_organizer, user=user)
 
