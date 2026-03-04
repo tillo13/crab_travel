@@ -24,7 +24,7 @@ from utilities.postgres_utils import (
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
-from utilities.amadeus_utils import research_destination
+from utilities.flight_scraper import research_destination_flights
 
 # ── App setup ────────────────────────────────────────────────
 
@@ -465,7 +465,22 @@ def api_suggest_destination(plan_id):
         try:
             all_prefs = get_all_plan_preferences(plan_id)
             airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
-            research = research_destination(destination_name, airports)
+
+            # Scrape Google Flights for real pricing
+            flight_data = research_destination_flights(destination_name, airports) if airports else {}
+
+            # Build research dict for AI synthesis
+            research = {
+                'destination': destination_name,
+                'flights': flight_data,
+            }
+
+            # Calculate avg flight cost
+            flight_prices = [f.get('cheapest') for f in flight_data.values() if f.get('cheapest')]
+            if flight_prices:
+                research['avg_flight_cost'] = int(sum(flight_prices) / len(flight_prices) * 100)  # cents
+
+            # AI synthesis into destination card
             card = generate_destination_card(destination_name, research, all_prefs)
             update_data = {
                 'destination_data': {'research': research, 'card': card},

@@ -315,7 +315,9 @@ async function loadDestinations() {
           html += '<div class="mt-2 text-xs text-gray-500 dark:text-gray-400">';
           Object.entries(research.flights).forEach(function([airport, fdata]) {
             if (fdata.cheapest) {
-              html += '<span class="mr-3">' + airport + ': $' + Math.round(fdata.cheapest.price_usd) + '</span>';
+              html += '<span class="mr-3">' + airport + ': $' + fdata.cheapest + '</span>';
+            } else if (fdata.flights && fdata.flights[0] && fdata.flights[0].price_range) {
+              html += '<span class="mr-3">' + airport + ': ' + fdata.flights[0].price_range + '</span>';
             }
           });
           html += '</div>';

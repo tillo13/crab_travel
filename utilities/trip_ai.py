@@ -140,12 +140,11 @@ def generate_destination_card(destination_name, research_data, group_prefs):
     for airport, fdata in (research_data.get('flights') or {}).items():
         cheapest = fdata.get('cheapest')
         if cheapest:
-            flights_summary.append(f"From {airport}: ${cheapest['price_usd']:.0f} ({cheapest['stops']} stops)")
+            flights_summary.append(f"From {airport}: ${cheapest} (cheapest found)")
+        elif fdata.get('flights') and fdata['flights'][0].get('price_range'):
+            flights_summary.append(f"From {airport}: {fdata['flights'][0]['price_range']}")
         else:
             flights_summary.append(f"From {airport}: no flights found")
-
-    hotels_summary = [h['name'] for h in (research_data.get('hotels') or [])[:5]]
-    activities_summary = [a['name'] for a in (research_data.get('activities') or [])[:5]]
 
     # Build group context
     pref_summary = aggregate_preferences(group_prefs) if group_prefs else None
@@ -166,9 +165,6 @@ DESTINATION: {destination_name}
 
 FLIGHT DATA:
 {chr(10).join(flights_summary) if flights_summary else 'No flight data available'}
-
-HOTELS FOUND: {', '.join(hotels_summary) if hotels_summary else 'None'}
-ACTIVITIES FOUND: {', '.join(activities_summary) if activities_summary else 'None'}
 
 Return ONLY valid JSON:
 {{
