@@ -1,10 +1,14 @@
 import json
 import logging
 import os
+import threading
 from datetime import timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from utilities.google_auth_utils import get_secret
@@ -24,7 +28,9 @@ from utilities.postgres_utils import (
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
-from utilities.flight_scraper import research_destination_flights
+from utilities.search_engine import trigger_search, is_searching
+from utilities.postgres_utils import get_search_results, clear_search_results
+from utilities.deals_engine import get_hot_deals
 
 # ── App setup ────────────────────────────────────────────────
 
@@ -51,9 +57,7 @@ try:
             client_secret=client_secret,
             server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
             client_kwargs={
-                'scope': 'openid email profile https://www.googleapis.com/auth/calendar.readonly',
-                'access_type': 'offline',
-                'prompt': 'consent',
+                'scope': 'openid email profile',
             },
         )
 except Exception as e:
@@ -87,6 +91,24 @@ try:
     init_database()
 except Exception as e:
     logger.warning(f"⚠️ Database init deferred: {e}")
+
+
+# ── Background job status (in-memory, same pattern as inroads) ────
+
+_rec_status = {}       # plan_id -> {status, count, error, updated_at}
+_rec_status_lock = threading.Lock()
+
+def _set_rec_status(plan_id, status, count=None, error=None):
+    with _rec_status_lock:
+        _rec_status[str(plan_id)] = {
+            'status': status,
+            'count': count,
+            'error': error,
+        }
+
+def _get_rec_status(plan_id):
+    with _rec_status_lock:
+        return _rec_status.get(str(plan_id))
 
 
 # ── Public routes ────────────────────────────────────────────
@@ -466,21 +488,14 @@ def api_suggest_destination(plan_id):
             all_prefs = get_all_plan_preferences(plan_id)
             airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
 
-            # Scrape Google Flights for real pricing
-            flight_data = research_destination_flights(destination_name, airports) if airports else {}
+            # Kick off real adapter search in background (writes to search_results)
+            checkin = str(plan.get('start_date') or '')
+            checkout = str(plan.get('end_date') or '')
+            trigger_search(plan_id, destination_name, checkin or None, checkout or None,
+                           airports or None)
 
-            # Build research dict for AI synthesis
-            research = {
-                'destination': destination_name,
-                'flights': flight_data,
-            }
-
-            # Calculate avg flight cost
-            flight_prices = [f.get('cheapest') for f in flight_data.values() if f.get('cheapest')]
-            if flight_prices:
-                research['avg_flight_cost'] = int(sum(flight_prices) / len(flight_prices) * 100)  # cents
-
-            # AI synthesis into destination card
+            # AI synthesis into destination card (no flight data yet — adapters run async)
+            research = {'destination': destination_name}
             card = generate_destination_card(destination_name, research, all_prefs)
             update_data = {
                 'destination_data': {'research': research, 'card': card},
@@ -601,24 +616,58 @@ def api_lock_plan(plan_id):
 @app.route('/api/plan/<plan_id>/generate', methods=['POST'])
 @api_auth_required
 def api_generate_recs(plan_id):
+    """Kick off rec generation in background — returns immediately."""
     user = session['user']
     plan = get_plan_by_id(plan_id)
-    if not plan or plan['organizer_id'] != user['id']:
-        return jsonify({'error': 'Only the organizer can generate recommendations'}), 403
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
 
-    all_prefs = get_all_plan_preferences(plan_id)
-    recs, error = generate_recommendations(plan, all_prefs)
-    if error:
-        return jsonify({'error': error}), 400
-    if not recs:
-        return jsonify({'error': 'No recommendations generated'}), 500
+    current = _get_rec_status(plan_id)
+    if current and current['status'] == 'generating':
+        return jsonify({'success': True, 'data': {'status': 'generating'}})
 
-    # Clear old recs and save new ones
-    delete_recommendations_for_plan(plan_id)
-    save_recommendations(plan_id, recs)
+    _set_rec_status(plan_id, 'generating')
 
-    logger.info(f"🤖 Generated {len(recs)} recs for {plan['title']} by {user['email']}")
-    return jsonify({'success': True, 'data': {'count': len(recs)}})
+    def _do_generate():
+        try:
+            all_prefs = get_all_plan_preferences(plan_id)
+            recs, error = generate_recommendations(plan, all_prefs)
+            if error:
+                _set_rec_status(plan_id, 'error', error=error)
+                return
+            if not recs:
+                _set_rec_status(plan_id, 'error', error='No recommendations generated')
+                return
+            delete_recommendations_for_plan(plan_id)
+            save_recommendations(plan_id, recs)
+            _set_rec_status(plan_id, 'done', count=len(recs))
+            logger.info(f"🤖 Generated {len(recs)} recs for {plan['title']}")
+        except Exception as e:
+            logger.error(f"❌ Rec generation failed for {plan_id}: {e}")
+            _set_rec_status(plan_id, 'error', error=str(e))
+
+    threading.Thread(target=_do_generate, daemon=True).start()
+    logger.info(f"🤖 Rec generation started in background: {plan['title']} by {user['email']}")
+    return jsonify({'success': True, 'data': {'status': 'generating'}})
+
+
+@app.route('/api/plan/<plan_id>/generate/status')
+@api_auth_required
+def api_generate_recs_status(plan_id):
+    """Poll this to check if background rec generation is done."""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    status = _get_rec_status(plan_id)
+    if not status:
+        # No active job — check if recs already exist
+        recs = get_recommendations(plan_id)
+        if recs:
+            return jsonify({'success': True, 'data': {'status': 'done', 'count': len(recs)}})
+        return jsonify({'success': True, 'data': {'status': 'idle'}})
+
+    return jsonify({'success': True, 'data': status})
 
 
 @app.route('/api/recommendation/<recommendation_id>/status', methods=['POST'])
@@ -632,6 +681,148 @@ def api_update_rec_status(recommendation_id):
     if success:
         return jsonify({'success': True})
     return jsonify({'error': 'Update failed'}), 500
+
+
+# ── Search routes ────────────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/search/trigger', methods=['POST'])
+@api_auth_required
+def api_search_trigger(plan_id):
+    """Trigger background search fan-out for this plan."""
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    destination = plan.get('destination') or plan.get('locked_destination')
+    if not destination:
+        return jsonify({'error': 'No destination set on plan yet'}), 400
+
+    checkin = str(plan.get('start_date') or plan.get('locked_start_date') or '')
+    checkout = str(plan.get('end_date') or plan.get('locked_end_date') or '')
+
+    all_prefs = get_all_plan_preferences(plan_id)
+    origin_airports = [p['home_airport'] for p in all_prefs if p.get('home_airport')]
+    guests = len(all_prefs) or 2
+
+    trigger_search(plan_id, destination, checkin or None, checkout or None,
+                   origin_airports or None, guests)
+
+    logger.info(f"🔍 Search triggered: {destination} for plan {plan_id}")
+    return jsonify({'success': True, 'data': {'status': 'searching', 'destination': destination}})
+
+
+@app.route('/api/plan/<plan_id>/search/status')
+@api_auth_required
+def api_search_status(plan_id):
+    """Quick poll: is the search still running? How many results so far?"""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    results = get_search_results(plan_id, limit=1000)
+    return jsonify({'success': True, 'data': {
+        'searching': is_searching(plan_id),
+        'count': len(results),
+    }})
+
+
+@app.route('/api/plan/<plan_id>/search/results')
+@api_auth_required
+def api_search_results(plan_id):
+    """Return all accumulated search results (for initial page load)."""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    result_type = request.args.get('type')  # flight | hotel | activity | car
+    since_id = int(request.args.get('since_id', 0))
+    results = get_search_results(plan_id, result_type=result_type, since_id=since_id)
+    return jsonify({'success': True, 'data': {
+        'results': results,
+        'searching': is_searching(plan_id),
+    }})
+
+
+@app.route('/api/plan/<plan_id>/search/stream')
+@api_auth_required
+def api_search_stream(plan_id):
+    """
+    SSE endpoint — pushes new search_results rows to connected clients as they land.
+    Frontend connects once; new cards appear automatically as adapters return data.
+    Closes when all adapters finish (searching=False and no new rows for 3 cycles).
+    """
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    import time
+
+    def generate():
+        last_id = int(request.args.get('since_id', 0))
+        idle_cycles = 0
+
+        while True:
+            new_rows = get_search_results(plan_id, since_id=last_id, limit=50)
+            if new_rows:
+                idle_cycles = 0
+                for row in new_rows:
+                    last_id = row['pk_id']
+                    yield f"data: {json.dumps(row)}\n\n"
+            else:
+                idle_cycles += 1
+
+            # Done when search finished and no new rows for 3 seconds
+            if not is_searching(plan_id) and idle_cycles >= 3:
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                break
+
+            time.sleep(1)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
+
+
+# ── Deals routes ─────────────────────────────────────────────
+
+@app.route('/api/deals')
+@login_required
+def api_deals():
+    """Global hot deals feed — best deals right now for a group."""
+    try:
+        group_size = int(request.args.get('group_size', 15))
+        group_size = max(2, min(group_size, 100))
+        limit = int(request.args.get('limit', 20))
+        origin = request.args.get('origin', '').strip() or None
+        deals = get_hot_deals(group_size=group_size, limit=limit, origin=origin)
+        return jsonify({'success': True, 'data': {'deals': deals, 'group_size': group_size}})
+    except Exception as e:
+        logger.error(f"❌ api_deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plan/<plan_id>/deals')
+@api_auth_required
+def api_plan_deals(plan_id):
+    """Hot deals scoped to a specific plan's headcount."""
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'success': False, 'error': 'Plan not found'}), 404
+    try:
+        group_size = plan.get('headcount') or int(request.args.get('group_size', 15))
+        limit = int(request.args.get('limit', 20))
+        deals = get_hot_deals(group_size=group_size, limit=limit)
+        return jsonify({'success': True, 'data': {'deals': deals, 'group_size': group_size}})
+    except Exception as e:
+        logger.error(f"❌ api_plan_deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ── Run ──────────────────────────────────────────────────────

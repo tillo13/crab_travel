@@ -42,8 +42,9 @@ def _get_connection_pool():
             host = f"{db_socket_dir}/{creds['connection_name']}"
         else:
             host = creds['host']
+        # Budget: 50 max_connections shared across 8+ apps on db-f1-micro
         pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2, maxconn=10,
+            minconn=1, maxconn=3,
             dbname=creds['dbname'], user=creds['user'],
             password=creds['password'], host=host
         )
@@ -270,6 +271,37 @@ def init_database():
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_recommendations_plan ON crab.recommendations(plan_id)")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.search_results (
+                pk_id BIGSERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                result_type VARCHAR(20) NOT NULL,
+                source VARCHAR(50) NOT NULL,
+                canonical_key TEXT,
+                title TEXT,
+                price_usd NUMERIC(10,2),
+                deep_link TEXT,
+                data JSONB NOT NULL DEFAULT '{}',
+                found_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_search_results_plan ON crab.search_results(plan_id, result_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_search_results_found ON crab.search_results(plan_id, found_at)")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.price_history (
+                pk_id BIGSERIAL PRIMARY KEY,
+                result_type VARCHAR(20) NOT NULL,
+                canonical_key TEXT NOT NULL,
+                source VARCHAR(50) NOT NULL,
+                price_usd NUMERIC(10,2) NOT NULL,
+                travel_date DATE,
+                observed_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_key ON crab.price_history(canonical_key, result_type, observed_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_date ON crab.price_history(travel_date, canonical_key)")
 
         conn.commit()
         logger.info("✅ Database initialized")
@@ -1232,6 +1264,148 @@ def delete_recommendations_for_plan(plan_id):
             conn.rollback()
         logger.error(f"❌ Delete recommendations failed: {e}")
         return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Search Results CRUD ──────────────────────────────────────
+
+def save_search_result(plan_id, result_type, source, data, canonical_key=None, title=None, price_usd=None, deep_link=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.search_results
+                (plan_id, result_type, source, canonical_key, title, price_usd, deep_link, data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING pk_id, found_at
+        """, (
+            plan_id, result_type, source, canonical_key,
+            title, price_usd, deep_link,
+            psycopg2.extras.Json(data),
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+        return dict(row)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Save search result failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_search_results(plan_id, result_type=None, since_id=0, limit=200):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        sql = """
+            SELECT pk_id, result_type, source, canonical_key, title, price_usd, deep_link, data, found_at
+            FROM crab.search_results
+            WHERE plan_id = %s AND pk_id > %s
+        """
+        params = [plan_id, since_id]
+        if result_type:
+            sql += " AND result_type = %s"
+            params.append(result_type)
+        sql += " ORDER BY pk_id ASC LIMIT %s"
+        params.append(limit)
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            d['found_at'] = d['found_at'].isoformat() if d['found_at'] else None
+            d['price_usd'] = float(d['price_usd']) if d['price_usd'] else None
+            results.append(d)
+        return results
+    except Exception as e:
+        logger.error(f"❌ Get search results failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def clear_search_results(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.search_results WHERE plan_id = %s", (plan_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Clear search results failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def save_price_history(result_type, canonical_key, source, price_usd, travel_date=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO crab.price_history (result_type, canonical_key, source, price_usd, travel_date)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (result_type, canonical_key, source, price_usd, travel_date))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Save price history failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_price_average(canonical_key, result_type, days=90):
+    """90-day average price for a route/property — the deal detection baseline."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT AVG(price_usd) as avg_price, COUNT(*) as sample_count
+            FROM crab.price_history
+            WHERE canonical_key = %s
+              AND result_type = %s
+              AND observed_at > NOW() - INTERVAL '%s days'
+        """, (canonical_key, result_type, days))
+        row = cursor.fetchone()
+        if row and row[0]:
+            return {'avg_price': float(row[0]), 'sample_count': row[1]}
+        return None
+    except Exception as e:
+        logger.error(f"❌ Get price average failed: {e}")
+        return None
     finally:
         if cursor:
             cursor.close()

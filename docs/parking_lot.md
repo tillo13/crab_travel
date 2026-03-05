@@ -1,5 +1,23 @@
 # crab.travel — Parking Lot (Future Vision & Ideas)
 
+## Retiree Concierge — Phase 2 (Pinned, Not Forgotten)
+
+The retiree life concierge is a validated use case sharing the same infrastructure as group travel. It is intentionally deferred to Phase 2 so we can move fast on group travel first.
+
+**When we return to it, it requires:**
+- Monthly `plan_type = 'monthly'` auto-generation (cron job, not organizer-triggered)
+- Family calendar integration (Google Calendar API, Outlook/Graph API)
+- Family member invite flow (simpler than group trip — just share a link to submit grandkid events)
+- Local event ingestion layer (AI parses Facebook links, email forwards, PDF flyers, iCal feeds → normalizes to canonical event schema)
+- Human advisor touchpoint layer (AI does the work, advisor does the warm monthly delivery call)
+- Health/accessibility awareness (Apple HealthKit / Google Fit for activity level matching)
+- Retiree-specific onboarding (dating-profile style, larger text, simpler UI)
+- Financial advisor white-label channel (B2B licensing)
+
+**Architecture rule:** Every table, route, and preference model must accommodate `plan_type = 'monthly'` without refactoring. The retiree product re-uses users, user_profiles, plans, plan_members, plan_preferences, recommendations, itinerary_items, and expenses exactly as-is. Only the AI prompt and the plan creation trigger change meaningfully.
+
+---
+
 ## The Big Picture
 
 20 close friends build crab.travel to plan their own group trips. The tool works so well that each of them brings their own networks. The platform grows into an AI-powered travel agency where resorts and travel partners pay for access to qualified groups of affluent travelers. The founders travel the world as the business runs itself.
