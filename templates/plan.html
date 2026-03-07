@@ -682,7 +682,7 @@ function loadPhotos(suggestionId, destName) {
         var html = '';
         data.photos.forEach(function(p) {
           html += '<div class="media-card">';
-          html += '<img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;cursor:pointer;" onclick="window.open(\'' + p.url + '\',\'_blank\')">';
+          html += '<a href="' + (p.full || p.url) + '" target="_blank" rel="noopener"><img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;cursor:pointer;"></a>';
           if (p.photographer) html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim opacity-60">by ' + p.photographer + '</div>';
           html += '</div>';
         });

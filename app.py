@@ -1220,6 +1220,7 @@ def api_photo_search():
             photos.append({
                 'id': p['id'],
                 'url': p['src']['medium'],
+                'full': p['src'].get('large2x') or p['src'].get('original', p['src']['medium']),
                 'alt': p.get('alt', ''),
                 'photographer': p.get('photographer', ''),
             })
