@@ -241,6 +241,7 @@ const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
 const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
 let _destinations = [];
 let _activeDestIdx = 0;
+var _voteTallies = {}; // {suggestion_id: {up, down}}
 
 function vibeScore(item) {
   if (!GROUP_VIBES) return 0;
@@ -398,8 +399,19 @@ function renderBoard(dest) {
   // Header
   html += '<div class="mb-6">';
   html += '<div class="mb-3">';
+  var destTally = _voteTallies[dest.suggestion_id];
+  html += '<div class="flex items-start justify-between gap-4">';
+  html += '<div>';
   html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
   if (dest.suggested_by_name) html += '<p class="text-xs text-crab-sand-dim mt-0.5 opacity-60">Suggested by ' + dest.suggested_by_name + '</p>';
+  html += '</div>';
+  if (destTally && destTally.up > 0) {
+    html += '<div class="shrink-0 text-center bg-crab-teal/10 border border-crab-teal/20 rounded-xl px-3 py-1.5">';
+    html += '<div class="text-lg font-display text-crab-teal">' + destTally.up + '</div>';
+    html += '<div class="text-xs text-crab-sand-dim">vote' + (destTally.up === 1 ? '' : 's') + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
   if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
   html += '</div>';
   // Meta chips
@@ -589,8 +601,10 @@ function renderTabs() {
   _destinations.forEach(function(d, i) {
     var active = i === _activeDestIdx ? 'active' : '';
     var emoji = d.status === 'researching' ? '⏳ ' : '';
+    var tally = _voteTallies[d.suggestion_id];
+    var voteLabel = tally && tally.up > 0 ? ' <span class="text-xs opacity-60">(' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + ')</span>' : '';
     html += '<span class="relative inline-flex items-center">';
-    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + '</button>';
+    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + voteLabel + '</button>';
     if (IS_ORGANIZER) {
       html += '<button onclick="deleteDestination(\'' + d.suggestion_id + '\', \'' + d.destination_name.replace(/'/g, "\\'") + '\')" class="ml-0.5 text-xs opacity-30 hover:opacity-100 hover:text-red-400 transition-all" title="Remove destination">&times;</button>';
     }
@@ -790,9 +804,13 @@ async function vote(targetType, targetId, voteVal) {
 
 function updateVoteScores(tallies) {
   tallies.forEach(function(t) {
+    if (t.target_type === 'destination') {
+      _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
+    }
     var el = document.getElementById('score-' + t.target_type + '-' + t.target_id);
     if (el) el.textContent = t.score > 0 ? '+' + t.score : t.score;
   });
+  renderTabs();
 }
 
 async function loadVotes() {
@@ -806,5 +824,7 @@ async function loadVotes() {
 // Init
 loadDestinations();
 loadVotes();
+// Poll votes every 15s so organizer sees live updates
+setInterval(loadVotes, 15000);
 </script>
 {% endblock %}
