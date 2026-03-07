@@ -602,35 +602,19 @@ function renderMediaSection(dest) {
     html += '</div></div>';
   }
 
-  // YouTube videos (embedded, auto-fetched by vibe + destination)
+  // Photos (Pexels API)
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Photos</p>';
+  html += '<div class="media-grid" id="photo-grid-' + dest.suggestion_id + '">';
+  html += '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-4 text-center">Loading photos...</p>';
+  html += '</div>';
+  html += '</div>';
+
+  // YouTube videos
   html += '<div class="mb-6">';
   html += '<p class="text-sm font-medium mb-3">Videos</p>';
   html += '<div class="media-grid" id="yt-grid-' + dest.suggestion_id + '">';
   html += '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-4 text-center">Loading videos...</p>';
-  html += '</div>';
-  html += '</div>';
-
-  // Photos
-  html += '<div class="mb-6">';
-  html += '<p class="text-sm font-medium mb-3">Photos</p>';
-  var imgQueries = GROUP_VIBES ? [vibeQuery, dn + ' travel'] : [dn + ' travel'];
-  if (card) {
-    // Flatten and sort by vibe relevance
-    var allItems = [];
-    if (card.stays) card.stays.forEach(function(s) { allItems.push(s); });
-    if (card.things_to_do) card.things_to_do.forEach(function(t) { allItems.push(t); });
-    if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allItems.push(f); });
-    if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allItems.push(e); });
-    if (GROUP_VIBES) allItems.sort(function(a, b) { return vibeScore(b) - vibeScore(a); });
-    allItems.forEach(function(item) { imgQueries.push(item.image_search || item.name + ' ' + dn); });
-  }
-  html += '<div class="media-grid mb-4">';
-  imgQueries.slice(0, 12).forEach(function(q) {
-    html += '<div class="media-card">';
-    html += '<img src="' + unsplashUrl(q, 400, 260) + '" alt="' + q + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;">';
-    html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + q + '</div>';
-    html += '</div>';
-  });
   html += '</div>';
   html += '</div>';
 
@@ -647,16 +631,44 @@ function renderMediaSection(dest) {
   html += '</div>';
   html += '</div>';
 
-  // Fetch and embed YouTube videos
-  setTimeout(function() { loadYouTubeVideos(dest.suggestion_id, vibeQuery); }, 100);
+  // Fetch photos and videos
+  setTimeout(function() {
+    loadPhotos(dest.suggestion_id, dn);
+    loadYouTubeVideos(dest.suggestion_id, dn);
+  }, 100);
 
   return html;
 }
 
-function loadYouTubeVideos(suggestionId, query) {
+function loadPhotos(suggestionId, destName) {
+  var grid = document.getElementById('photo-grid-' + suggestionId);
+  if (!grid) return;
+  fetch('/api/photo-search?q=' + encodeURIComponent(destName + ' travel') + '&per_page=8')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.photos.length > 0) {
+        var html = '';
+        data.photos.forEach(function(p) {
+          html += '<div class="media-card">';
+          html += '<img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;cursor:pointer;" onclick="window.open(\'' + p.url + '\',\'_blank\')">';
+          if (p.photographer) html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim opacity-60">by ' + p.photographer + '</div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+      } else {
+        grid.innerHTML = '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-2 text-center">No photos found — add your own below</p>';
+      }
+    })
+    .catch(function() {
+      grid.innerHTML = '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-2 text-center">No photos found — add your own below</p>';
+    });
+}
+
+function loadYouTubeVideos(suggestionId, destName) {
   var grid = document.getElementById('yt-grid-' + suggestionId);
   if (!grid) return;
-  fetch('/api/youtube-search?q=' + encodeURIComponent(query + ' travel') + '&max_results=6')
+  var ytQuery = 'things to do in ' + destName;
+  fetch('/api/youtube-search?q=' + encodeURIComponent(ytQuery) + '&max_results=6')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.videos.length > 0) {
@@ -670,15 +682,13 @@ function loadYouTubeVideos(suggestionId, query) {
         });
         grid.innerHTML = html;
       } else {
-        // Fallback: link to YouTube search
-        var dn = query;
         grid.innerHTML = '<div class="col-span-full text-center py-4">' +
-          '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(query + ' travel') + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for ' + dn + ' videos &rarr;</a></div>';
+          '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent('things to do in ' + destName) + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for ' + destName + ' videos &rarr;</a></div>';
       }
     })
     .catch(function() {
       grid.innerHTML = '<div class="col-span-full text-center py-4">' +
-        '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(query + ' travel') + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for videos &rarr;</a></div>';
+        '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent('things to do in ' + destName) + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for videos &rarr;</a></div>';
     });
 }
 

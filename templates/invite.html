@@ -773,6 +773,12 @@ function renderDetail(dest) {
     html += '</div>';
   }
 
+  // Photos (Pexels)
+  html += '<div id="photo-section-' + sid + '" style="display:none;">';
+  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Photos</p>';
+  html += '<div class="media-grid" id="photo-grid-' + sid + '"></div>';
+  html += '</div>';
+
   // Auto-fetched YouTube
   html += '<div id="yt-section-' + sid + '" style="display:none;">';
   html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Videos</p>';
@@ -785,8 +791,9 @@ function renderDetail(dest) {
 
   detailEl.innerHTML = html;
 
-  // Load YouTube
-  loadInviteYouTube(sid, vibeQuery);
+  // Load photos and videos
+  loadInvitePhotos(sid, dn);
+  loadInviteYouTube(sid, dn);
 }
 
 function switchDetailTab(tab, btn) {
@@ -801,8 +808,31 @@ function youtubeIdFromUrl(url) {
   return m ? m[1] : null;
 }
 
-function loadInviteYouTube(suggestionId, query) {
-  fetch('/api/youtube-search?q=' + encodeURIComponent(query + ' travel') + '&max_results=4')
+function loadInvitePhotos(suggestionId, destName) {
+  fetch('/api/photo-search?q=' + encodeURIComponent(destName + ' travel') + '&per_page=6')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.photos.length > 0) {
+        var grid = document.getElementById('photo-grid-' + suggestionId);
+        var section = document.getElementById('photo-section-' + suggestionId);
+        if (!grid || !section) return;
+        var html = '';
+        data.photos.forEach(function(p) {
+          html += '<div class="media-card">';
+          html += '<img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+          if (p.photographer) html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim opacity-60">by ' + p.photographer + '</div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+        section.style.display = '';
+      }
+    })
+    .catch(function() {});
+}
+
+function loadInviteYouTube(suggestionId, destName) {
+  var ytQuery = 'things to do in ' + destName;
+  fetch('/api/youtube-search?q=' + encodeURIComponent(ytQuery) + '&max_results=4')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.videos.length > 0) {

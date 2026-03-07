@@ -1163,6 +1163,42 @@ def api_youtube_search():
         return jsonify({'success': False, 'videos': [], 'error': str(e)})
 
 
+# ── Pexels photo search ───────────────────────────────────────
+
+@app.route('/api/photo-search')
+def api_photo_search():
+    q = request.args.get('q', '')
+    per_page = min(int(request.args.get('per_page', 8)), 15)
+    if not q:
+        return jsonify({'success': False, 'photos': []})
+    try:
+        pexels_key = get_secret('CRAB_PEXELS_API_KEY')
+    except Exception:
+        pexels_key = None
+    if not pexels_key:
+        return jsonify({'success': False, 'photos': [], 'error': 'no_key'})
+    try:
+        import requests as http_requests
+        resp = http_requests.get('https://api.pexels.com/v1/search', params={
+            'query': q,
+            'per_page': per_page,
+            'orientation': 'landscape',
+        }, headers={'Authorization': pexels_key}, timeout=8)
+        data = resp.json()
+        photos = []
+        for p in data.get('photos', []):
+            photos.append({
+                'id': p['id'],
+                'url': p['src']['medium'],
+                'alt': p.get('alt', ''),
+                'photographer': p.get('photographer', ''),
+            })
+        return jsonify({'success': True, 'photos': photos})
+    except Exception as e:
+        logger.error(f"Pexels search failed: {e}")
+        return jsonify({'success': False, 'photos': [], 'error': str(e)})
+
+
 # ── Chat / Messages routes ────────────────────────────────────
 
 @app.route('/api/plan/<plan_id>/messages')
