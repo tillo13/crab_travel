@@ -296,9 +296,8 @@ function renderResearchProgress(destName) {
 }
 
 function startResearchTimer() {
-  if (_researchTimerInterval) clearInterval(_researchTimerInterval);
-  _researchStartTime = Date.now();
-  var currentStep = -1;
+  if (!_researchStartTime) _researchStartTime = Date.now();
+  if (_researchTimerInterval) return; // already running
 
   _researchTimerInterval = setInterval(function() {
     var elapsed = (Date.now() - _researchStartTime) / 1000;
@@ -322,6 +321,7 @@ function startResearchTimer() {
 
 function stopResearchTimer() {
   if (_researchTimerInterval) { clearInterval(_researchTimerInterval); _researchTimerInterval = null; }
+  _researchStartTime = null;
 }
 
 function renderBoard(dest) {
@@ -333,6 +333,7 @@ function renderBoard(dest) {
     startResearchTimer();
     return;
   }
+  stopResearchTimer();
   if (dest.status === 'error') {
     board.innerHTML = '<div class="text-center py-16"><p class="text-red-400 mb-2">Research failed for ' + dest.destination_name + '</p><button onclick="retryResearch(\'' + dest.suggestion_id + '\', \'' + dest.destination_name.replace(/'/g, "\\'") + '\')" class="text-sm text-crab-coral hover:underline">Retry</button></div>';
     return;

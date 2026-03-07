@@ -187,7 +187,7 @@
       <div class="flex items-center gap-8">
         <a href="/" class="flex items-center gap-2 group">
           <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg hidden dark:block" alt="crab.travel">
-          <img src="{{ url_for('static', filename='images/crab_logo_transparent.png') }}" class="w-8 h-8 block dark:hidden" alt="crab.travel">
+          <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-8 h-8 block dark:hidden" alt="crab.travel">
           <span class="text-lg font-display tracking-tight text-gray-900 dark:text-crab-sand group-hover:text-crab-coral transition-colors">crab.travel</span>
         </a>
         {% if session.user %}
@@ -235,7 +235,7 @@
 
   <footer class="border-t border-white/5 mt-auto">
     <div class="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-crab-sand-dim">
-      <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded hidden dark:inline-block" alt=""><img src="{{ url_for('static', filename='images/crab_logo_transparent.png') }}" class="w-5 h-5 inline-block dark:hidden" alt=""> crab.travel</span>
+      <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded hidden dark:inline-block" alt=""><img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-5 h-5 inline-block dark:hidden" alt=""> crab.travel</span>
       <span>Group trips, without the chaos.</span>
     </div>
   </footer>
