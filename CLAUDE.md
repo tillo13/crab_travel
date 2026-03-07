@@ -1,3 +1,10 @@
+# Deployment & Git Rules
+
+- **Always deploy using `./git_push.sh "commit message"`** — never use manual git add/commit/push.
+- **Never include Co-Authored-By or any AI attribution in commits.** No Claude references, no AI credits.
+
+---
+
 # LifeConcierge Platform — Project Brief
 
 ## The Core Idea
