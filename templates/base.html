@@ -192,8 +192,8 @@
         </a>
         {% if session.user %}
         <div class="hidden md:flex gap-5 text-sm font-medium">
+          <a href="/" class="{% if active_page == 'home' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Home</a>
           <a href="/dashboard" class="{% if active_page == 'dashboard' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Plans</a>
-          <a href="/profile" class="{% if active_page == 'profile' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Profile</a>
         </div>
         {% endif %}
       </div>
