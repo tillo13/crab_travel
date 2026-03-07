@@ -75,19 +75,23 @@
   .dest-tab-votes { font-size: 0.7rem; color: rgba(200,194,184,0.5); }
   html:not(.dark) .dest-tab-votes { color: #9ca3af; }
   .dest-tab-check { color: #14B8A6; font-size: 0.75rem; font-weight: 600; }
-  /* Vote button */
-  .vote-btn-big {
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-    padding: 0.65rem 2rem; border-radius: 0.75rem; font-size: 0.9rem;
-    font-weight: 600; border: 2px solid rgba(255,255,255,0.1);
-    cursor: pointer; transition: all 0.25s; background: transparent;
-    color: rgba(200,194,184,0.8);
+  /* Vote bar */
+  .vote-bar {
+    display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    padding: 0.85rem 1.5rem; font-size: 1rem; width: 100%;
+    font-weight: 700; cursor: pointer; transition: all 0.25s;
+    background: linear-gradient(135deg, rgba(232,89,58,0.15), rgba(232,89,58,0.08));
+    border-bottom: 2px solid rgba(232,89,58,0.2); color: #E8593A;
+    border-radius: 0.75rem 0.75rem 0 0;
   }
-  .vote-btn-big:hover { border-color: #14B8A6; color: #14B8A6; background: rgba(20,184,166,0.08); }
-  .vote-btn-big.voted { background: rgba(20,184,166,0.15); border-color: #14B8A6; color: #14B8A6; }
-  html:not(.dark) .vote-btn-big { border-color: rgba(0,0,0,0.12); color: #6b7280; }
-  html:not(.dark) .vote-btn-big:hover { border-color: #0D9488; color: #0D9488; background: rgba(13,148,136,0.05); }
-  html:not(.dark) .vote-btn-big.voted { background: rgba(13,148,136,0.1); border-color: #0D9488; color: #0D9488; }
+  .vote-bar:hover { background: linear-gradient(135deg, rgba(232,89,58,0.25), rgba(232,89,58,0.12)); }
+  .vote-bar.voted {
+    background: linear-gradient(135deg, rgba(20,184,166,0.2), rgba(20,184,166,0.08));
+    border-bottom-color: rgba(20,184,166,0.3); color: #14B8A6;
+  }
+  .vote-bar.voted:hover { background: linear-gradient(135deg, rgba(20,184,166,0.3), rgba(20,184,166,0.12)); }
+  html:not(.dark) .vote-bar { background: linear-gradient(135deg, rgba(232,89,58,0.08), rgba(232,89,58,0.03)); color: #E8593A; }
+  html:not(.dark) .vote-bar.voted { background: linear-gradient(135deg, rgba(13,148,136,0.1), rgba(13,148,136,0.04)); color: #0D9488; }
   /* Section headers */
   .section-label {
     font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
@@ -598,10 +602,11 @@ function renderCards() {
     var classes = 'dest-tab' + (isActive ? ' active' : '') + (isVoted ? ' voted' : '');
     tabHtml += '<button class="' + classes + '" onclick="switchDest(' + i + ')">';
     tabHtml += '<span class="dest-tab-name">' + dest.destination_name + '</span>';
-    var meta = [];
-    if (tally.up > 0) meta.push(tally.up + ' vote' + (tally.up === 1 ? '' : 's'));
-    if (isVoted) meta.push('✓');
-    if (meta.length > 0) tabHtml += '<span class="dest-tab-' + (isVoted ? 'check' : 'votes') + '">' + meta.join(' · ') + '</span>';
+    if (isVoted) {
+      tabHtml += '<span class="dest-tab-check">✓ I\'d go</span>';
+    } else if (tally.up > 0) {
+      tabHtml += '<span class="dest-tab-votes">' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + '</span>';
+    }
     tabHtml += '</button>';
   });
   tabBar.innerHTML = tabHtml;
@@ -646,18 +651,19 @@ function renderDestContent(dest) {
   var customMedia = dest.destination_data?.custom_media || [];
   var html = '';
 
-  // Summary section
+  // Summary section with vote bar at top
   html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
-  html += '<div class="p-5 md:p-6">';
-  html += '<div class="flex items-start justify-between gap-4 mb-3">';
-  html += '<h3 class="text-xl font-display">' + dn + '</h3>';
-  if (tally.up > 0) {
-    html += '<div class="shrink-0 text-center">';
-    html += '<div class="text-xl font-display text-crab-teal">' + tally.up + '</div>';
-    html += '<div class="text-xs text-crab-sand-dim">vote' + (tally.up === 1 ? '' : 's') + '</div>';
-    html += '</div>';
+
+  // Vote bar — the primary CTA, always first
+  if (!NEEDS_LOGIN) {
+    html += '<button class="vote-bar' + (isVoted ? ' voted' : '') + '" onclick="toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
+    html += isVoted ? '✓ I\'d go to ' + dn : 'I\'d go to ' + dn;
+    if (tally.up > 0) html += ' <span style="opacity:0.6;font-weight:400;font-size:0.85rem;">(' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + ')</span>';
+    html += '</button>';
   }
-  html += '</div>';
+
+  html += '<div class="p-5 md:p-6">';
+  html += '<h3 class="text-xl font-display mb-2">' + dn + '</h3>';
   if (card.summary) html += '<p class="text-sm text-crab-sand-dim leading-relaxed mb-3">' + card.summary + '</p>';
 
   // Meta chips
@@ -670,18 +676,11 @@ function renderDestContent(dest) {
 
   // Highlights
   if (card.highlights && card.highlights.length > 0) {
-    html += '<div class="flex flex-wrap gap-1.5 mb-4">';
+    html += '<div class="flex flex-wrap gap-1.5">';
     card.highlights.forEach(function(h) {
       html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2 py-0.5 rounded-full">' + h + '</span>';
     });
     html += '</div>';
-  }
-
-  // Vote button
-  if (!NEEDS_LOGIN) {
-    html += '<button class="vote-btn-big' + (isVoted ? ' voted' : '') + '" onclick="toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
-    html += isVoted ? '✓ I\'d go here' : 'I\'d go here';
-    html += '</button>';
   }
 
   html += '</div></div>';
