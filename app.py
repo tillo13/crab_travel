@@ -25,7 +25,7 @@ from utilities.postgres_utils import (
     save_recommendations, get_recommendations, update_recommendation_status,
     delete_recommendations_for_plan,
     save_member_blackouts, get_member_blackouts, update_member_details,
-    delete_plan,
+    delete_plan, delete_destination_suggestion,
 )
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
@@ -620,6 +620,22 @@ def api_get_destinations(plan_id):
 
     suggestions = get_destination_suggestions(plan_id)
     return jsonify({'success': True, 'data': {'destinations': suggestions}})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_destination(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can delete destinations'}), 403
+
+    success = delete_destination_suggestion(suggestion_id)
+    if not success:
+        return jsonify({'error': 'Failed to delete destination'}), 500
+
+    logger.info(f"🗑️ Destination {suggestion_id} deleted from plan {plan_id} by {user['email']}")
+    return jsonify({'success': True})
 
 
 # ── Voting + Lock-in routes ─────────────────────────────────

@@ -1129,6 +1129,29 @@ def get_destination_suggestion_by_id(suggestion_id):
             conn.close()
 
 
+def delete_destination_suggestion(suggestion_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Delete related votes first
+        cursor.execute("DELETE FROM crab.votes WHERE target_type = 'destination' AND target_id = %s", (str(suggestion_id),))
+        cursor.execute("DELETE FROM crab.destination_suggestions WHERE suggestion_id = %s", (suggestion_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Delete destination suggestion failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 # ── Vote CRUD ──────────────────────────────────────────────
 
 def upsert_vote(plan_id, user_id, target_type, target_id, vote):

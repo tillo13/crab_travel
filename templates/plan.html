@@ -156,6 +156,7 @@
 
 <script>
 const PLAN_ID = '{{ plan.plan_id }}';
+const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
 let _destinations = [];
 let _activeDestIdx = 0;
 
@@ -311,7 +312,12 @@ function renderTabs() {
   _destinations.forEach(function(d, i) {
     var active = i === _activeDestIdx ? 'active' : '';
     var emoji = d.status === 'researching' ? '⏳ ' : '';
+    html += '<span class="relative inline-flex items-center">';
     html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + '</button>';
+    if (IS_ORGANIZER) {
+      html += '<button onclick="deleteDestination(\'' + d.suggestion_id + '\', \'' + d.destination_name.replace(/'/g, "\\'") + '\')" class="ml-0.5 text-xs opacity-30 hover:opacity-100 hover:text-red-400 transition-all" title="Remove destination">&times;</button>';
+    }
+    html += '</span>';
   });
   tabBar.innerHTML = html;
 }
@@ -387,6 +393,20 @@ function pollDestinations() {
       _pollTimer = null;
     }
   }, 3000);
+}
+
+async function deleteDestination(suggestionId, destName) {
+  if (!confirm('Remove ' + destName + ' from this plan?')) return;
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId, { method: 'DELETE' });
+    var result = await res.json();
+    if (result.success) {
+      _activeDestIdx = 0;
+      await loadDestinations();
+    } else {
+      alert(result.error || 'Failed to delete');
+    }
+  } catch (e) {}
 }
 
 async function retryResearch(suggestionId, destName) {
