@@ -342,6 +342,18 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_blackouts_plan ON crab.member_blackouts(plan_id)")
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.member_tentative_dates (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES crab.users(pk_id),
+                date_start DATE NOT NULL,
+                date_end DATE NOT NULL,
+                UNIQUE(plan_id, user_id, date_start, date_end)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tentative_plan ON crab.member_tentative_dates(plan_id)")
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS crab.messages (
                 pk_id SERIAL PRIMARY KEY,
                 message_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -1730,6 +1742,55 @@ def get_member_blackouts(plan_id, user_id):
         return [{'start': r['blackout_start'].isoformat(), 'end': r['blackout_end'].isoformat()} for r in cursor.fetchall()]
     except Exception as e:
         logger.error(f"❌ Get member blackouts failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def save_member_tentative_dates(plan_id, user_id, dates):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.member_tentative_dates WHERE plan_id = %s AND user_id = %s", (plan_id, user_id))
+        for d in dates:
+            cursor.execute("""
+                INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end)
+                VALUES (%s, %s, %s, %s)
+            """, (plan_id, user_id, d['start'], d['end']))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Save tentative dates failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_member_tentative_dates(plan_id, user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT date_start, date_end
+            FROM crab.member_tentative_dates
+            WHERE plan_id = %s AND user_id = %s
+            ORDER BY date_start
+        """, (plan_id, user_id))
+        return [{'start': r['date_start'].isoformat(), 'end': r['date_end'].isoformat()} for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get tentative dates failed: {e}")
         return []
     finally:
         if cursor:

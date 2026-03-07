@@ -466,38 +466,9 @@ function renderMediaSection(dest) {
   var card = dest.destination_data?.card;
   var customMedia = dest.destination_data?.custom_media || [];
   var html = '';
+  var vibeQuery = GROUP_VIBES ? (GROUP_VIBES + ' ' + dn) : dn;
 
-  // Auto-generated visual content from AI research
-  html += '<div class="mb-6">';
-  html += '<p class="text-sm font-medium mb-3">Photos of ' + dn + '</p>';
-
-  // Build image queries from ALL the AI research pins
-  var imgQueries = [dn + ' travel'];
-  if (card) {
-    if (card.stays) card.stays.forEach(function(s) { imgQueries.push(s.image_search || s.name + ' ' + dn); });
-    if (card.things_to_do) card.things_to_do.forEach(function(t) { imgQueries.push(t.image_search || t.name + ' ' + dn); });
-    if (card.food_and_drink) card.food_and_drink.forEach(function(f) { imgQueries.push(f.image_search || f.name + ' ' + dn); });
-    if (card.upcoming_events) card.upcoming_events.forEach(function(e) { imgQueries.push(e.image_search || e.name + ' ' + dn); });
-  }
-  html += '<div class="media-grid mb-4">';
-  imgQueries.slice(0, 12).forEach(function(q) {
-    html += '<div class="media-card">';
-    html += '<img src="' + unsplashUrl(q, 400, 260) + '" alt="' + q + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;">';
-    html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + q + '</div>';
-    html += '</div>';
-  });
-  html += '</div>';
-
-  // Find more links
-  html += '<div class="flex flex-wrap gap-2">';
-  html += '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(dn + ' travel guide') + '" target="_blank" rel="noopener" class="search-link"><span>▶</span> YouTube</a>';
-  html += '<a href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link"><span>🖼</span> Google Images</a>';
-  html += '<a href="https://www.tiktok.com/search?q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link"><span>🎵</span> TikTok</a>';
-  html += '</div>';
-
-  html += '</div>';
-
-  // Custom media added by coordinator
+  // Custom media added by coordinator (show FIRST — crew picks matter most)
   if (customMedia.length > 0) {
     html += '<div class="mb-6">';
     html += '<p class="text-sm font-medium mb-3">Added by your crew</p>';
@@ -511,13 +482,45 @@ function renderMediaSection(dest) {
       if (ytId) {
         html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
       } else {
-        html += '<a href="' + m.url + '" target="_blank" rel="noopener"><img src="' + m.url + '" alt="" loading="lazy" onerror="this.style.display=\'none\'"></a>';
+        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="cursor:pointer;" onclick="window.open(\'' + m.url + '\',\'_blank\')">';
       }
       if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
       html += '</div>';
     });
     html += '</div></div>';
   }
+
+  // YouTube videos (embedded, auto-fetched by vibe + destination)
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Videos</p>';
+  html += '<div class="media-grid" id="yt-grid-' + dest.suggestion_id + '">';
+  html += '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-4 text-center">Loading videos...</p>';
+  html += '</div>';
+  html += '</div>';
+
+  // Photos
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Photos</p>';
+  var imgQueries = GROUP_VIBES ? [vibeQuery, dn + ' travel'] : [dn + ' travel'];
+  if (card) {
+    // Flatten and sort by vibe relevance
+    var allItems = [];
+    if (card.stays) card.stays.forEach(function(s) { allItems.push(s); });
+    if (card.things_to_do) card.things_to_do.forEach(function(t) { allItems.push(t); });
+    if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allItems.push(f); });
+    if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allItems.push(e); });
+    if (GROUP_VIBES) allItems.sort(function(a, b) { return vibeScore(b) - vibeScore(a); });
+    allItems.forEach(function(item) { imgQueries.push(item.image_search || item.name + ' ' + dn); });
+  }
+  html += '<div class="media-grid mb-4">';
+  imgQueries.slice(0, 12).forEach(function(q) {
+    html += '<div class="media-card">';
+    html += '<img src="' + unsplashUrl(q, 400, 260) + '" alt="' + q + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;">';
+    html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + q + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div>';
 
   // Add media input (organizer or any member)
   html += '<div class="border border-dashed border-white/10 rounded-xl p-4">';
@@ -532,7 +535,39 @@ function renderMediaSection(dest) {
   html += '</div>';
   html += '</div>';
 
+  // Fetch and embed YouTube videos
+  setTimeout(function() { loadYouTubeVideos(dest.suggestion_id, vibeQuery); }, 100);
+
   return html;
+}
+
+function loadYouTubeVideos(suggestionId, query) {
+  var grid = document.getElementById('yt-grid-' + suggestionId);
+  if (!grid) return;
+  fetch('/api/youtube-search?q=' + encodeURIComponent(query + ' travel') + '&max_results=6')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.videos.length > 0) {
+        var html = '';
+        data.videos.forEach(function(v) {
+          html += '<div class="media-card">';
+          html += '<iframe src="https://www.youtube.com/embed/' + v.id + '" allowfullscreen loading="lazy"></iframe>';
+          html += '<div class="px-3 py-2"><p class="text-xs font-medium leading-snug line-clamp-2">' + v.title + '</p>';
+          html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-0.5">' + v.channel + '</p></div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+      } else {
+        // Fallback: link to YouTube search
+        var dn = query;
+        grid.innerHTML = '<div class="col-span-full text-center py-4">' +
+          '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(query + ' travel') + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for ' + dn + ' videos &rarr;</a></div>';
+      }
+    })
+    .catch(function() {
+      grid.innerHTML = '<div class="col-span-full text-center py-4">' +
+        '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(query + ' travel') + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for videos &rarr;</a></div>';
+    });
 }
 
 function renderTabs() {

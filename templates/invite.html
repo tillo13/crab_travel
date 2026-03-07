@@ -135,6 +135,17 @@
   .chat-send-btn:hover { background: #d4472a; }
   .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
   .thread-reply-input { margin-top: 0.4rem; }
+  /* Media */
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+  .media-card {
+    border-radius: 0.75rem; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease; background: rgba(255,255,255,0.02);
+  }
+  .media-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-1px); }
+  html:not(.dark) .media-card { border-color: rgba(0,0,0,0.08); background: white; }
+  .media-card iframe { width: 100%; aspect-ratio: 16/9; border: 0; display: block; }
+  .media-card img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 200px; }
   .researching-pulse { animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
   /* Research progress */
@@ -186,6 +197,10 @@
     {% if plan.description %}
     <p class="text-crab-sand-dim text-sm mt-2 max-w-lg mx-auto">{{ plan.description }}</p>
     {% endif %}
+    {% if plan.group_vibes %}
+    <div class="mt-3"><span class="text-xs bg-crab-coral/10 text-crab-coral px-3 py-1 rounded-full font-medium">{{ plan.group_vibes }}</span></div>
+    {% endif %}
+    <p class="text-xs text-crab-sand-dim mt-4 max-w-md mx-auto opacity-60">Scroll down to see the destinations being considered. Sign in to vote, suggest your own, and join the group chat.</p>
   </div>
 
   <!-- Stats bar -->
@@ -250,22 +265,19 @@
   </div>
   {% endif %}
 
-  <!-- Group Chat -->
   {% if needs_login %}
-  <div class="mt-8 mb-10 animate-in stagger-3">
-    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-6 text-center">
-      <div class="flex items-center justify-center gap-2 mb-2">
-        <span class="text-sm font-display">Chat</span>
-      </div>
-      <p class="text-sm text-crab-sand-dim mb-4">Sign in to see the group chat and join the conversation.</p>
-      <a href="/login/google"
-        class="inline-flex items-center gap-2 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-colors">
-        <svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-        Sign in to chat
-      </a>
-    </div>
+  <!-- Sign in CTA (top) -->
+  <div class="text-center py-6 mt-4 mb-6 animate-in stagger-3">
+    <a href="/login/google"
+      class="inline-flex items-center gap-2.5 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-xl px-6 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-all hover:shadow-lg">
+      <svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Sign in to join, vote, and chat
+    </a>
   </div>
-  {% else %}
+  {% endif %}
+
+  {% if not needs_login %}
+  <!-- Group Chat -->
   <div class="mt-8 mb-10 animate-in stagger-3" id="chat-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
@@ -306,17 +318,14 @@
   {% endif %}
 
   {% if needs_login %}
-  <!-- Login gate -->
-  <div class="text-center py-12 animate-in stagger-3">
-    <div class="bg-crab-card/50 border border-white/6 rounded-2xl p-8 max-w-md mx-auto">
-      <h2 class="text-xl font-display mb-2">Sign in to join</h2>
-      <p class="text-sm text-crab-sand-dim mb-6">Sign in with Google to vote, suggest destinations, and share your travel details.</p>
-      <a href="/login/google"
-        class="inline-flex items-center gap-3 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-lg px-6 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-colors">
-        <svg class="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-        Sign in with Google
-      </a>
-    </div>
+  <!-- Sign in CTA (bottom) -->
+  <div class="text-center py-10 animate-in stagger-3">
+    <p class="text-sm text-crab-sand-dim mb-4">Sign in to vote, suggest destinations, chat, and share your travel details.</p>
+    <a href="/login/google"
+      class="inline-flex items-center gap-2.5 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-xl px-6 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-all hover:shadow-lg">
+      <svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Sign in with Google
+    </a>
   </div>
 
   {% else %}
@@ -344,13 +353,39 @@
       </div>
 
       <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
+        <!-- Tentative / preferred dates -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
+          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're available or prefer to go</p>
+          <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
+            {% for t in tentative_dates %}
+            <div class="blackout-chip" style="background:rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6;" data-start="{{ t.start }}" data-end="{{ t.end }}">
+              {{ t.start }} to {{ t.end }}
+              <button onclick="removeChip(this.parentElement)">&times;</button>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="flex items-end gap-2">
+            <div>
+              <label class="text-xs text-crab-sand-dim">From</label>
+              <input type="date" id="tentative-start" class="input-field text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-crab-sand-dim">To</label>
+              <input type="date" id="tentative-end" class="input-field text-sm">
+            </div>
+            <button onclick="addTentative()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Blackout dates -->
         <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
         <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're unavailable</p>
         <div id="blackout-list" class="flex flex-wrap gap-2 mb-3">
           {% for b in blackouts %}
           <div class="blackout-chip" data-start="{{ b.start }}" data-end="{{ b.end }}">
             {{ b.start }} to {{ b.end }}
-            <button onclick="removeBlackout(this.parentElement)">&times;</button>
+            <button onclick="removeChip(this.parentElement)">&times;</button>
           </div>
           {% endfor %}
         </div>
@@ -511,12 +546,15 @@ function renderBoard(dest) {
   }
 
   var html = '';
+  var dn = dest.destination_name;
+  var vibeQuery = GROUP_VIBES ? (GROUP_VIBES + ' ' + dn) : dn;
+  var customMedia = dest.destination_data?.custom_media || [];
 
   // Destination header with summary + vote
   html += '<div class="mb-6">';
   html += '<div class="flex items-start justify-between gap-4 mb-3">';
   html += '<div>';
-  html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
+  html += '<h2 class="text-xl font-display">' + dn + '</h2>';
   if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
   html += '</div>';
   if (!NEEDS_LOGIN) {
@@ -545,9 +583,34 @@ function renderBoard(dest) {
   }
   html += '</div>';
 
-  // Pinterest grid
+  // Coordinator media (YouTube videos & images added by the organizer)
+  if (customMedia.length > 0) {
+    html += '<div class="mb-6">';
+    html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">The organizer picked these out</p>';
+    html += '<div class="media-grid">';
+    customMedia.forEach(function(m) {
+      var ytId = youtubeIdFromUrl(m.url);
+      html += '<div class="media-card">';
+      if (ytId) {
+        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      }
+      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // YouTube videos (auto-searched by vibes + destination)
+  html += '<div class="mb-6" id="yt-section-' + dest.suggestion_id + '" style="display:none;">';
+  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Videos</p>';
+  html += '<div class="media-grid" id="yt-grid-' + dest.suggestion_id + '"></div>';
+  html += '</div>';
+
+  // Section intro + Pinterest grid
+  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">CrabAI found these spots</p>';
   html += '<div class="pin-grid">';
-  var dn = dest.destination_name;
   // Flatten all pins, score by vibe relevance, sort highest first
   var allPins = [];
   if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
@@ -564,6 +627,36 @@ function renderBoard(dest) {
 
   // Refresh vote counts for this view
   refreshVoteCounts();
+
+  // Load YouTube videos
+  loadInviteYouTube(dest.suggestion_id, vibeQuery);
+}
+
+function youtubeIdFromUrl(url) {
+  var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function loadInviteYouTube(suggestionId, query) {
+  fetch('/api/youtube-search?q=' + encodeURIComponent(query + ' travel') + '&max_results=4')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.videos.length > 0) {
+        var grid = document.getElementById('yt-grid-' + suggestionId);
+        var section = document.getElementById('yt-section-' + suggestionId);
+        if (!grid || !section) return;
+        var html = '';
+        data.videos.forEach(function(v) {
+          html += '<div class="media-card">';
+          html += '<iframe src="https://www.youtube.com/embed/' + v.id + '" allowfullscreen loading="lazy"></iframe>';
+          html += '<div class="px-3 py-2"><p class="text-xs font-medium leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + v.title + '</p></div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+        section.style.display = '';
+      }
+    })
+    .catch(function() {});
 }
 
 function renderTabs() {
@@ -670,7 +763,31 @@ function addBlackout() {
   document.getElementById('blackout-end').value = '';
 }
 
+function removeChip(chip) { chip.remove(); }
 function removeBlackout(chip) { chip.remove(); }
+
+function addTentative() {
+  var start = document.getElementById('tentative-start').value;
+  var end = document.getElementById('tentative-end').value;
+  if (!start || !end || start > end) return;
+  var list = document.getElementById('tentative-list');
+  var chip = document.createElement('div');
+  chip.className = 'blackout-chip';
+  chip.style.background = 'rgba(20,184,166,0.1)';
+  chip.style.borderColor = 'rgba(20,184,166,0.2)';
+  chip.style.color = '#14B8A6';
+  chip.dataset.start = start;
+  chip.dataset.end = end;
+  chip.innerHTML = start + ' to ' + end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
+  list.appendChild(chip);
+  document.getElementById('tentative-start').value = '';
+  document.getElementById('tentative-end').value = '';
+}
+
+function getTentativeDates() {
+  var chips = document.querySelectorAll('#tentative-list .blackout-chip');
+  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end}; });
+}
 
 function getBlackouts() {
   var chips = document.querySelectorAll('#blackout-list .blackout-chip');
@@ -706,6 +823,7 @@ function submitJoin() {
     home_airport: document.getElementById('home-airport').value.trim(),
     is_flexible: document.getElementById('is-flexible').checked,
     blackouts: document.getElementById('is-flexible').checked ? [] : getBlackouts(),
+    tentative_dates: document.getElementById('is-flexible').checked ? [] : getTentativeDates(),
     votes: getVotes(),
   };
 
@@ -807,15 +925,20 @@ function renderChat() {
 
 function loadChat() {
   fetch('/api/plan/' + PLAN_ID + '/messages')
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(function(data) {
       if (data.success) {
         _chatMessages = data.data.messages;
         renderChat();
         if (_openThreadId) renderThread(_openThreadId);
+      } else {
+        console.warn('Chat load failed:', data.error);
       }
     })
-    .catch(function() {});
+    .catch(function(e) { console.warn('Chat fetch error:', e); });
 }
 
 function sendMessage() {

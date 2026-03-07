@@ -24,7 +24,9 @@ from utilities.postgres_utils import (
     upsert_vote, get_vote_tallies, get_user_votes, lock_plan,
     save_recommendations, get_recommendations, update_recommendation_status,
     delete_recommendations_for_plan,
-    save_member_blackouts, get_member_blackouts, update_member_details,
+    save_member_blackouts, get_member_blackouts,
+    save_member_tentative_dates, get_member_tentative_dates,
+    update_member_details,
     delete_plan, delete_destination_suggestion,
     create_message, get_plan_messages, delete_message,
 )
@@ -337,6 +339,7 @@ def invite_page(invite_token):
     member = None
     my_votes = {}
     blackouts = []
+    tentative_dates = []
     member_airport = None
     member_flexible = False
 
@@ -346,6 +349,7 @@ def invite_page(invite_token):
         my_votes = get_user_votes(plan['plan_id'], user['id'])
         if member:
             blackouts = get_member_blackouts(plan['plan_id'], user['id'])
+            tentative_dates = get_member_tentative_dates(plan['plan_id'], user['id'])
             member_airport = member.get('home_airport') or user.get('home_airport')
             member_flexible = member.get('is_flexible', False)
     else:
@@ -362,7 +366,8 @@ def invite_page(invite_token):
         plan=plan, destinations=destinations, members=members,
         vote_tallies=vote_tallies, my_votes=my_votes,
         user=user, is_member=is_member, member=member,
-        blackouts=blackouts, member_airport=member_airport,
+        blackouts=blackouts, tentative_dates=tentative_dates,
+        member_airport=member_airport,
         member_flexible=member_flexible,
         needs_login=(user is None),
         destinations_json=destinations_json,
@@ -396,6 +401,11 @@ def api_join_full(plan_id):
     blackouts = data.get('blackouts', [])
     if blackouts or not is_flexible:
         save_member_blackouts(plan_id, user['id'], blackouts)
+
+    # Save tentative dates
+    tentative = data.get('tentative_dates', [])
+    if tentative or not is_flexible:
+        save_member_tentative_dates(plan_id, user['id'], tentative)
 
     # Save votes
     votes = data.get('votes', {})
@@ -1097,6 +1107,45 @@ def api_plan_deals(plan_id):
     except Exception as e:
         logger.error(f"❌ api_plan_deals failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── YouTube search ─────────────────────────────────────────────
+
+@app.route('/api/youtube-search')
+def api_youtube_search():
+    q = request.args.get('q', '')
+    max_results = min(int(request.args.get('max_results', 6)), 12)
+    if not q:
+        return jsonify({'success': False, 'videos': []})
+    try:
+        yt_key = get_secret('CRAB_YOUTUBE_API_KEY')
+    except Exception:
+        yt_key = None
+    if not yt_key:
+        return jsonify({'success': False, 'videos': [], 'error': 'no_key'})
+    try:
+        import requests as http_requests
+        resp = http_requests.get('https://www.googleapis.com/youtube/v3/search', params={
+            'part': 'snippet',
+            'q': q,
+            'type': 'video',
+            'maxResults': max_results,
+            'key': yt_key,
+            'videoEmbeddable': 'true',
+        }, timeout=8)
+        data = resp.json()
+        videos = []
+        for item in data.get('items', []):
+            videos.append({
+                'id': item['id']['videoId'],
+                'title': item['snippet']['title'],
+                'thumbnail': item['snippet']['thumbnails'].get('medium', {}).get('url', ''),
+                'channel': item['snippet']['channelTitle'],
+            })
+        return jsonify({'success': True, 'videos': videos})
+    except Exception as e:
+        logger.error(f"YouTube search failed: {e}")
+        return jsonify({'success': False, 'videos': [], 'error': str(e)})
 
 
 # ── Chat / Messages routes ────────────────────────────────────
