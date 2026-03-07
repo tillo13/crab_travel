@@ -21,10 +21,10 @@
               'coral-dark': '#C9432A',
               teal: '#0D9488',
               'teal-light': '#14B8A6',
-              navy: '#0B1222',
-              'navy-light': '#131D33',
-              card: '#1A2540',
-              'card-hover': '#1F2E4A',
+              navy: '#0B0F24',
+              'navy-light': '#121831',
+              card: '#182040',
+              'card-hover': '#1D2848',
               sand: '#F0EAE0',
               'sand-dim': '#C8C2B8',
             }
@@ -85,7 +85,7 @@
 
     /* Glass nav */
     .glass-nav {
-      background: rgba(11, 18, 34, 0.7);
+      background: rgba(11, 15, 36, 0.7);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -164,7 +164,7 @@
     /* Invite link input */
     html:not(.dark) input[readonly] { background: #f3f4f6 !important; color: #374151 !important; border-color: #e5e7eb !important; }
     /* Dark mode: ensure bg-white/4 inputs are visible */
-    .dark input[readonly] { background: rgba(19, 29, 51, 1) !important; }
+    .dark input[readonly] { background: rgba(18, 24, 49, 1) !important; }
     /* General body text */
     html:not(.dark) body { color: #1a1a1a; }
     html:not(.dark) p, html:not(.dark) span, html:not(.dark) div { color: inherit; }
@@ -184,7 +184,7 @@
     <div class="max-w-5xl mx-auto flex items-center justify-between">
       <div class="flex items-center gap-8">
         <a href="/" class="flex items-center gap-2 group">
-          <span class="text-2xl">🦀</span>
+          <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg" alt="crab.travel">
           <span class="text-lg font-display tracking-tight text-gray-900 dark:text-crab-sand group-hover:text-crab-coral transition-colors">crab.travel</span>
         </a>
         {% if session.user %}
@@ -232,7 +232,7 @@
 
   <footer class="border-t border-white/5 mt-auto">
     <div class="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-crab-sand-dim">
-      <span class="font-display text-sm">🦀 crab.travel</span>
+      <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded" alt=""> crab.travel</span>
       <span>Group trips, without the chaos.</span>
     </div>
   </footer>
