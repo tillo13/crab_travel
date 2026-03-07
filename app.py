@@ -26,6 +26,7 @@ from utilities.postgres_utils import (
     delete_recommendations_for_plan,
     save_member_blackouts, get_member_blackouts, update_member_details,
     delete_plan, delete_destination_suggestion,
+    create_message, get_plan_messages, delete_message,
 )
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
@@ -1096,6 +1097,67 @@ def api_plan_deals(plan_id):
     except Exception as e:
         logger.error(f"❌ api_plan_deals failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── Chat / Messages routes ────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/messages')
+@api_auth_required
+def api_get_messages(plan_id):
+    messages = get_plan_messages(plan_id)
+    # Organize into threads: top-level messages + replies nested under parent
+    top_level = []
+    replies_map = {}
+    for m in messages:
+        m['message_id'] = str(m['message_id'])
+        m['plan_id'] = str(m['plan_id'])
+        m['parent_id'] = str(m['parent_id']) if m['parent_id'] else None
+        m['created_at'] = m['created_at'].isoformat() if m['created_at'] else None
+        if m['parent_id']:
+            replies_map.setdefault(m['parent_id'], []).append(m)
+        else:
+            top_level.append(m)
+
+    for msg in top_level:
+        msg['replies'] = replies_map.get(msg['message_id'], [])
+        msg['reply_count'] = len(msg['replies'])
+
+    return jsonify({'success': True, 'data': {'messages': top_level}})
+
+
+@app.route('/api/plan/<plan_id>/messages', methods=['POST'])
+@api_auth_required
+def api_post_message(plan_id):
+    user = session['user']
+    data = request.get_json()
+    content = (data.get('content') or '').strip() if data else ''
+    if not content:
+        return jsonify({'error': 'Message content required'}), 400
+    if len(content) > 2000:
+        return jsonify({'error': 'Message too long (max 2000 chars)'}), 400
+
+    parent_id = data.get('parent_id')
+    display_name = user.get('name', user.get('email', 'Anonymous'))
+
+    msg = create_message(plan_id, user['id'], display_name, content, parent_id=parent_id)
+    if not msg:
+        return jsonify({'error': 'Failed to send message'}), 500
+
+    msg['message_id'] = str(msg['message_id'])
+    msg['plan_id'] = str(msg['plan_id'])
+    msg['parent_id'] = str(msg['parent_id']) if msg['parent_id'] else None
+    msg['created_at'] = msg['created_at'].isoformat() if msg['created_at'] else None
+    msg['user_picture'] = user.get('picture')
+
+    return jsonify({'success': True, 'data': {'message': msg}})
+
+
+@app.route('/api/plan/<plan_id>/messages/<message_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_message(plan_id, message_id):
+    user = session['user']
+    success = delete_message(message_id, user['id'])
+    return jsonify({'success': success})
 
 
 # ── Run ──────────────────────────────────────────────────────

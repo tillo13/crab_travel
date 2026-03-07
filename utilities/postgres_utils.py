@@ -341,6 +341,21 @@ def init_database():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_blackouts_plan ON crab.member_blackouts(plan_id)")
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.messages (
+                pk_id SERIAL PRIMARY KEY,
+                message_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES crab.users(pk_id),
+                parent_id UUID REFERENCES crab.messages(message_id) ON DELETE CASCADE,
+                display_name VARCHAR(200) NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_plan ON crab.messages(plan_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_parent ON crab.messages(parent_id)")
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),
@@ -1774,6 +1789,80 @@ def update_member_details(member_id, home_airport=None, is_flexible=None):
         if conn:
             conn.rollback()
         logger.error(f"❌ Update member details failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Messages CRUD ──────────────────────────────────────────
+
+def create_message(plan_id, user_id, display_name, content, parent_id=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.messages (plan_id, user_id, display_name, content, parent_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+        """, (plan_id, user_id, display_name, content, parent_id))
+        msg = cursor.fetchone()
+        conn.commit()
+        return dict(msg) if msg else None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Create message failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_plan_messages(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT m.*, u.picture as user_picture
+            FROM crab.messages m
+            LEFT JOIN crab.users u ON m.user_id = u.pk_id
+            WHERE m.plan_id = %s
+            ORDER BY m.created_at ASC
+        """, (plan_id,))
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"❌ Get messages failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def delete_message(message_id, user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.messages WHERE message_id = %s AND user_id = %s", (message_id, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Delete message failed: {e}")
         return False
     finally:
         if cursor:
