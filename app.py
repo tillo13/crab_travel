@@ -296,6 +296,8 @@ def api_create_plan():
             continue
         suggestion = create_destination_suggestion(plan['plan_id'], user['id'], dest_name)
         if suggestion:
+            # Auto-vote yes for the organizer on their own destinations
+            upsert_vote(plan['plan_id'], user['id'], 'destination', suggestion['suggestion_id'], 1)
             _research_destination(plan['plan_id'], suggestion['suggestion_id'], dest_name, plan)
 
     logger.info(f"💬 Plan created: {plan['title']} by {user['email']} with {len(destinations)} destinations")
@@ -636,6 +638,9 @@ def api_suggest_destination(plan_id):
     suggestion = create_destination_suggestion(plan_id, user['id'], destination_name)
     if not suggestion:
         return jsonify({'error': 'Failed to create suggestion'}), 500
+
+    # Auto-vote yes for whoever suggests a destination
+    upsert_vote(plan_id, user['id'], 'destination', suggestion['suggestion_id'], 1)
 
     plan = get_plan_by_id(plan_id)
     _research_destination(plan_id, suggestion['suggestion_id'], destination_name, plan)
