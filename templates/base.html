@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}crab.travel{% endblock %}</title>
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -184,7 +186,8 @@
     <div class="max-w-5xl mx-auto flex items-center justify-between">
       <div class="flex items-center gap-8">
         <a href="/" class="flex items-center gap-2 group">
-          <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg" alt="crab.travel">
+          <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg hidden dark:block" alt="crab.travel">
+          <img src="{{ url_for('static', filename='images/crab_logo_transparent.png') }}" class="w-8 h-8 block dark:hidden" alt="crab.travel">
           <span class="text-lg font-display tracking-tight text-gray-900 dark:text-crab-sand group-hover:text-crab-coral transition-colors">crab.travel</span>
         </a>
         {% if session.user %}
@@ -232,7 +235,7 @@
 
   <footer class="border-t border-white/5 mt-auto">
     <div class="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-crab-sand-dim">
-      <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded" alt=""> crab.travel</span>
+      <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded hidden dark:inline-block" alt=""><img src="{{ url_for('static', filename='images/crab_logo_transparent.png') }}" class="w-5 h-5 inline-block dark:hidden" alt=""> crab.travel</span>
       <span>Group trips, without the chaos.</span>
     </div>
   </footer>
