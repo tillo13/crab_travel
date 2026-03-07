@@ -368,6 +368,19 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_plan ON crab.messages(plan_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_parent ON crab.messages(parent_id)")
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.invite_views (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES crab.users(pk_id),
+                ip_address VARCHAR(45),
+                user_agent TEXT,
+                is_authenticated BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invite_views_plan ON crab.invite_views(plan_id)")
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),
@@ -1949,6 +1962,56 @@ def delete_message(message_id, user_id):
             conn.rollback()
         logger.error(f"❌ Delete message failed: {e}")
         return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Invite View Tracking ─────────────────────────────────────
+
+def log_invite_view(plan_id, user_id=None, ip_address=None, user_agent=None, is_authenticated=False):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO crab.invite_views (plan_id, user_id, ip_address, user_agent, is_authenticated)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (plan_id, user_id, ip_address, (user_agent or '')[:500], is_authenticated))
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Log invite view failed: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_invite_view_stats(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_views,
+                COUNT(DISTINCT ip_address) as unique_visitors,
+                SUM(CASE WHEN is_authenticated THEN 1 ELSE 0 END) as authenticated_views,
+                COUNT(DISTINCT CASE WHEN is_authenticated THEN user_id END) as unique_signed_in
+            FROM crab.invite_views
+            WHERE plan_id = %s
+        """, (plan_id,))
+        return dict(cursor.fetchone())
+    except Exception as e:
+        logger.error(f"❌ Get invite view stats failed: {e}")
+        return {'total_views': 0, 'unique_visitors': 0, 'authenticated_views': 0, 'unique_signed_in': 0}
     finally:
         if cursor:
             cursor.close()

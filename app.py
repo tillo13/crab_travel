@@ -34,7 +34,7 @@ from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
 from utilities.search_engine import trigger_search, is_searching
-from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped
+from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats
 from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
 # ── App setup ────────────────────────────────────────────────
@@ -331,6 +331,16 @@ def invite_page(invite_token):
         return render_template('index.html', active_page='home', error='Plan not found'), 404
 
     user = session.get('user')
+
+    # Track invite page view
+    log_invite_view(
+        plan['plan_id'],
+        user_id=user['id'] if user else None,
+        ip_address=request.remote_addr,
+        user_agent=request.headers.get('User-Agent'),
+        is_authenticated=user is not None,
+    )
+
     destinations = get_destination_suggestions(plan['plan_id'])
     members = get_plan_members(plan['plan_id'])
     vote_tallies = get_vote_tallies(plan['plan_id'], 'destination')
@@ -438,8 +448,10 @@ def view_plan(plan_id):
     all_prefs = get_all_plan_preferences(plan_id)
     recs = get_recommendations(plan_id)
     destinations = get_destination_suggestions(plan_id)
+    view_stats = get_invite_view_stats(plan_id) if is_organizer else None
     return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
-                           recs=recs, destinations=destinations, is_organizer=is_organizer, user=user)
+                           recs=recs, destinations=destinations, is_organizer=is_organizer, user=user,
+                           view_stats=view_stats)
 
 
 def _resolve_member(plan_id):

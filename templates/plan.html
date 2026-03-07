@@ -243,6 +243,13 @@
     <button onclick="copyInvite()" id="copy-btn"
       class="px-4 py-2 bg-crab-coral text-white rounded-lg text-sm font-medium hover:bg-crab-coral-light">Copy</button>
   </div>
+  {% if view_stats %}
+  <div class="flex gap-4 mt-3 text-xs text-crab-sand-dim">
+    <span>{{ view_stats.total_views }} view{{ 's' if view_stats.total_views != 1 }}</span>
+    <span>{{ view_stats.unique_visitors }} unique visitor{{ 's' if view_stats.unique_visitors != 1 }}</span>
+    <span>{{ view_stats.unique_signed_in }} signed in</span>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 
