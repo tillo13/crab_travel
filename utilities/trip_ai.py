@@ -161,8 +161,10 @@ GROUP ({pref_summary['member_count']} members):
         window_context = f"\nTRAVEL WINDOW: {travel_window.get('start', 'flexible')} to {travel_window.get('end', 'flexible')}"
 
     vibes_context = ""
+    vibes_instruction = ""
     if group_vibes:
-        vibes_context = f"\nGROUP VIBES: The group is specifically into: {group_vibes}. PRIORITIZE activities, venues, and events related to these interests. For example if they said 'baseball and beer', find stadiums, spring training, sports bars, breweries, baseball-themed restaurants, etc."
+        vibes_context = f"\n\n⚠️ CRITICAL — GROUP VIBES: {group_vibes}\nThis is the #1 priority. The group told us exactly what they're into. AT LEAST HALF of all activities, restaurants, and events MUST directly relate to '{group_vibes}'. For example if they said 'baseball and beer', the top activities should be stadiums, spring training facilities, sports bars, breweries, baseball museums, etc. Generic tourist stuff is secondary — lead with what they asked for."
+        vibes_instruction = f"\n\n⚠️ REMINDER: The group specifically said they're into '{group_vibes}'. Your things_to_do, food_and_drink, and upcoming_events MUST be dominated by {group_vibes}-related picks. Put the most relevant ones FIRST in each list. If you can't find enough {group_vibes}-specific venues, include the closest alternatives but ALWAYS lead with on-theme picks."
 
     prompt = f"""You are a local expert and event researcher for {destination_name}. Research this destination thoroughly for a group trip.
 
@@ -232,7 +234,7 @@ Return ONLY valid JSON:
 
 Be specific and real. Use actual venue names, actual event names, actual dates. Don't make up events — if you're unsure of a date, say "typically" or give the month. The image_search field should be 1-2 keywords that would find a great photo (e.g. "nashville broadway", "hot air balloon desert"). The goal is to build a visual board that gets people excited.
 
-compatibility_score: 1-100 based on how well this destination fits the group."""
+compatibility_score: 1-100 based on how well this destination fits the group.{vibes_instruction}"""
 
     system = "You are an expert travel researcher and local guide. You know real venues, real events, real dates. Respond with valid JSON only."
 

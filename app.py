@@ -638,6 +638,37 @@ def api_delete_destination(plan_id, suggestion_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/pin', methods=['DELETE'])
+@api_auth_required
+def api_delete_pin(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can remove pins'}), 403
+
+    data = request.get_json()
+    category = data.get('category')  # stays, things_to_do, food_and_drink, upcoming_events
+    idx = data.get('index')
+    if category is None or idx is None:
+        return jsonify({'error': 'category and index required'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    card = dest_data.get('card', {})
+    items = card.get(category, [])
+    if 0 <= idx < len(items):
+        removed = items.pop(idx)
+        card[category] = items
+        dest_data['card'] = card
+        update_destination_data(suggestion_id, dest_data)
+        logger.info(f"🗑️ Pin removed: {removed.get('name', '?')} from {suggestion['destination_name']}")
+
+    return jsonify({'success': True})
+
+
 @app.route('/api/plan/<plan_id>/destination/<suggestion_id>/media', methods=['POST'])
 @api_auth_required
 def api_add_media(plan_id, suggestion_id):

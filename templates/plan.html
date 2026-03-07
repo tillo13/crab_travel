@@ -40,6 +40,7 @@
   .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
   html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
   html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+  .pin:hover .pin-delete { opacity: 1; }
   .dest-tab { cursor:pointer; padding:0.5rem 1rem; border-radius:0.5rem; font-size:0.9rem; font-weight:500; transition:all 0.2s; }
   .dest-tab.active { background: rgba(232,89,58,0.12); color: #E8593A; }
   .dest-tab:not(.active) { color: rgba(200,194,184,0.6); }
@@ -242,14 +243,18 @@ function unsplashUrl(query, w, h) {
   return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
 }
 
-function pinCard(item, type, destName) {
+function pinCard(item, type, destName, suggestionId, category, idx) {
   var catClass = {stay:'cat-stay',do:'cat-do',food:'cat-food',event:'cat-event'}[type] || '';
   var badgeClass = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'}[type] || '';
   var label = {stay:'Stay',do:'Activity',food:'Eat & Drink',event:'Event'}[type] || type;
   var imgQuery = item.image_search || item.name;
   var imgH = type === 'stay' ? 280 : (type === 'event' ? 200 : 220);
   var searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(item.name + ' ' + (destName || ''));
-  var html = '<a href="' + searchUrl + '" target="_blank" rel="noopener" class="pin ' + catClass + '" style="cursor:pointer;text-decoration:none;color:inherit;display:block;">';
+  var html = '<div class="pin ' + catClass + '" style="position:relative;">';
+  if (IS_ORGANIZER && suggestionId) {
+    html += '<button onclick="event.stopPropagation();deletePin(\'' + suggestionId + '\',\'' + category + '\',' + idx + ')" class="absolute top-2 right-2 z-10 w-6 h-6 bg-black/60 hover:bg-red-500/80 text-white rounded-full text-xs flex items-center justify-center transition-colors opacity-0 pin-delete" title="Remove">&times;</button>';
+  }
+  html += '<a href="' + searchUrl + '" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:block;">';
   html += '<img class="pin-img" src="' + unsplashUrl(imgQuery, 400, imgH) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
   html += '<div class="p-3">';
   html += '<div class="flex items-start justify-between gap-2 mb-1">';
@@ -260,8 +265,7 @@ function pinCard(item, type, destName) {
   if (item.description) html += '<p class="text-xs text-crab-sand-dim leading-relaxed">' + item.description + '</p>';
   if (item.date_range) html += '<p class="text-xs text-purple-400 font-medium mt-1">' + item.date_range + '</p>';
   if (item.neighborhood) html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-1">' + item.neighborhood + '</p>';
-  html += '<span class="text-xs text-crab-coral opacity-0 group-hover:opacity-100 mt-1 inline-block">Learn more →</span>';
-  html += '</div></a>';
+  html += '</div></a></div>';
   return html;
 }
 
@@ -373,10 +377,11 @@ function renderBoard(dest) {
   // Pinterest grid of pins
   html += '<div id="board-pins" class="pin-grid">';
   var dn = dest.destination_name;
-  if (card.stays) card.stays.forEach(function(s) { html += pinCard(s, 'stay', dn); });
-  if (card.things_to_do) card.things_to_do.forEach(function(t) { html += pinCard(t, 'do', dn); });
-  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { html += pinCard(f, 'food', dn); });
-  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { html += pinCard(e, 'event', dn); });
+  var sid = dest.suggestion_id;
+  if (card.stays) card.stays.forEach(function(s, i) { html += pinCard(s, 'stay', dn, sid, 'stays', i); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t, i) { html += pinCard(t, 'do', dn, sid, 'things_to_do', i); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f, i) { html += pinCard(f, 'food', dn, sid, 'food_and_drink', i); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e, i) { html += pinCard(e, 'event', dn, sid, 'upcoming_events', i); });
   html += '</div>';
 
   // Media tab (hidden by default)
@@ -408,37 +413,49 @@ function renderMediaSection(dest) {
   var customMedia = dest.destination_data?.custom_media || [];
   var html = '';
 
-  // Search links — smart queries based on AI research
+  // Auto-generated visual content
   html += '<div class="mb-6">';
-  html += '<p class="text-sm font-medium mb-3">Explore ' + dn + '</p>';
-  html += '<div class="flex flex-wrap gap-2 mb-4">';
+  html += '<p class="text-sm font-medium mb-3">Photos & Videos of ' + dn + '</p>';
 
-  var queries = [dn + ' travel guide'];
+  // Embedded Unsplash images grid
+  var imgQueries = [dn + ' skyline', dn + ' food', dn + ' nightlife', dn + ' nature'];
   if (card) {
-    if (card.things_to_do && card.things_to_do[0]) queries.push(dn + ' ' + card.things_to_do[0].name);
-    if (card.stays && card.stays[0]) queries.push(card.stays[0].name + ' ' + dn);
-    if (card.food_and_drink && card.food_and_drink[0]) queries.push(dn + ' food scene');
-    if (card.upcoming_events && card.upcoming_events[0]) queries.push(card.upcoming_events[0].name + ' ' + dn);
+    if (card.things_to_do && card.things_to_do[0]) imgQueries.push(card.things_to_do[0].image_search || card.things_to_do[0].name);
+    if (card.stays && card.stays[0]) imgQueries.push(card.stays[0].image_search || card.stays[0].name);
   }
-
-  // YouTube search links
-  queries.forEach(function(q) {
-    html += '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(q) + '" target="_blank" rel="noopener" class="search-link">';
-    html += '<span>▶</span> ' + q;
-    html += '</a>';
+  html += '<div class="media-grid mb-4">';
+  imgQueries.slice(0, 6).forEach(function(q) {
+    html += '<div class="media-card">';
+    html += '<img src="' + unsplashUrl(q, 400, 260) + '" alt="' + q + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;">';
+    html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + q + '</div>';
+    html += '</div>';
   });
+  html += '</div>';
 
-  // Google Images link
-  html += '<a href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link">';
-  html += '<span>🖼</span> ' + dn + ' photos';
-  html += '</a>';
+  // YouTube embedded search — show destination travel video
+  html += '<div class="media-grid mb-4">';
+  var ytQuery = dn + ' travel guide';
+  html += '<div class="media-card">';
+  html += '<iframe src="https://www.youtube.com/embed?listType=search&list=' + encodeURIComponent(ytQuery) + '" allowfullscreen loading="lazy"></iframe>';
+  html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + ytQuery + '</div>';
+  html += '</div>';
+  if (card && card.things_to_do && card.things_to_do[0]) {
+    var ytQuery2 = dn + ' ' + card.things_to_do[0].name;
+    html += '<div class="media-card">';
+    html += '<iframe src="https://www.youtube.com/embed?listType=search&list=' + encodeURIComponent(ytQuery2) + '" allowfullscreen loading="lazy"></iframe>';
+    html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim">' + ytQuery2 + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
 
-  // TikTok search
-  html += '<a href="https://www.tiktok.com/search?q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link">';
-  html += '<span>🎵</span> ' + dn + ' on TikTok';
-  html += '</a>';
+  // Search more links
+  html += '<div class="flex flex-wrap gap-2">';
+  html += '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link"><span>▶</span> More on YouTube</a>';
+  html += '<a href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link"><span>🖼</span> Google Images</a>';
+  html += '<a href="https://www.tiktok.com/search?q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link"><span>🎵</span> TikTok</a>';
+  html += '</div>';
 
-  html += '</div></div>';
+  html += '</div>';
 
   // Custom media added by coordinator
   if (customMedia.length > 0) {
@@ -565,6 +582,20 @@ function pollDestinations() {
       _pollTimer = null;
     }
   }, 3000);
+}
+
+async function deletePin(suggestionId, category, idx) {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/pin', {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ category: category, index: idx }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      await loadDestinations();
+    }
+  } catch (e) {}
 }
 
 async function addMedia(suggestionId) {
