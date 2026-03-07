@@ -269,7 +269,9 @@
   <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
 </div>
 
-<!-- Group Chat -->
+</div><!-- /animate-in -->
+
+<!-- Group Chat (outside animate-in to avoid column layout bleed) -->
 <div class="mt-8 mb-10" id="chat-section">
   <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
     <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
@@ -290,7 +292,7 @@
   </div>
 </div>
 
-<!-- Thread panel (slides in) -->
+<!-- Thread panel (fixed overlay) -->
 <div id="thread-panel" class="hidden fixed inset-0 z-50">
   <div class="absolute inset-0 bg-black/50" onclick="closeThread()"></div>
   <div class="absolute right-0 top-0 bottom-0 w-full max-w-md bg-crab-bg border-l border-white/6 flex flex-col">
@@ -307,8 +309,6 @@
     </div>
   </div>
 </div>
-
-</div><!-- /animate-in -->
 
 <!-- Delete destination modal -->
 <div id="delete-dest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
