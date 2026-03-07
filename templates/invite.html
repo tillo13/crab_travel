@@ -282,7 +282,7 @@ function renderBoard(dest) {
   var card = dest.destination_data ? dest.destination_data.card : null;
 
   if (dest.status === 'researching') {
-    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 researching-pulse">🔍</div><p class="text-crab-sand-dim">AI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
+    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 researching-pulse">🔍</div><p class="text-crab-sand-dim">CrabAI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
     return;
   }
   if (dest.status === 'error') {

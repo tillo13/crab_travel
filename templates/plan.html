@@ -161,7 +161,7 @@ function renderBoard(dest) {
   var card = dest.destination_data?.card;
 
   if (dest.status === 'researching') {
-    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 animate-pulse">🔍</div><p class="text-crab-sand-dim">AI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
+    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 animate-pulse">🔍</div><p class="text-crab-sand-dim">CrabAI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
     return;
   }
   if (dest.status === 'error') {
@@ -243,7 +243,7 @@ async function loadDestinations() {
         }
       } else {
         document.getElementById('dest-tabs').innerHTML = '';
-        document.getElementById('dest-board').innerHTML = '<div class="text-center py-16 border border-dashed border-white/10 rounded-xl"><div class="text-3xl mb-3">🗺️</div><p class="text-crab-sand-dim">Add a destination to get started</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">AI will research stays, activities, food, and events</p></div>';
+        document.getElementById('dest-board').innerHTML = '<div class="text-center py-16 border border-dashed border-white/10 rounded-xl"><div class="text-3xl mb-3">🗺️</div><p class="text-crab-sand-dim">Add a destination to get started</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">CrabAI will research stays, activities, food, and events</p></div>';
       }
     }
   } catch (e) {
