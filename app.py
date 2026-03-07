@@ -34,7 +34,7 @@ from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
 from utilities.search_engine import trigger_search, is_searching
-from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats
+from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats, get_db_connection
 from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
 # ── App setup ────────────────────────────────────────────────
@@ -353,15 +353,21 @@ def invite_page(invite_token):
     member_airport = None
     member_flexible = False
 
+    profile_completed = False
     if user:
         member = get_member_for_plan(plan['plan_id'], user['id'])
         is_member = member is not None
         my_votes = get_user_votes(plan['plan_id'], user['id'])
+        profile = get_user_profile(user['id'])
+        profile_completed = bool(profile and profile.get('profile_completed'))
         if member:
             blackouts = get_member_blackouts(plan['plan_id'], user['id'])
             tentative_dates = get_member_tentative_dates(plan['plan_id'], user['id'])
             member_airport = member.get('home_airport') or user.get('home_airport')
             member_flexible = member.get('is_flexible', False)
+        else:
+            # Pre-fill from profile even if not yet a member
+            member_airport = user.get('home_airport')
     else:
         session['pending_join'] = invite_token
 
@@ -380,6 +386,7 @@ def invite_page(invite_token):
         member_airport=member_airport,
         member_flexible=member_flexible,
         needs_login=(user is None),
+        profile_completed=profile_completed,
         destinations_json=destinations_json,
     )
 
@@ -406,6 +413,18 @@ def api_join_full(plan_id):
     home_airport = data.get('home_airport', '').strip()
     is_flexible = data.get('is_flexible', False)
     update_member_details(member['pk_id'], home_airport=home_airport or None, is_flexible=is_flexible)
+
+    # Also save airport to user profile so it carries across plans
+    if home_airport:
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE crab.users SET home_airport = %s WHERE pk_id = %s AND (home_airport IS NULL OR home_airport = '')", (home_airport, user['id']))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
 
     # Save blackouts
     blackouts = data.get('blackouts', [])

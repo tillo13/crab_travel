@@ -51,40 +51,49 @@
   .vote-pill.voted-down { background: rgba(232,89,58,0.12); border-color: #E8593A; color: #F47A5F; }
   html:not(.dark) .vote-pill { border-color: rgba(0,0,0,0.1); color: #6b7280; }
   html:not(.dark) .vote-pill:hover { border-color: rgba(0,0,0,0.2); color: #111; }
-  /* Destination voting cards */
-  .dest-vote-card {
-    border-radius: 1rem; overflow: hidden;
-    border: 2px solid rgba(255,255,255,0.06);
-    transition: all 0.3s ease; cursor: pointer;
-    background: rgba(255,255,255,0.02);
+  /* Destination tabs */
+  .dest-tab-bar {
+    display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
   }
-  .dest-vote-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
-  .dest-vote-card.voted { border-color: #14B8A6; box-shadow: 0 0 20px rgba(20,184,166,0.15); }
-  html:not(.dark) .dest-vote-card { border-color: rgba(0,0,0,0.08); background: white; }
-  html:not(.dark) .dest-vote-card:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
-  html:not(.dark) .dest-vote-card.voted { border-color: #0D9488; box-shadow: 0 0 20px rgba(13,148,136,0.1); }
+  .dest-tab-bar::-webkit-scrollbar { display: none; }
+  .dest-tab {
+    flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    padding: 0.75rem 1.25rem; border-radius: 0.75rem; cursor: pointer;
+    border: 2px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);
+    transition: all 0.25s; min-width: 120px; text-align: center;
+  }
+  .dest-tab:hover { border-color: rgba(232,89,58,0.2); background: rgba(255,255,255,0.04); }
+  .dest-tab.active { border-color: #E8593A; background: rgba(232,89,58,0.08); }
+  .dest-tab.voted { border-color: #14B8A6; }
+  .dest-tab.active.voted { border-color: #14B8A6; background: rgba(20,184,166,0.08); }
+  html:not(.dark) .dest-tab { border-color: rgba(0,0,0,0.08); background: white; }
+  html:not(.dark) .dest-tab:hover { border-color: rgba(232,89,58,0.3); }
+  html:not(.dark) .dest-tab.active { border-color: #E8593A; background: rgba(232,89,58,0.04); }
+  html:not(.dark) .dest-tab.voted { border-color: #0D9488; }
+  .dest-tab-name { font-weight: 600; font-size: 0.9rem; line-height: 1.2; }
+  .dest-tab-votes { font-size: 0.7rem; color: rgba(200,194,184,0.5); }
+  html:not(.dark) .dest-tab-votes { color: #9ca3af; }
+  .dest-tab-check { color: #14B8A6; font-size: 0.75rem; font-weight: 600; }
+  /* Vote button */
   .vote-btn-big {
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-    padding: 0.65rem 1.5rem; border-radius: 0.75rem; font-size: 0.9rem;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    padding: 0.65rem 2rem; border-radius: 0.75rem; font-size: 0.9rem;
     font-weight: 600; border: 2px solid rgba(255,255,255,0.1);
     cursor: pointer; transition: all 0.25s; background: transparent;
-    color: rgba(200,194,184,0.8); width: 100%;
+    color: rgba(200,194,184,0.8);
   }
   .vote-btn-big:hover { border-color: #14B8A6; color: #14B8A6; background: rgba(20,184,166,0.08); }
   .vote-btn-big.voted { background: rgba(20,184,166,0.15); border-color: #14B8A6; color: #14B8A6; }
   html:not(.dark) .vote-btn-big { border-color: rgba(0,0,0,0.12); color: #6b7280; }
   html:not(.dark) .vote-btn-big:hover { border-color: #0D9488; color: #0D9488; background: rgba(13,148,136,0.05); }
   html:not(.dark) .vote-btn-big.voted { background: rgba(13,148,136,0.1); border-color: #0D9488; color: #0D9488; }
-  .dest-detail-tabs { display: flex; gap: 0.25rem; }
-  .detail-tab {
-    cursor:pointer; padding:0.4rem 0.9rem; border-radius:0.4rem; font-size:0.8rem;
-    font-weight:500; transition:all 0.2s; border: 1px solid transparent;
-    background: transparent; color: rgba(200,194,184,0.5);
+  /* Section headers */
+  .section-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600; color: rgba(200,194,184,0.4); margin-bottom: 0.75rem;
   }
-  .detail-tab.active { background: rgba(232,89,58,0.1); color: #E8593A; border-color: rgba(232,89,58,0.2); }
-  .detail-tab:not(.active):hover { color: rgba(200,194,184,0.9); }
-  html:not(.dark) .detail-tab.active { background: rgba(232,89,58,0.06); color: #E8593A; }
-  html:not(.dark) .detail-tab:not(.active) { color: #9ca3af; }
+  html:not(.dark) .section-label { color: #9ca3af; }
   .stat-card {
     text-align: center; padding: 0.75rem 1rem; border-radius: 0.75rem;
     background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
@@ -290,14 +299,14 @@
     <p class="text-sm text-crab-sand-dim">Vote for the destinations you'd be down for. You can pick as many as you want.</p>
   </div>
 
-  <!-- Destination voting cards -->
-  <div id="dest-cards" class="space-y-4 mb-6 animate-in stagger-2">
+  <!-- Destination tabs -->
+  <div id="dest-tab-bar" class="dest-tab-bar mb-6 animate-in stagger-2">
     <!-- populated by JS -->
   </div>
 
-  <!-- Expanded detail for selected destination -->
-  <div id="dest-detail" class="animate-in stagger-2" style="display:none;">
-    <!-- populated by JS when a card is expanded -->
+  <!-- Selected destination content -->
+  <div id="dest-content" class="mb-6 animate-in stagger-2">
+    <!-- populated by JS -->
   </div>
   {% else %}
   <div class="text-center py-12 border border-dashed border-white/10 rounded-xl mb-8">
@@ -436,10 +445,18 @@
   </div>
 
   <div id="confirmation" class="hidden animate-in mt-8">
-    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl">
+    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl px-6">
       <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-12 h-12 rounded-xl mx-auto mb-2" alt="">
       <h2 class="text-xl font-display mb-2">You're in!</h2>
-      <p class="text-sm text-crab-sand-dim" id="confirm-msg">We'll track flights and email you as things develop.</p>
+      <p class="text-sm text-crab-sand-dim mb-4" id="confirm-msg">We'll track flights and email you as things develop.</p>
+      {% if not profile_completed %}
+      <div class="border-t border-crab-teal/20 pt-4 mt-4">
+        <p class="text-sm text-crab-sand-dim mb-3">Complete your profile so CrabAI can personalize recommendations for you across all trips.</p>
+        <a href="/profile" class="inline-flex items-center gap-2 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:shadow-lg">
+          Complete your profile
+        </a>
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -551,7 +568,7 @@ function pinCard(item, type, destName) {
   return html;
 }
 
-var _expandedDest = null;
+var _activeDest = 0;
 var _userVotes = {}; // {suggestion_id: true}
 
 // Initialize user's own votes from server
@@ -564,114 +581,158 @@ var _userVotes = {}; // {suggestion_id: true}
 {% endif %}
 
 function renderCards() {
-  var container = document.getElementById('dest-cards');
-  var detailEl = document.getElementById('dest-detail');
-  if (!container) return;
+  var tabBar = document.getElementById('dest-tab-bar');
+  var content = document.getElementById('dest-content');
+  if (!tabBar || !content) return;
 
-  // Check if any are researching
   var researching = _destinations.filter(function(d) { return d.status === 'researching'; });
   var ready = _destinations.filter(function(d) { return d.status !== 'researching' && d.status !== 'error'; });
 
-  var html = '';
+  // Render tab bar
+  var tabHtml = '';
+  ready.forEach(function(dest, i) {
+    var sid = dest.suggestion_id;
+    var tally = _voteTallies[sid] || {up: 0, down: 0};
+    var isVoted = _userVotes[sid] || false;
+    var isActive = i === _activeDest;
+    var classes = 'dest-tab' + (isActive ? ' active' : '') + (isVoted ? ' voted' : '');
+    tabHtml += '<button class="' + classes + '" onclick="switchDest(' + i + ')">';
+    tabHtml += '<span class="dest-tab-name">' + dest.destination_name + '</span>';
+    var meta = [];
+    if (tally.up > 0) meta.push(tally.up + ' vote' + (tally.up === 1 ? '' : 's'));
+    if (isVoted) meta.push('✓');
+    if (meta.length > 0) tabHtml += '<span class="dest-tab-' + (isVoted ? 'check' : 'votes') + '">' + meta.join(' · ') + '</span>';
+    tabHtml += '</button>';
+  });
+  tabBar.innerHTML = tabHtml;
 
-  // Show researching progress if any
+  // Render content for active destination
+  var html = '';
   if (researching.length > 0) {
     html += renderResearchProgress(researching);
   }
 
-  // Render voting cards for ready destinations
-  ready.forEach(function(dest, i) {
-    var card = dest.destination_data ? dest.destination_data.card : null;
-    if (!card) return;
-    var sid = dest.suggestion_id;
-    var tally = _voteTallies[sid] || {up: 0, down: 0};
-    var isVoted = _userVotes[sid] || false;
-    var isExpanded = _expandedDest === sid;
-
-    html += '<div class="dest-vote-card' + (isVoted ? ' voted' : '') + '" id="dcard-' + sid + '">';
-    html += '<div class="p-5">';
-
-    // Top row: name + vote count
-    html += '<div class="flex items-start justify-between gap-4 mb-2">';
-    html += '<div class="flex-1">';
-    html += '<h3 class="text-lg font-display">' + dest.destination_name + '</h3>';
-    if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1 leading-relaxed">' + card.summary + '</p>';
-    html += '</div>';
-    if (tally.up > 0) {
-      html += '<div class="shrink-0 text-center">';
-      html += '<div class="text-xl font-display text-crab-teal">' + tally.up + '</div>';
-      html += '<div class="text-xs text-crab-sand-dim">vote' + (tally.up === 1 ? '' : 's') + '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-
-    // Meta chips
-    html += '<div class="flex flex-wrap gap-2 text-xs mb-3">';
-    if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
-    if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
-    if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
-    if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
-    html += '</div>';
-
-    // Highlights
-    if (card.highlights && card.highlights.length > 0) {
-      html += '<div class="flex flex-wrap gap-1.5 mb-4">';
-      card.highlights.forEach(function(h) {
-        html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2 py-0.5 rounded-full">' + h + '</span>';
-      });
-      html += '</div>';
-    }
-
-    // Inline preview of top spots (teaser)
-    var allSpots = [];
-    if (card.things_to_do) card.things_to_do.slice(0, 2).forEach(function(s) { allSpots.push({name: s.name, type: 'do'}); });
-    if (card.stays) card.stays.slice(0, 1).forEach(function(s) { allSpots.push({name: s.name, type: 'stay'}); });
-    if (card.food_and_drink) card.food_and_drink.slice(0, 1).forEach(function(s) { allSpots.push({name: s.name, type: 'food'}); });
-    if (allSpots.length > 0) {
-      html += '<div class="flex flex-wrap gap-1.5 mb-3">';
-      var spotBadge = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'};
-      allSpots.slice(0, 4).forEach(function(s) {
-        html += '<span class="text-xs px-2 py-0.5 rounded-full ' + (spotBadge[s.type] || '') + ' opacity-80">' + s.name + '</span>';
-      });
-      var totalSpots = (card.stays ? card.stays.length : 0) + (card.things_to_do ? card.things_to_do.length : 0) + (card.food_and_drink ? card.food_and_drink.length : 0) + (card.upcoming_events ? card.upcoming_events.length : 0);
-      if (totalSpots > 4) {
-        html += '<span class="text-xs px-2 py-0.5 rounded-full bg-white/5 text-crab-sand-dim">+' + (totalSpots - 4) + ' more</span>';
-      }
-      html += '</div>';
-    }
-
-    // Vote button (big, prominent)
-    if (!NEEDS_LOGIN) {
-      html += '<button class="vote-btn-big' + (isVoted ? ' voted' : '') + '" onclick="event.stopPropagation(); toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
-      html += isVoted ? '✓ I\'d go here' : 'I\'d go here';
-      html += '</button>';
-    }
-
-    // Expand/collapse — more descriptive
-    html += '<div class="mt-3 text-center">';
-    html += '<button onclick="event.stopPropagation(); toggleDetail(\'' + sid + '\')" class="text-xs text-crab-sand-dim hover:text-crab-coral transition-colors font-medium" id="expand-' + sid + '">';
-    html += isExpanded ? '▲ Hide details' : '▼ See all places, videos & more';
-    html += '</button>';
-    html += '</div>';
-
-    html += '</div></div>';
-  });
-
-  container.innerHTML = html;
-
-  // If a destination is expanded, render its detail
-  if (_expandedDest) {
-    var dest = _destinations.find(function(d) { return d.suggestion_id === _expandedDest; });
-    if (dest && dest.status !== 'researching') {
-      renderDetail(dest);
-      detailEl.style.display = '';
-    }
-  } else {
-    detailEl.style.display = 'none';
+  if (ready.length > 0 && _activeDest < ready.length) {
+    var dest = ready[_activeDest];
+    html += renderDestContent(dest);
   }
 
-  // Start timer if researching
+  content.innerHTML = html;
+
+  // Load media for active destination
+  if (ready.length > 0 && _activeDest < ready.length) {
+    var d = ready[_activeDest];
+    loadInvitePhotos(d.suggestion_id, d.destination_name);
+    loadInviteYouTube(d.suggestion_id, d.destination_name);
+  }
+
   if (researching.length > 0) startResearchTimer();
+}
+
+function switchDest(idx) {
+  _activeDest = idx;
+  renderCards();
+  var content = document.getElementById('dest-content');
+  if (content) content.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function renderDestContent(dest) {
+  var card = dest.destination_data ? dest.destination_data.card : null;
+  if (!card) return '';
+  var sid = dest.suggestion_id;
+  var dn = dest.destination_name;
+  var tally = _voteTallies[sid] || {up: 0, down: 0};
+  var isVoted = _userVotes[sid] || false;
+  var customMedia = dest.destination_data?.custom_media || [];
+  var html = '';
+
+  // Summary section
+  html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
+  html += '<div class="p-5 md:p-6">';
+  html += '<div class="flex items-start justify-between gap-4 mb-3">';
+  html += '<h3 class="text-xl font-display">' + dn + '</h3>';
+  if (tally.up > 0) {
+    html += '<div class="shrink-0 text-center">';
+    html += '<div class="text-xl font-display text-crab-teal">' + tally.up + '</div>';
+    html += '<div class="text-xs text-crab-sand-dim">vote' + (tally.up === 1 ? '' : 's') + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  if (card.summary) html += '<p class="text-sm text-crab-sand-dim leading-relaxed mb-3">' + card.summary + '</p>';
+
+  // Meta chips
+  html += '<div class="flex flex-wrap gap-2 text-xs mb-3">';
+  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+  html += '</div>';
+
+  // Highlights
+  if (card.highlights && card.highlights.length > 0) {
+    html += '<div class="flex flex-wrap gap-1.5 mb-4">';
+    card.highlights.forEach(function(h) {
+      html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2 py-0.5 rounded-full">' + h + '</span>';
+    });
+    html += '</div>';
+  }
+
+  // Vote button
+  if (!NEEDS_LOGIN) {
+    html += '<button class="vote-btn-big' + (isVoted ? ' voted' : '') + '" onclick="toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
+    html += isVoted ? '✓ I\'d go here' : 'I\'d go here';
+    html += '</button>';
+  }
+
+  html += '</div></div>';
+
+  // Places section
+  html += '<div class="mb-6">';
+  html += '<p class="section-label">Places & spots in ' + dn + '</p>';
+  html += '<div class="pin-grid">';
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
+  }
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
+  html += '</div></div>';
+
+  // Custom media
+  if (customMedia.length > 0) {
+    html += '<div class="mb-6">';
+    html += '<p class="section-label">Added by the organizer</p>';
+    html += '<div class="media-grid">';
+    customMedia.forEach(function(m) {
+      var ytId = youtubeIdFromUrl(m.url);
+      html += '<div class="media-card">';
+      if (ytId) {
+        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      }
+      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Photos
+  html += '<div class="mb-6" id="photo-section-' + sid + '" style="display:none;">';
+  html += '<p class="section-label">Photos</p>';
+  html += '<div class="media-grid" id="photo-grid-' + sid + '"></div>';
+  html += '</div>';
+
+  // Videos
+  html += '<div class="mb-6" id="yt-section-' + sid + '" style="display:none;">';
+  html += '<p class="section-label">Videos</p>';
+  html += '<div class="media-grid" id="yt-grid-' + sid + '"></div>';
+  html += '</div>';
+
+  return html;
 }
 
 function toggleVote(sid) {
@@ -695,112 +756,6 @@ function toggleVote(sid) {
       renderCards();
     }
   });
-}
-
-function toggleDetail(sid) {
-  if (_expandedDest === sid) {
-    _expandedDest = null;
-  } else {
-    _expandedDest = sid;
-  }
-  renderCards();
-  // Scroll to detail if opening
-  if (_expandedDest) {
-    setTimeout(function() {
-      var el = document.getElementById('dest-detail');
-      if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
-    }, 100);
-  }
-}
-
-function renderDetail(dest) {
-  var detailEl = document.getElementById('dest-detail');
-  if (!detailEl) return;
-  var card = dest.destination_data ? dest.destination_data.card : null;
-  if (!card) return;
-
-  var dn = dest.destination_name;
-  var sid = dest.suggestion_id;
-  var vibeQuery = GROUP_VIBES ? (GROUP_VIBES + ' ' + dn) : dn;
-  var customMedia = dest.destination_data?.custom_media || [];
-
-  var html = '';
-  html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
-
-  // Header with tabs
-  html += '<div class="px-5 py-3 border-b border-white/6 flex items-center justify-between">';
-  html += '<h3 class="font-display text-lg">' + dn + '</h3>';
-  html += '<div class="dest-detail-tabs">';
-  html += '<button class="detail-tab active" onclick="switchDetailTab(\'pins\', this)">Places</button>';
-  html += '<button class="detail-tab" onclick="switchDetailTab(\'media\', this)">Media</button>';
-  html += '</div>';
-  html += '</div>';
-
-  // Pins tab
-  html += '<div class="p-5" id="detail-pins">';
-  html += '<p class="text-xs text-crab-sand-dim mb-3">CrabAI found these spots in ' + dn + ' matched to your group\'s vibes.</p>';
-  html += '<div class="pin-grid">';
-  var allPins = [];
-  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
-  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
-  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
-  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
-  if (GROUP_VIBES) {
-    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
-  }
-  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
-  html += '</div></div>';
-
-  // Media tab (hidden by default)
-  html += '<div class="p-5" id="detail-media" style="display:none;">';
-  html += '<p class="text-xs text-crab-sand-dim mb-3">Videos, photos, and media for ' + dn + '.</p>';
-
-  // Coordinator custom media
-  if (customMedia.length > 0) {
-    html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Picked by the organizer</p>';
-    html += '<div class="media-grid mb-6">';
-    customMedia.forEach(function(m) {
-      var ytId = youtubeIdFromUrl(m.url);
-      html += '<div class="media-card">';
-      if (ytId) {
-        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
-      } else {
-        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      }
-      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-  }
-
-  // Photos (Pexels)
-  html += '<div id="photo-section-' + sid + '" style="display:none;">';
-  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Photos</p>';
-  html += '<div class="media-grid" id="photo-grid-' + sid + '"></div>';
-  html += '</div>';
-
-  // Auto-fetched YouTube
-  html += '<div id="yt-section-' + sid + '" style="display:none;">';
-  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Videos</p>';
-  html += '<div class="media-grid" id="yt-grid-' + sid + '"></div>';
-  html += '</div>';
-
-  html += '</div>'; // end media tab
-
-  html += '</div>'; // end card
-
-  detailEl.innerHTML = html;
-
-  // Load photos and videos
-  loadInvitePhotos(sid, dn);
-  loadInviteYouTube(sid, dn);
-}
-
-function switchDetailTab(tab, btn) {
-  document.getElementById('detail-pins').style.display = tab === 'pins' ? '' : 'none';
-  document.getElementById('detail-media').style.display = tab === 'media' ? '' : 'none';
-  btn.parentElement.querySelectorAll('.detail-tab').forEach(function(b) { b.classList.remove('active'); });
-  btn.classList.add('active');
 }
 
 function youtubeIdFromUrl(url) {
