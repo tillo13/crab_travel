@@ -203,7 +203,7 @@ def auth_callback():
                     # Redirect to pending join if there was one
                     pending_join = session.pop('pending_join', None)
                     if pending_join:
-                        return redirect(f"/in/{pending_join}")
+                        return redirect(f"/to/{pending_join}")
                     return redirect('/dashboard')
                 else:
                     logger.error("🔑 DB upsert returned None")
@@ -277,7 +277,7 @@ def api_create_plan():
     data = request.get_json()
     if not data or not data.get('title'):
         return jsonify({'error': 'Title is required'}), 400
-    invite_token = generate_token()
+    invite_token = generate_token(6)
     plan = create_plan(user['id'], data, invite_token)
     if not plan:
         return jsonify({'error': 'Failed to create plan'}), 500
@@ -316,11 +316,12 @@ def api_delete_plan(plan_id):
 
 
 @app.route('/join/<invite_token>')
-def join_plan(invite_token):
-    return redirect(f'/in/{invite_token}', code=301)
-
-
 @app.route('/in/<invite_token>')
+def join_plan(invite_token):
+    return redirect(f'/to/{invite_token}', code=301)
+
+
+@app.route('/to/<invite_token>')
 def invite_page(invite_token):
     plan = get_plan_by_invite_token(invite_token)
     if not plan:
@@ -635,6 +636,46 @@ def api_delete_destination(plan_id, suggestion_id):
         return jsonify({'error': 'Failed to delete destination'}), 500
 
     logger.info(f"🗑️ Destination {suggestion_id} deleted from plan {plan_id} by {user['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/pin', methods=['POST'])
+@api_auth_required
+def api_add_pin(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can add pins'}), 403
+
+    data = request.get_json()
+    name = (data.get('name') or '').strip() if data else ''
+    if not name:
+        return jsonify({'error': 'Name required'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    category = data.get('category', 'things_to_do')
+    if category not in ('stays', 'things_to_do', 'food_and_drink', 'upcoming_events'):
+        return jsonify({'error': 'Invalid category'}), 400
+
+    pin = {'name': name, 'description': data.get('description', ''), 'image_search': name}
+    url = (data.get('url') or '').strip()
+    if url:
+        pin['url'] = url
+    price_map = {'stays': '$$', 'things_to_do': '$$', 'food_and_drink': '$$', 'upcoming_events': ''}
+    pin['price_hint'] = price_map.get(category, '')
+
+    dest_data = suggestion.get('destination_data') or {}
+    card = dest_data.get('card', {})
+    items = card.get(category, [])
+    items.insert(0, pin)  # Add to top
+    card[category] = items
+    dest_data['card'] = card
+    update_destination_data(suggestion_id, dest_data)
+
+    logger.info(f"📌 Custom pin added: {name} to {suggestion['destination_name']}")
     return jsonify({'success': True})
 
 

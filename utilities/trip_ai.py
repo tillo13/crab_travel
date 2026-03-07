@@ -163,8 +163,20 @@ GROUP ({pref_summary['member_count']} members):
     vibes_context = ""
     vibes_instruction = ""
     if group_vibes:
-        vibes_context = f"\n\n⚠️ CRITICAL — GROUP VIBES: {group_vibes}\nThis is the #1 priority. The group told us exactly what they're into. AT LEAST HALF of all activities, restaurants, and events MUST directly relate to '{group_vibes}'. For example if they said 'baseball and beer', the top activities should be stadiums, spring training facilities, sports bars, breweries, baseball museums, etc. Generic tourist stuff is secondary — lead with what they asked for."
-        vibes_instruction = f"\n\n⚠️ REMINDER: The group specifically said they're into '{group_vibes}'. Your things_to_do, food_and_drink, and upcoming_events MUST be dominated by {group_vibes}-related picks. Put the most relevant ones FIRST in each list. If you can't find enough {group_vibes}-specific venues, include the closest alternatives but ALWAYS lead with on-theme picks."
+        vibes_context = f"""
+
+=== THIS IS THE MOST IMPORTANT PART ===
+GROUP VIBES: {group_vibes}
+
+The coordinator told us EXACTLY what the group wants: "{group_vibes}".
+This overrides everything. EVERY category must reflect this:
+- things_to_do: ALL 8 activities must relate to {group_vibes}. Stadiums, arenas, breweries, sports bars, related museums, themed tours — whatever matches "{group_vibes}" in {destination_name}.
+- food_and_drink: ALL 5 must be {group_vibes}-themed. Sports bars, breweries, taprooms, themed restaurants. No generic fine dining unless it fits the vibe.
+- upcoming_events: ALL must be {group_vibes}-related. Games, tournaments, festivals, tastings, leagues.
+- stays: Pick hotels NEAR the {group_vibes} action. Walking distance to stadiums, brewery districts, etc.
+DO NOT include generic tourist activities that don't relate to "{group_vibes}". The whole point is that this board should make the group say "YES, this is exactly what we want."
+=== END CRITICAL SECTION ==="""
+        vibes_instruction = f"\n\nFINAL REMINDER: Every single pin on this board should make someone who loves '{group_vibes}' excited. If a pin doesn't relate to '{group_vibes}', replace it with one that does."
 
     prompt = f"""You are a local expert and event researcher for {destination_name}. Research this destination thoroughly for a group trip.
 

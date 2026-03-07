@@ -592,7 +592,7 @@ def create_plan(organizer_id, data, invite_token):
             INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token,
                 travel_window_start, travel_window_end, group_vibes)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING plan_id, title, invite_token
+            RETURNING *
         """, (
             organizer_id,
             data['title'],

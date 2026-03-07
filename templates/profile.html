@@ -4,7 +4,7 @@
 <div class="max-w-2xl mx-auto animate-in">
 
 <!-- Google account info -->
-<div class="flex items-center gap-4 mb-8">
+<div class="flex items-center gap-4 mb-6">
   {% if session.user.picture %}
   <img src="{{ session.user.picture }}" class="w-16 h-16 rounded-full ring-2 ring-white/10" alt="">
   {% else %}
@@ -16,47 +16,31 @@
   </div>
 </div>
 
-<p class="text-crab-sand-dim mb-8 text-sm">All fields are optional. The more you fill in, the better we can match you to plans and pre-fill your info when you join trips.</p>
+<p class="text-crab-sand-dim mb-8 text-sm">All fields are optional. The more you fill in, the better CrabAI can match you to plans and pre-fill your info when you join trips.</p>
 
-<form id="profile-form" class="space-y-6">
+<form id="profile-form" class="space-y-5">
 
-  <!-- Home Airport -->
+  <!-- Home airport / city -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Home airport</label>
-    <p class="text-xs text-crab-sand-dim mb-1">IATA code — used for flight price tracking</p>
-    <input type="text" name="home_airport" placeholder="e.g. PHX, JFK, LAX" maxlength="4"
-      value="{{ profile.home_airport or '' }}"
-      class="w-32 px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm uppercase">
+    <label class="block font-semibold font-display mb-1 text-sm">Where are you based?</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Airport code or city — e.g. PHX, JFK, "Scottsdale, AZ". We'll use this for flight tracking.</p>
+    <input type="text" name="home_airport" placeholder="e.g. PHX or Scottsdale, AZ"
+      value="{{ profile.home_airport or profile.home_location or '' }}"
+      class="input-field">
   </div>
 
-  <!-- Home Location -->
+  <!-- Interests — free text -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Home base</label>
-    <input type="text" name="home_location" placeholder="e.g. Scottsdale, AZ"
-      value="{{ profile.home_location or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
-  </div>
-
-  <!-- Interests -->
-  <div>
-    <label class="block font-semibold font-display mb-2 text-sm">What lights you up?</label>
-    <div id="interest-tiles" class="flex flex-wrap gap-2">
-      {% set all_interests = ['Hiking', 'Nightlife', 'Museums', 'Food Tours', 'Beach', 'Shopping', 'Golf', 'Spa', 'History', 'Music', 'Wine/Beer', 'Adventure Sports', 'Photography', 'Cooking', 'Fishing', 'Skiing', 'Cycling', 'Theatre', 'Pickleball', 'Yoga'] %}
-      {% set current_interests = profile.interests if profile and profile.interests else [] %}
-      {% for interest in all_interests %}
-      <button type="button" onclick="toggleInterest(this)" data-interest="{{ interest }}"
-        class="interest-tile px-3 py-1.5 rounded-full text-sm border cursor-pointer transition-colors
-        {% if interest in current_interests %}bg-crab-coral text-white border-crab-coral{% else %}bg-crab-card border-white/10 hover:border-crab-coral/40{% endif %}">
-        {{ interest }}
-      </button>
-      {% endfor %}
-    </div>
+    <label class="block font-semibold font-display mb-1 text-sm">What lights you up?</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Tell us what you're into — anything goes. CrabAI uses this to find the right stuff for you.</p>
+    <textarea name="interests_text" rows="2" placeholder="e.g. craft beer, baseball, hiking, live music, food tours, spa days, photography..."
+      class="input-field">{{ profile.interests|join(', ') if profile and profile.interests else '' }}</textarea>
   </div>
 
   <!-- Travel Style -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Travel style</label>
-    <div class="flex flex-wrap gap-2">
+    <label class="block font-semibold font-display mb-1 text-sm">Travel style</label>
+    <div class="flex flex-wrap gap-2 mt-1.5">
       {% for style in ['Adventure', 'Relaxation', 'Cultural', 'Foodie', 'Party', 'Outdoors'] %}
       <label class="cursor-pointer">
         <input type="radio" name="travel_style" value="{{ style|lower }}" class="peer hidden"
@@ -69,8 +53,8 @@
 
   <!-- Accommodation -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Accommodation preference</label>
-    <div class="flex flex-wrap gap-2">
+    <label class="block font-semibold font-display mb-1 text-sm">Accommodation preference</label>
+    <div class="flex flex-wrap gap-2 mt-1.5">
       {% for acc in ['Hotel', 'Airbnb', 'Hostel', 'Resort', 'Flexible'] %}
       <label class="cursor-pointer">
         <input type="radio" name="accommodation_preference" value="{{ acc|lower }}" class="peer hidden"
@@ -83,8 +67,8 @@
 
   <!-- Budget Comfort -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Budget comfort</label>
-    <div class="flex flex-wrap gap-2">
+    <label class="block font-semibold font-display mb-1 text-sm">Budget comfort</label>
+    <div class="flex flex-wrap gap-2 mt-1.5">
       {% for level in ['Budget', 'Moderate', 'Premium', 'Luxury'] %}
       <label class="cursor-pointer">
         <input type="radio" name="budget_comfort" value="{{ level|lower }}" class="peer hidden"
@@ -97,25 +81,25 @@
 
   <!-- Dietary -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Dietary needs</label>
+    <label class="block font-semibold font-display mb-1 text-sm">Dietary needs</label>
     <input type="text" name="dietary_needs" placeholder="e.g. vegetarian, nut allergy, gluten-free"
       value="{{ profile.dietary_needs or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
+      class="input-field">
   </div>
 
   <!-- Mobility -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Mobility or accessibility notes</label>
+    <label class="block font-semibold font-display mb-1 text-sm">Mobility or accessibility notes</label>
     <input type="text" name="mobility_notes" placeholder="e.g. limited walking, wheelchair access needed"
       value="{{ profile.mobility_notes or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
+      class="input-field">
   </div>
 
   <!-- Bio -->
   <div>
-    <label class="block font-semibold font-display mb-2 text-sm">Anything else we should know?</label>
-    <textarea name="bio" rows="3" placeholder="Travel quirks, must-haves, deal-breakers..."
-      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">{{ profile.bio or '' }}</textarea>
+    <label class="block font-semibold font-display mb-1 text-sm">Anything else we should know?</label>
+    <textarea name="bio" rows="2" placeholder="Travel quirks, must-haves, deal-breakers..."
+      class="input-field">{{ profile.bio or '' }}</textarea>
   </div>
 
   <div class="flex items-center gap-3">
@@ -128,16 +112,12 @@
 </div>
 
 <script>
-function toggleInterest(el) {
-  el.classList.toggle('bg-crab-coral');
-  el.classList.toggle('text-white');
-  el.classList.toggle('border-crab-coral');
-}
-
 document.getElementById('profile-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;
-  var interests = Array.from(form.querySelectorAll('.interest-tile.bg-crab-coral')).map(el => el.dataset.interest);
+  // Parse interests from textarea — split on commas
+  var interestsRaw = form.interests_text.value.trim();
+  var interests = interestsRaw ? interestsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
   var data = {
     interests: interests,
     travel_style: form.travel_style?.value || null,
@@ -145,7 +125,6 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     budget_comfort: form.budget_comfort?.value || null,
     dietary_needs: form.dietary_needs.value || null,
     mobility_notes: form.mobility_notes.value || null,
-    home_location: form.home_location.value || null,
     home_airport: form.home_airport.value || null,
     bio: form.bio.value || null,
   };
