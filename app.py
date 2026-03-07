@@ -147,9 +147,6 @@ def _research_destination(plan_id, suggestion_id, destination_name, plan):
 
 @app.route('/')
 def index():
-    user = session.get('user')
-    if user:
-        return redirect('/dashboard')
     return render_template('index.html', active_page='home')
 
 
