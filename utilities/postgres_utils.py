@@ -354,6 +354,7 @@ def init_database():
         for col, col_type in [
             ('travel_window_start', 'DATE'),
             ('travel_window_end', 'DATE'),
+            ('group_vibes', 'TEXT'),
         ]:
             try:
                 cursor.execute(f"ALTER TABLE crab.plans ADD COLUMN IF NOT EXISTS {col} {col_type}")
@@ -589,8 +590,8 @@ def create_plan(organizer_id, data, invite_token):
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
             INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token,
-                travel_window_start, travel_window_end)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                travel_window_start, travel_window_end, group_vibes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING plan_id, title, invite_token
         """, (
             organizer_id,
@@ -600,6 +601,7 @@ def create_plan(organizer_id, data, invite_token):
             invite_token,
             data.get('travel_window_start'),
             data.get('travel_window_end'),
+            data.get('group_vibes'),
         ))
         plan = cursor.fetchone()
         conn.commit()

@@ -134,7 +134,7 @@ Be specific — use real places if you know the destination, otherwise create re
         return None, str(e)
 
 
-def generate_destination_card(destination_name, research_data, group_prefs, travel_window=None):
+def generate_destination_card(destination_name, research_data, group_prefs, travel_window=None, group_vibes=None):
     """Use Claude to research a destination — fun things to do, events, activities with dates."""
     flights_summary = []
     for airport, fdata in (research_data.get('flights') or {}).items():
@@ -160,10 +160,14 @@ GROUP ({pref_summary['member_count']} members):
     if travel_window:
         window_context = f"\nTRAVEL WINDOW: {travel_window.get('start', 'flexible')} to {travel_window.get('end', 'flexible')}"
 
+    vibes_context = ""
+    if group_vibes:
+        vibes_context = f"\nGROUP VIBES: The group is specifically into: {group_vibes}. PRIORITIZE activities, venues, and events related to these interests. For example if they said 'baseball and beer', find stadiums, spring training, sports bars, breweries, baseball-themed restaurants, etc."
+
     prompt = f"""You are a local expert and event researcher for {destination_name}. Research this destination thoroughly for a group trip.
 
 DESTINATION: {destination_name}
-{group_context}
+{group_context}{vibes_context}
 {window_context}
 
 FLIGHT DATA:

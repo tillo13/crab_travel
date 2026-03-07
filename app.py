@@ -127,7 +127,8 @@ def _research_destination(plan_id, suggestion_id, destination_name, plan):
             we = plan.get('travel_window_end')
             if ws or we:
                 travel_window = {'start': str(ws) if ws else 'flexible', 'end': str(we) if we else 'flexible'}
-            card = generate_destination_card(destination_name, research, all_prefs, travel_window=travel_window)
+            group_vibes = plan.get('group_vibes')
+            card = generate_destination_card(destination_name, research, all_prefs, travel_window=travel_window, group_vibes=group_vibes)
             update_data = {
                 'destination_data': {'research': research, 'card': card},
                 'avg_flight_cost': research.get('avg_flight_cost'),

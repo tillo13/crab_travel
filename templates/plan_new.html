@@ -78,6 +78,13 @@
       </div>
     </div>
 
+    <!-- Group vibes / interests -->
+    <div>
+      <label class="block text-sm font-medium mb-1.5">What's the group into? <span class="font-normal text-crab-sand-dim opacity-60">(optional)</span></label>
+      <p class="text-xs text-crab-sand-dim mb-2 opacity-60">CrabAI will use this to find the right stuff — e.g. "baseball and beer", "hiking and wine", "nightlife and food tours"</p>
+      <input type="text" name="group_vibes" placeholder="e.g. baseball, craft beer, live music, hiking" class="input-field">
+    </div>
+
     <div>
       <label class="block text-sm font-medium mb-1.5">Description <span class="font-normal text-crab-sand-dim opacity-60">(optional)</span></label>
       <textarea name="description" rows="2" placeholder="Any context for the group..." class="input-field"></textarea>
@@ -120,6 +127,7 @@ document.getElementById('plan-form').addEventListener('submit', async function(e
     title: form.title.value,
     timeframe: form.timeframe.value,
     description: form.description.value || null,
+    group_vibes: form.group_vibes.value || null,
     travel_window_start: form.travel_window_start.value || null,
     travel_window_end: form.travel_window_end.value || null,
     destinations: destinations,
