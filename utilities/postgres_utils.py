@@ -1129,6 +1129,31 @@ def get_destination_suggestion_by_id(suggestion_id):
             conn.close()
 
 
+def update_destination_data(suggestion_id, destination_data):
+    """Update only the destination_data JSONB field without touching other columns."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE crab.destination_suggestions SET destination_data = %s WHERE suggestion_id = %s",
+            (psycopg2.extras.Json(destination_data), suggestion_id),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Update destination data failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def delete_destination_suggestion(suggestion_id):
     conn = None
     cursor = None

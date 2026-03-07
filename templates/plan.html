@@ -46,6 +46,33 @@
   .dest-tab:not(.active):hover { color: rgba(200,194,184,1); }
   html:not(.dark) .dest-tab.active { background: rgba(232,89,58,0.08); }
   html:not(.dark) .dest-tab:not(.active) { color: #9ca3af; }
+  /* Board sub-tabs */
+  .board-tab { cursor:pointer; padding:0.4rem 0.9rem; border-radius:0.4rem; font-size:0.8rem; font-weight:500; transition:all 0.2s; border: 1px solid transparent; }
+  .board-tab.active { background: rgba(232,89,58,0.1); color: #E8593A; border-color: rgba(232,89,58,0.2); }
+  .board-tab:not(.active) { color: rgba(200,194,184,0.5); }
+  .board-tab:not(.active):hover { color: rgba(200,194,184,0.9); }
+  html:not(.dark) .board-tab.active { background: rgba(232,89,58,0.06); }
+  html:not(.dark) .board-tab:not(.active) { color: #9ca3af; }
+  /* Media grid */
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+  .media-card {
+    border-radius: 0.75rem; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease; background: rgba(255,255,255,0.02);
+  }
+  .media-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-1px); }
+  html:not(.dark) .media-card { border-color: rgba(0,0,0,0.08); background: white; }
+  .media-card iframe { width: 100%; aspect-ratio: 16/9; border: 0; display: block; }
+  .media-card img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 200px; }
+  .search-link {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem;
+    border-radius: 0.5rem; font-size: 0.8rem; font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.08); transition: all 0.2s;
+    color: rgba(200,194,184,0.7); text-decoration: none;
+  }
+  .search-link:hover { border-color: rgba(232,89,58,0.3); color: #E8593A; }
+  html:not(.dark) .search-link { border-color: #e5e7eb; color: #6b7280; }
+  html:not(.dark) .search-link:hover { border-color: #E8593A; color: #E8593A; }
   /* Research progress */
   .research-progress { max-width: 28rem; margin: 0 auto; }
   .research-step {
@@ -293,9 +320,14 @@ function renderBoard(dest) {
   if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
   html += '</div></div>';
 
+  // Board sub-tabs
+  html += '<div class="flex items-center gap-2 mb-4">';
+  html += '<button class="board-tab active" onclick="switchBoardTab(\'pins\', this)">Pins</button>';
+  html += '<button class="board-tab" onclick="switchBoardTab(\'media\', this)">Photos & Videos</button>';
+  html += '</div>';
+
   // Pinterest grid of pins
-  html += '<div class="pin-grid">';
-  // Stays
+  html += '<div id="board-pins" class="pin-grid">';
   var dn = dest.destination_name;
   if (card.stays) card.stays.forEach(function(s) { html += pinCard(s, 'stay', dn); });
   if (card.things_to_do) card.things_to_do.forEach(function(t) { html += pinCard(t, 'do', dn); });
@@ -303,7 +335,103 @@ function renderBoard(dest) {
   if (card.upcoming_events) card.upcoming_events.forEach(function(e) { html += pinCard(e, 'event', dn); });
   html += '</div>';
 
+  // Media tab (hidden by default)
+  html += '<div id="board-media" style="display:none;">';
+  html += renderMediaSection(dest);
+  html += '</div>';
+
   board.innerHTML = html;
+}
+
+var _activeBoardTab = 'pins';
+
+function switchBoardTab(tab, btn) {
+  _activeBoardTab = tab;
+  document.getElementById('board-pins').style.display = tab === 'pins' ? '' : 'none';
+  document.getElementById('board-media').style.display = tab === 'media' ? '' : 'none';
+  btn.parentElement.querySelectorAll('.board-tab').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+function youtubeIdFromUrl(url) {
+  var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function renderMediaSection(dest) {
+  var dn = dest.destination_name;
+  var card = dest.destination_data?.card;
+  var customMedia = dest.destination_data?.custom_media || [];
+  var html = '';
+
+  // Search links — smart queries based on AI research
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Explore ' + dn + '</p>';
+  html += '<div class="flex flex-wrap gap-2 mb-4">';
+
+  var queries = [dn + ' travel guide'];
+  if (card) {
+    if (card.things_to_do && card.things_to_do[0]) queries.push(dn + ' ' + card.things_to_do[0].name);
+    if (card.stays && card.stays[0]) queries.push(card.stays[0].name + ' ' + dn);
+    if (card.food_and_drink && card.food_and_drink[0]) queries.push(dn + ' food scene');
+    if (card.upcoming_events && card.upcoming_events[0]) queries.push(card.upcoming_events[0].name + ' ' + dn);
+  }
+
+  // YouTube search links
+  queries.forEach(function(q) {
+    html += '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent(q) + '" target="_blank" rel="noopener" class="search-link">';
+    html += '<span>▶</span> ' + q;
+    html += '</a>';
+  });
+
+  // Google Images link
+  html += '<a href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link">';
+  html += '<span>🖼</span> ' + dn + ' photos';
+  html += '</a>';
+
+  // TikTok search
+  html += '<a href="https://www.tiktok.com/search?q=' + encodeURIComponent(dn + ' travel') + '" target="_blank" rel="noopener" class="search-link">';
+  html += '<span>🎵</span> ' + dn + ' on TikTok';
+  html += '</a>';
+
+  html += '</div></div>';
+
+  // Custom media added by coordinator
+  if (customMedia.length > 0) {
+    html += '<div class="mb-6">';
+    html += '<p class="text-sm font-medium mb-3">Added by your crew</p>';
+    html += '<div class="media-grid">';
+    customMedia.forEach(function(m, i) {
+      var ytId = youtubeIdFromUrl(m.url);
+      html += '<div class="media-card relative">';
+      if (IS_ORGANIZER) {
+        html += '<button onclick="removeMedia(\'' + dest.suggestion_id + '\', ' + i + ')" class="absolute top-2 right-2 z-10 w-6 h-6 bg-black/60 hover:bg-red-500/80 text-white rounded-full text-xs flex items-center justify-center transition-colors">&times;</button>';
+      }
+      if (ytId) {
+        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        html += '<a href="' + m.url + '" target="_blank" rel="noopener"><img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\'p-3 text-xs text-crab-sand-dim\\'>Could not load image</div>\'"></a>';
+      }
+      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Add media input (organizer or any member)
+  html += '<div class="border border-dashed border-white/10 rounded-xl p-4">';
+  html += '<p class="text-sm font-medium mb-2">Add a photo or video</p>';
+  html += '<p class="text-xs text-crab-sand-dim mb-3 opacity-60">Paste a YouTube link or image URL to add it to the board</p>';
+  html += '<div class="flex gap-2 mb-2">';
+  html += '<input type="text" id="media-url-input" placeholder="https://youtube.com/watch?v=... or image URL" class="input-field flex-1">';
+  html += '</div>';
+  html += '<div class="flex gap-2">';
+  html += '<input type="text" id="media-caption-input" placeholder="Caption (optional)" class="input-field flex-1">';
+  html += '<button onclick="addMedia(\'' + dest.suggestion_id + '\')" class="px-4 py-2 bg-crab-coral text-white rounded-lg text-sm font-medium hover:bg-crab-coral-light transition-colors shrink-0">+ Add</button>';
+  html += '</div>';
+  html += '</div>';
+
+  return html;
 }
 
 function renderTabs() {
@@ -393,6 +521,45 @@ function pollDestinations() {
       _pollTimer = null;
     }
   }, 3000);
+}
+
+async function addMedia(suggestionId) {
+  var urlInput = document.getElementById('media-url-input');
+  var captionInput = document.getElementById('media-caption-input');
+  var url = urlInput.value.trim();
+  if (!url) return;
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/media', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url: url, caption: captionInput.value.trim() }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      urlInput.value = '';
+      captionInput.value = '';
+      await loadDestinations();
+      // Stay on media tab
+      setTimeout(function() {
+        var tabs = document.querySelectorAll('.board-tab');
+        if (tabs.length >= 2) switchBoardTab('media', tabs[1]);
+      }, 50);
+    }
+  } catch (e) {}
+}
+
+async function removeMedia(suggestionId, mediaIdx) {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/media/' + mediaIdx, { method: 'DELETE' });
+    var result = await res.json();
+    if (result.success) {
+      await loadDestinations();
+      setTimeout(function() {
+        var tabs = document.querySelectorAll('.board-tab');
+        if (tabs.length >= 2) switchBoardTab('media', tabs[1]);
+      }, 50);
+    }
+  } catch (e) {}
 }
 
 async function deleteDestination(suggestionId, destName) {

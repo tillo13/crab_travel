@@ -19,7 +19,7 @@ from utilities.postgres_utils import (
     add_plan_member, get_plan_members, get_member_for_plan,
     get_plan_preferences, upsert_plan_preferences, get_all_plan_preferences,
     save_member_availability, get_plan_availability, get_availability_overlap,
-    create_destination_suggestion, update_destination_suggestion,
+    create_destination_suggestion, update_destination_suggestion, update_destination_data,
     get_destination_suggestions, get_destination_suggestion_by_id,
     upsert_vote, get_vote_tallies, get_user_votes, lock_plan,
     save_recommendations, get_recommendations, update_recommendation_status,
@@ -635,6 +635,63 @@ def api_delete_destination(plan_id, suggestion_id):
         return jsonify({'error': 'Failed to delete destination'}), 500
 
     logger.info(f"🗑️ Destination {suggestion_id} deleted from plan {plan_id} by {user['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/media', methods=['POST'])
+@api_auth_required
+def api_add_media(plan_id, suggestion_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    data = request.get_json()
+    url = (data.get('url') or '').strip() if data else ''
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+
+    # Basic URL validation
+    if not url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'Invalid URL'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    custom_media = dest_data.get('custom_media', [])
+    custom_media.append({
+        'url': url,
+        'caption': (data.get('caption') or '').strip(),
+        'added_by': user.get('full_name', user['email']),
+    })
+    dest_data['custom_media'] = custom_media
+    update_destination_data(suggestion_id, dest_data)
+
+    logger.info(f"🎬 Media added to {suggestion['destination_name']} by {user['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/media/<int:media_idx>', methods=['DELETE'])
+@api_auth_required
+def api_remove_media(plan_id, suggestion_id, media_idx):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can remove media'}), 403
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    custom_media = dest_data.get('custom_media', [])
+    if 0 <= media_idx < len(custom_media):
+        custom_media.pop(media_idx)
+        dest_data['custom_media'] = custom_media
+        update_destination_data(suggestion_id, dest_data)
+
     return jsonify({'success': True})
 
 
