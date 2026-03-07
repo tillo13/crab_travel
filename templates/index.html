@@ -1,28 +1,228 @@
 {% extends "base.html" %}
-{% block title %}crab.travel — Group Travel, Made Easy{% endblock %}
+{% block title %}crab.travel — Group trips, without the chaos{% endblock %}
+{% block head %}
+<style>
+  .hero-gradient {
+    background: radial-gradient(ellipse at 30% 0%, rgba(232, 89, 58, 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 100%, rgba(13, 148, 136, 0.1) 0%, transparent 50%);
+  }
+  .step-number {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: rgba(232, 89, 58, 0.12);
+    color: #E8593A;
+    flex-shrink: 0;
+  }
+  .scroll-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .scroll-reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .float-tag {
+    position: absolute;
+    padding: 0.3rem 0.7rem;
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(26, 37, 64, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(240, 234, 224, 0.7);
+    backdrop-filter: blur(8px);
+    animation: float 6s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="text-center py-16 md:py-24">
-  <h1 class="text-4xl md:text-5xl font-bold mb-4">🦀 crab.travel</h1>
-  <p class="text-xl text-gray-600 dark:text-gray-400 mb-8 max-w-lg mx-auto">
-    Plan group trips without the spreadsheets and group text chaos.
-    AI-powered recommendations matched to everyone's preferences.
-  </p>
-  <a href="/login" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors">
-    Get Started
-  </a>
-  <div class="mt-16 grid md:grid-cols-3 gap-8 text-left max-w-3xl mx-auto">
-    <div>
-      <h3 class="font-semibold text-lg mb-2">Share a link</h3>
-      <p class="text-gray-600 dark:text-gray-400 text-sm">Create a plan, share the invite link. No app download needed — everyone joins in seconds.</p>
+<div class="-mx-4 md:-mx-6 -mt-6 md:-mt-8">
+
+  <!-- Hero -->
+  <section class="hero-gradient px-4 md:px-6 py-20 md:py-32 relative overflow-hidden">
+    <div class="max-w-3xl mx-auto text-center relative z-10">
+      <div class="animate-in">
+        <p class="text-sm font-medium text-crab-coral mb-4 tracking-widest uppercase">For groups that actually happen</p>
+        <h1 class="text-4xl md:text-6xl font-display leading-tight mb-6">
+          Your group trip shouldn't live<br class="hidden md:block"> in a spreadsheet.
+        </h1>
+        <p class="text-lg md:text-xl text-crab-sand-dim max-w-2xl mx-auto mb-10 font-light leading-relaxed">
+          Pick some destinations. AI finds the fun stuff. Share one link with your crew.
+          Everyone votes, drops their airport, marks their blackout dates. Done.
+        </p>
+      </div>
+      <div class="animate-in stagger-2">
+        <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+          Start planning
+        </a>
+        <p class="text-xs text-crab-sand-dim mt-4 opacity-50">Free. No credit card. Just a Google account.</p>
+      </div>
     </div>
-    <div>
-      <h3 class="font-semibold text-lg mb-2">Preferences match</h3>
-      <p class="text-gray-600 dark:text-gray-400 text-sm">Each member shares their budget, interests, and dietary needs. AI finds options that work for the whole group.</p>
+
+    <!-- Floating tags -->
+    <div class="hidden md:block">
+      <span class="float-tag" style="top: 25%; left: 8%; animation-delay: 0s;">SEA ✈️</span>
+      <span class="float-tag" style="top: 60%; left: 12%; animation-delay: 1.5s;">ORD ✈️</span>
+      <span class="float-tag" style="top: 30%; right: 8%; animation-delay: 0.8s;">JFK ✈️</span>
+      <span class="float-tag" style="top: 65%; right: 10%; animation-delay: 2.2s;">LAX ✈️</span>
+      <span class="float-tag" style="top: 45%; left: 5%; animation-delay: 3s;">DEN ✈️</span>
     </div>
-    <div>
-      <h3 class="font-semibold text-lg mb-2">Split costs</h3>
-      <p class="text-gray-600 dark:text-gray-400 text-sm">Track who paid what. See who owes whom. No more Venmo math.</p>
+  </section>
+
+  <!-- How It Works -->
+  <section class="px-4 md:px-6 py-20 md:py-28">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-14">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Three steps to kill the group text</h2>
+        <p class="text-crab-sand-dim">From "we should do something" to "we're booked" — without the chaos.</p>
+      </div>
+
+      <div class="space-y-8">
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">1</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Create a plan</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">Add a few destination ideas. AI researches each one — fun things to do, upcoming events, best dates to visit. Like an Evite, but way smarter.</p>
+          </div>
+        </div>
+
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">2</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Share one link</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">Everyone sees the destinations with real activities and events. They vote, enter their airport, and mark dates they can't go. Takes 2 minutes.</p>
+          </div>
+        </div>
+
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">3</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Pick your winner</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">See which destination your group is most excited about. Everyone's airport and schedule is already collected. All that's left is booking.</p>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
+
+  <!-- The Problem -->
+  <section class="px-4 md:px-6 py-16 md:py-24 border-t border-b border-white/5">
+    <div class="max-w-2xl mx-auto scroll-reveal">
+      <blockquote class="text-center">
+        <p class="text-2xl md:text-3xl font-display leading-relaxed mb-6">
+          Every group trip starts the same way.
+          <span class="text-crab-coral">Endless group texts.</span>
+          A spreadsheet nobody updates.
+          <span class="text-crab-coral">Three months later</span> — still no plan.
+        </p>
+        <footer class="text-sm text-crab-sand-dim">
+          There had to be a better way. So we built one.
+        </footer>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- What's Different -->
+  <section class="px-4 md:px-6 py-20 md:py-28">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Not a booking site.</h2>
+        <p class="text-xl text-crab-sand-dim font-light">A coordination layer.</p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6 scroll-reveal">
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-crab-coral/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-crab-coral" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">AI-powered research</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Add a city and AI finds the best things to do, upcoming events, festivals, and ideal dates to visit.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-crab-teal/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-crab-teal" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Everyone weighs in</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Vote on destinations, share airports, mark blackout dates. The group decides together — no more one person doing all the work.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">One link does it all</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Destinations, votes, who's in, schedules, activities. One link replaces 4 spreadsheets and a group chat.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI keeps working -->
+  <section class="px-4 md:px-6 py-20 md:py-28 border-t border-white/5">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Plan early. We'll watch prices for you.</h2>
+        <p class="text-xl text-crab-sand-dim font-light">Like Scott's Cheap Flights, but for your specific group.</p>
+      </div>
+
+      <div class="scroll-reveal grid md:grid-cols-2 gap-6">
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Set it and forget it</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Add your destinations, airports, and dates. Our AI checks prices every night and builds a history of what flights and hotels cost over time. The more data you give, the smarter it gets.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Know when to book</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">See price trends for every member's route. Get notified when prices drop below your budget or hit a historical low. Check your dashboard anytime or get a daily digest.</p>
+        </div>
+      </div>
+
+      <div class="scroll-reveal text-center mt-8">
+        <p class="text-sm text-crab-sand-dim max-w-lg mx-auto">The best group trips are planned months in advance. Start now, lock in dates, and let the AI do the price watching while you live your life.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="px-4 md:px-6 py-20 md:py-28 text-center" style="background: linear-gradient(to bottom, transparent, rgba(232, 89, 58, 0.06));">
+    <div class="scroll-reveal">
+      <h2 class="text-3xl md:text-4xl font-display mb-4">Ready to ditch the spreadsheet?</h2>
+      <p class="text-crab-sand-dim mb-8 max-w-md mx-auto">Create a plan, share a link, and let your crew decide together. It takes 5 minutes.</p>
+      <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+        Start planning
+      </a>
+    </div>
+  </section>
+
 </div>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.scroll-reveal').forEach(el => observer.observe(el));
+</script>
 {% endblock %}

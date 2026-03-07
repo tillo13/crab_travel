@@ -1,405 +1,280 @@
 {% extends "base.html" %}
 {% block title %}{{ plan.title }} — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .pin-grid {
+    columns: 2;
+    column-gap: 0.75rem;
+  }
+  @media (min-width: 768px) { .pin-grid { columns: 3; } }
+  @media (min-width: 1024px) { .pin-grid { columns: 4; } }
+  .pin {
+    break-inside: avoid;
+    margin-bottom: 0.75rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease;
+    cursor: default;
+  }
+  .pin:hover {
+    border-color: rgba(232,89,58,0.25);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+  }
+  .pin-img {
+    width: 100%;
+    height: auto;
+    min-height: 100px;
+    object-fit: cover;
+    display: block;
+    background: rgba(255,255,255,0.03);
+  }
+  .cat-stay { border-left: 3px solid #14B8A6; }
+  .cat-do { border-left: 3px solid #E8593A; }
+  .cat-food { border-left: 3px solid #F59E0B; }
+  .cat-event { border-left: 3px solid #8B5CF6; }
+  .cat-badge-stay { background: rgba(20,184,166,0.12); color: #14B8A6; }
+  .cat-badge-do { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .cat-badge-food { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
+  html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
+  html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+  .dest-tab { cursor:pointer; padding:0.5rem 1rem; border-radius:0.5rem; font-size:0.9rem; font-weight:500; transition:all 0.2s; }
+  .dest-tab.active { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .dest-tab:not(.active) { color: rgba(200,194,184,0.6); }
+  .dest-tab:not(.active):hover { color: rgba(200,194,184,1); }
+  html:not(.dark) .dest-tab.active { background: rgba(232,89,58,0.08); }
+  html:not(.dark) .dest-tab:not(.active) { color: #9ca3af; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="flex items-center justify-between mb-6">
+<div class="animate-in">
+
+<div class="flex items-center justify-between mb-4">
   <div>
-    <h1 class="text-2xl font-bold">{{ plan.title }}</h1>
-    <p class="text-gray-500 dark:text-gray-400 text-sm">
+    <h1 class="text-2xl font-display">{{ plan.title }}</h1>
+    <p class="text-crab-sand-dim text-sm">
       {{ plan.organizer_name }}
-      {% if plan.timeframe %} · {{ plan.timeframe }}{% endif %}
+      {% if plan.timeframe %} · {{ plan.timeframe|replace('-', ' ')|title }}{% endif %}
+      {% if plan.travel_window_start and plan.travel_window_end %}
+       · {{ plan.travel_window_start.strftime('%b %Y') }} – {{ plan.travel_window_end.strftime('%b %Y') }}
+      {% endif %}
     </p>
   </div>
   {% if is_organizer %}
-  <span class="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">Organizer</span>
+  <span class="text-xs bg-crab-coral/10 text-crab-coral px-2 py-1 rounded-full">Organizer</span>
   {% endif %}
 </div>
 
 {% if plan.description %}
-<p class="text-sm text-gray-600 dark:text-gray-300 mb-6">{{ plan.description }}</p>
+<p class="text-sm text-crab-sand-dim mb-4">{{ plan.description }}</p>
 {% endif %}
 
 <!-- Invite link -->
 {% if is_organizer %}
-<div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <label class="block font-semibold mb-2 text-sm">Invite link — share with your crew</label>
+<div class="bg-crab-card/40 rounded-xl border border-white/6 p-4 mb-6">
+  <label class="block font-semibold mb-2 text-sm">Share this link with your crew</label>
   <div class="flex gap-2">
     <input type="text" id="invite-link" readonly
-      value="{{ request.host_url }}join/{{ plan.invite_token }}"
-      class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 text-sm font-mono">
+      value="{{ request.host_url }}in/{{ plan.invite_token }}"
+      class="flex-1 px-3 py-2 rounded-lg border border-white/10 bg-crab-navy-light text-crab-sand-dim text-sm font-mono">
     <button onclick="copyInvite()" id="copy-btn"
-      class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Copy</button>
+      class="px-4 py-2 bg-crab-coral text-white rounded-lg text-sm font-medium hover:bg-crab-coral-light">Copy</button>
   </div>
 </div>
 {% endif %}
 
-<!-- Members -->
-<div class="mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold">Members ({{ all_prefs|length }})</h2>
-    <a href="/plan/{{ plan.plan_id }}/preferences" class="text-blue-600 dark:text-blue-400 text-sm hover:underline">My Preferences</a>
+<!-- Members strip -->
+<div class="flex items-center gap-3 mb-6 overflow-x-auto pb-1">
+  <span class="text-sm font-medium shrink-0">{{ members|length }} {{ 'person' if members|length == 1 else 'people' }}:</span>
+  {% for m in members %}
+  <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1.5 shrink-0">
+    <span class="text-sm">{{ m.display_name }}</span>
+    {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
   </div>
-  {% if all_prefs %}
-  <div class="space-y-2">
-    {% for m in all_prefs %}
-    <div class="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
-      <div>
-        <span class="font-medium text-sm">{{ m.display_name }}</span>
-        {% if m.role == 'organizer' %}
-        <span class="ml-2 text-xs text-blue-600 dark:text-blue-400">organizer</span>
-        {% endif %}
-        {% if m.home_airport %}
-        <span class="ml-2 text-xs text-gray-400">{{ m.home_airport }}</span>
-        {% endif %}
-      </div>
-      <div class="flex items-center gap-3">
-        {% if m.completed %}
-        <span class="text-xs text-green-600 dark:text-green-400">prefs done</span>
-        {% else %}
-        <span class="text-xs text-gray-400">prefs pending</span>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="text-gray-500 dark:text-gray-400 text-sm">No members yet. Share the invite link!</p>
-  {% endif %}
-</div>
-
-<!-- Calendar Sync + Availability -->
-<div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold">Availability</h2>
-    <button onclick="syncMyCalendar()" id="sync-cal-btn"
-      class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Sync My Calendar</button>
-  </div>
-  <p id="sync-status" class="text-sm text-gray-500 dark:text-gray-400 mb-3">
-    Sync your Google Calendar so we can find dates that work for everyone.
-  </p>
-  <div id="availability-grid">
-    <p class="text-sm text-gray-400">Loading availability...</p>
-  </div>
-</div>
-
-<!-- Destination Suggestions -->
-{% if not plan.locked_destination %}
-<div class="mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold">Destinations</h2>
-    <button onclick="document.getElementById('suggest-modal').classList.remove('hidden')"
-      class="text-sm text-blue-600 dark:text-blue-400 hover:underline">+ Suggest a Destination</button>
-  </div>
-
-  <div id="destinations-list">
-    <p class="text-sm text-gray-400">Loading destinations...</p>
-  </div>
-
-  <div class="mt-3">
-    <button onclick="suggestAnywhere()" id="anywhere-btn"
-      class="text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
-      Not sure? Let AI suggest destinations based on group preferences
-    </button>
-    <div id="anywhere-results" class="mt-3 hidden"></div>
-  </div>
-</div>
-
-  </div>
-
-<!-- Suggest destination modal -->
-<div id="suggest-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-  <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-    <h3 class="text-lg font-semibold mb-4">Suggest a Destination</h3>
-    <input type="text" id="dest-input" placeholder="e.g. Reykjavik, Iceland"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 text-sm mb-4">
-    <div class="flex gap-2 justify-end">
-      <button onclick="document.getElementById('suggest-modal').classList.add('hidden')"
-        class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button>
-      <button onclick="submitDestination()" id="submit-dest-btn"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Research It</button>
-    </div>
-    <p id="dest-status" class="text-sm mt-2 hidden"></p>
-  </div>
-</div>
-{% endif %}
-
-<!-- Preference summary + Generate button -->
-{% if is_organizer and all_prefs %}
-{% set completed_count = all_prefs|selectattr('completed')|list|length %}
-{% set total_count = all_prefs|length %}
-<div class="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-  <div class="flex items-center justify-between mb-2">
-    <h3 class="font-semibold text-sm">Preference Summary</h3>
-    <button onclick="generateRecs()" id="gen-btn"
-      class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-      {% if completed_count == 0 %}disabled{% endif %}>
-      {{ 'Regenerate Recommendations' if recs else 'Generate Recommendations' }}
-    </button>
-  </div>
-  <p class="text-sm text-gray-600 dark:text-gray-300">{{ completed_count }}/{{ total_count }} members have filled in preferences.</p>
-  {% if completed_count > 0 %}
-  {% set budgets = all_prefs|selectattr('budget_min')|list %}
-  {% if budgets %}
-  <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">Budget range: ${{ (budgets|map(attribute='budget_min')|min // 100) }} – ${{ (budgets|map(attribute='budget_max')|max // 100) }}</p>
-  {% endif %}
-  {% endif %}
-  <p id="gen-status" class="text-sm mt-2 hidden"></p>
-</div>
-{% endif %}
-
-<!-- Recommendations (post lock-in) -->
-{% if recs %}
-<div class="mb-6">
-  <h2 class="text-lg font-semibold mb-3">Recommendations</h2>
-
-  {% for category in ['hotel', 'activity', 'restaurant'] %}
-  {% set cat_recs = recs|selectattr('category', 'equalto', category)|list %}
-  {% if cat_recs %}
-  <h3 class="font-semibold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-4 mb-2">
-    {{ 'Hotels' if category == 'hotel' else ('Activities' if category == 'activity' else 'Restaurants') }}
-  </h3>
-  <div class="space-y-3">
-    {% for r in cat_recs %}
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4
-      {% if r.status == 'approved' %}border-green-400 dark:border-green-600{% elif r.status == 'rejected' %}opacity-50{% endif %}"
-      id="rec-{{ r.recommendation_id }}">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="font-semibold text-sm">{{ r.title }}</span>
-            {% if r.compatibility_score %}
-            <span class="text-xs px-2 py-0.5 rounded-full
-              {% if r.compatibility_score >= 80 %}bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300
-              {% elif r.compatibility_score >= 60 %}bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300
-              {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300{% endif %}">
-              {{ r.compatibility_score }}% match
-            </span>
-            {% endif %}
-          </div>
-          {% if r.description %}
-          <p class="text-sm text-gray-600 dark:text-gray-300 mb-1">{{ r.description }}</p>
-          {% endif %}
-          {% if r.price_estimate %}
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ r.price_estimate }}</p>
-          {% endif %}
-          {% if r.ai_reasoning %}
-          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 italic">{{ r.ai_reasoning }}</p>
-          {% endif %}
-        </div>
-        {% if is_organizer %}
-        <div class="flex gap-1 shrink-0">
-          {% if r.status != 'approved' %}
-          <button onclick="setRecStatus('{{ r.recommendation_id }}', 'approved')"
-            class="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200">Approve</button>
-          {% endif %}
-          {% if r.status != 'rejected' %}
-          <button onclick="setRecStatus('{{ r.recommendation_id }}', 'rejected')"
-            class="text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200">Reject</button>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
   {% endfor %}
 </div>
-{% endif %}
 
-<!-- Deal Desk (organizer only) -->
-{% if is_organizer %}
-<div class="mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <div>
-      <h2 class="text-lg font-semibold">Deal Desk</h2>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Best deals right now for your group — pick ones to share</p>
-    </div>
-    <button onclick="loadPlanDeals()" id="refresh-deals-btn"
-      class="text-xs text-blue-600 dark:text-blue-400 hover:underline">Refresh</button>
-  </div>
-  <div id="plan-deals-feed" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-    <div class="col-span-full text-center py-6 text-gray-400 text-sm animate-pulse">Loading deals for your group...</div>
-  </div>
+<!-- Destination tabs -->
+<div id="dest-tabs" class="flex items-center gap-1 mb-6 flex-wrap">
+  <span class="text-sm text-crab-sand-dim mr-2">Destinations:</span>
+  <!-- populated by JS -->
 </div>
-{% endif %}
+
+<!-- Destination board (Pinterest-style) -->
+<div id="dest-board">
+  <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
+</div>
+
+<!-- Add destination -->
+<div class="mt-6 flex gap-2">
+  <input type="text" id="dest-input" placeholder="Add a destination... (e.g. Nashville, Tokyo, Lisbon)"
+    class="input-field flex-1" onkeydown="if(event.key==='Enter'){addDestination()}">
+  <button onclick="addDestination()" id="add-dest-btn"
+    class="px-5 py-2 bg-crab-coral text-white rounded-lg text-sm font-semibold hover:bg-crab-coral-light transition-all">+ Add</button>
+</div>
+
+</div><!-- /animate-in -->
 
 <script>
+const PLAN_ID = '{{ plan.plan_id }}';
+let _destinations = [];
+let _activeDestIdx = 0;
+
 function copyInvite() {
-  var input = document.getElementById('invite-link');
-  navigator.clipboard.writeText(input.value).then(function() {
+  navigator.clipboard.writeText(document.getElementById('invite-link').value).then(function() {
     var btn = document.getElementById('copy-btn');
     btn.textContent = 'Copied!';
     setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
   });
 }
 
-async function syncMyCalendar() {
-  var btn = document.getElementById('sync-cal-btn');
-  var status = document.getElementById('sync-status');
-  btn.textContent = 'Syncing...';
-  status.textContent = 'Scanning your Google Calendar...';
-  status.className = 'text-sm text-blue-600 dark:text-blue-400 mb-3';
-
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/sync-calendar', { method: 'POST' });
-    var result = await res.json();
-    if (result.success) {
-      status.textContent = 'Calendar synced! Found ' + result.data.windows + ' free windows.';
-      status.className = 'text-sm text-green-600 dark:text-green-400 mb-3';
-      btn.textContent = 'Re-sync';
-      loadAvailability();
-    } else {
-      status.textContent = result.error || 'Sync failed';
-      status.className = 'text-sm text-red-600 dark:text-red-400 mb-3';
-      btn.textContent = 'Try Again';
-    }
-  } catch (e) {
-    status.textContent = 'Network error';
-    status.className = 'text-sm text-red-600 dark:text-red-400 mb-3';
-    btn.textContent = 'Try Again';
-  }
+function unsplashUrl(query, w, h) {
+  return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
 }
 
-async function loadAvailability() {
-  var grid = document.getElementById('availability-grid');
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/availability');
-    var result = await res.json();
-    if (result.success && result.data.windows.length > 0) {
-      var html = '<div class="space-y-2">';
-      result.data.windows.forEach(function(w) {
-        var pct = Math.round((w.available_count / w.total_members) * 100);
-        var color = pct >= 80 ? 'green' : (pct >= 50 ? 'yellow' : 'gray');
-        html += '<div class="flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-600">';
-        html += '<div>';
-        html += '<span class="font-medium text-sm">' + w.start + ' to ' + w.end + '</span>';
-        html += '<span class="ml-2 text-xs text-gray-400">' + w.days + ' days</span>';
-        html += '</div>';
-        html += '<div class="flex items-center gap-2">';
-        html += '<div class="w-24 bg-gray-200 dark:bg-gray-600 rounded-full h-2">';
-        html += '<div class="bg-' + color + '-500 h-2 rounded-full" style="width:' + pct + '%"></div>';
-        html += '</div>';
-        html += '<span class="text-xs font-medium">' + w.available_count + '/' + w.total_members + '</span>';
-        html += '</div></div>';
-      });
-      html += '</div>';
-      grid.innerHTML = html;
-    } else {
-      grid.innerHTML = '<p class="text-sm text-gray-400">No availability data yet. Members need to sync their calendars.</p>';
-    }
-  } catch (e) {
-    grid.innerHTML = '<p class="text-sm text-gray-400">Could not load availability.</p>';
-  }
+function pinCard(item, type) {
+  var catClass = {stay:'cat-stay',do:'cat-do',food:'cat-food',event:'cat-event'}[type] || '';
+  var badgeClass = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'}[type] || '';
+  var label = {stay:'Stay',do:'Activity',food:'Eat & Drink',event:'Event'}[type] || type;
+  var imgQuery = item.image_search || item.name;
+  var imgH = type === 'stay' ? 280 : (type === 'event' ? 200 : 220);
+  var html = '<div class="pin ' + catClass + '">';
+  html += '<img class="pin-img" src="' + unsplashUrl(imgQuery, 400, imgH) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  html += '<div class="p-3">';
+  html += '<div class="flex items-start justify-between gap-2 mb-1">';
+  html += '<span class="font-semibold text-sm leading-snug">' + item.name + '</span>';
+  if (item.price_hint) html += '<span class="text-xs text-crab-sand-dim shrink-0">' + item.price_hint + '</span>';
+  html += '</div>';
+  html += '<span class="inline-block text-xs px-1.5 py-0.5 rounded ' + badgeClass + ' mb-1.5">' + label + '</span>';
+  if (item.description) html += '<p class="text-xs text-crab-sand-dim leading-relaxed">' + item.description + '</p>';
+  if (item.date_range) html += '<p class="text-xs text-purple-400 font-medium mt-1">' + item.date_range + '</p>';
+  if (item.neighborhood) html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-1">' + item.neighborhood + '</p>';
+  html += '</div></div>';
+  return html;
 }
 
-// Load availability and destinations on page load
-loadAvailability();
-{% if not plan.locked_destination %}loadDestinations(); loadVotes();{% endif %}
+function renderBoard(dest) {
+  var board = document.getElementById('dest-board');
+  var card = dest.destination_data?.card;
+
+  if (dest.status === 'researching') {
+    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 animate-pulse">🔍</div><p class="text-crab-sand-dim">AI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
+    return;
+  }
+  if (dest.status === 'error') {
+    board.innerHTML = '<div class="text-center py-16"><p class="text-red-400 mb-2">Research failed for ' + dest.destination_name + '</p><button onclick="retryResearch(\'' + dest.suggestion_id + '\', \'' + dest.destination_name.replace(/'/g, "\\'") + '\')" class="text-sm text-crab-coral hover:underline">Retry</button></div>';
+    return;
+  }
+  if (!card) {
+    board.innerHTML = '<div class="text-center py-16 text-crab-sand-dim"><p>No research data yet.</p></div>';
+    return;
+  }
+
+  var html = '';
+  // Header
+  html += '<div class="mb-6">';
+  html += '<div class="flex items-start justify-between gap-4 mb-3">';
+  html += '<div>';
+  html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
+  if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
+  html += '</div>';
+  html += '<div class="flex items-center gap-2 shrink-0">';
+  html += '<button onclick="vote(\'destination\', \'' + dest.suggestion_id + '\', 1)" class="text-xl hover:scale-110 transition-transform">👍</button>';
+  html += '<span class="text-sm font-semibold min-w-[1.5rem] text-center" id="score-destination-' + dest.suggestion_id + '">0</span>';
+  html += '<button onclick="vote(\'destination\', \'' + dest.suggestion_id + '\', -1)" class="text-xl hover:scale-110 transition-transform">👎</button>';
+  html += '</div></div>';
+  // Meta chips
+  html += '<div class="flex flex-wrap gap-2 text-xs">';
+  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+  html += '</div></div>';
+
+  // Pinterest grid of pins
+  html += '<div class="pin-grid">';
+  // Stays
+  if (card.stays) card.stays.forEach(function(s) { html += pinCard(s, 'stay'); });
+  // Things to do
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { html += pinCard(t, 'do'); });
+  // Food
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { html += pinCard(f, 'food'); });
+  // Events
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { html += pinCard(e, 'event'); });
+  html += '</div>';
+
+  board.innerHTML = html;
+}
+
+function renderTabs() {
+  var tabBar = document.getElementById('dest-tabs');
+  var html = '<span class="text-sm text-crab-sand-dim mr-2 shrink-0">Destinations:</span>';
+  _destinations.forEach(function(d, i) {
+    var active = i === _activeDestIdx ? 'active' : '';
+    var emoji = d.status === 'researching' ? '⏳ ' : '';
+    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + '</button>';
+  });
+  tabBar.innerHTML = html;
+}
+
+function switchDest(idx) {
+  _activeDestIdx = idx;
+  renderTabs();
+  renderBoard(_destinations[idx]);
+  loadVotes();
+}
 
 async function loadDestinations() {
-  var list = document.getElementById('destinations-list');
-  if (!list) return;
   try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/destinations');
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destinations');
     var result = await res.json();
-    if (result.success && result.data.destinations.length > 0) {
-      var html = '<div class="space-y-3">';
-      result.data.destinations.forEach(function(d) {
-        var card = d.destination_data?.card;
-        var research = d.destination_data?.research;
-        html += '<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">';
-        html += '<div class="flex items-start justify-between gap-3">';
-        html += '<div class="flex-1">';
-        html += '<div class="flex items-center gap-2 mb-1">';
-        html += '<span class="font-semibold">' + d.destination_name + '</span>';
-        if (d.status === 'researching') {
-          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 animate-pulse">Researching...</span>';
-        } else if (d.status === 'error') {
-          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">Failed</span>';
-          html += ' <button onclick="retryResearch(\'' + d.suggestion_id + '\', \'' + d.destination_name.replace(/'/g, "\\'") + '\')" class="text-xs text-blue-600 hover:underline ml-1">Retry</button>';
+    if (result.success) {
+      _destinations = result.data.destinations;
+      if (_destinations.length > 0) {
+        if (_activeDestIdx >= _destinations.length) _activeDestIdx = 0;
+        renderTabs();
+        renderBoard(_destinations[_activeDestIdx]);
+        // Auto-poll if researching
+        if (_destinations.some(function(d) { return d.status === 'researching'; })) {
+          pollDestinations();
         }
-        if (d.compatibility_score) {
-          var color = d.compatibility_score >= 80 ? 'green' : (d.compatibility_score >= 60 ? 'yellow' : 'gray');
-          html += '<span class="text-xs px-2 py-0.5 rounded-full bg-' + color + '-100 dark:bg-' + color + '-900 text-' + color + '-700 dark:text-' + color + '-300">' + d.compatibility_score + '% match</span>';
-        }
-        html += '</div>';
-        if (card) {
-          if (card.summary) html += '<p class="text-sm text-gray-600 dark:text-gray-300 mb-2">' + card.summary + '</p>';
-          if (card.weather_note) html += '<p class="text-xs text-gray-400 mb-1">' + card.weather_note + '</p>';
-          if (card.estimated_total_per_person) html += '<p class="text-sm font-medium text-blue-600 dark:text-blue-400">' + card.estimated_total_per_person + ' per person</p>';
-        }
-        if (research && research.flights) {
-          html += '<div class="mt-2 text-xs text-gray-500 dark:text-gray-400">';
-          Object.entries(research.flights).forEach(function([airport, fdata]) {
-            if (fdata.cheapest) {
-              html += '<span class="mr-3">' + airport + ': $' + fdata.cheapest + '</span>';
-            } else if (fdata.flights && fdata.flights[0] && fdata.flights[0].price_range) {
-              html += '<span class="mr-3">' + airport + ': ' + fdata.flights[0].price_range + '</span>';
-            }
-          });
-          html += '</div>';
-        }
-        html += '</div>';
-        html += '</div>';
-        // Vote buttons + suggested by
-        html += '<div class="flex flex-col items-end gap-1">';
-        html += '<div class="flex items-center gap-1">';
-        html += '<button onclick="vote(\'destination\', \'' + d.suggestion_id + '\', 1)" class="vote-btn text-lg px-1 hover:scale-125 transition-transform" data-key="destination:' + d.suggestion_id + '" data-dir="up">&#x1F44D;</button>';
-        html += '<span class="text-xs font-medium min-w-[2rem] text-center" id="score-destination-' + d.suggestion_id + '">0</span>';
-        html += '<button onclick="vote(\'destination\', \'' + d.suggestion_id + '\', -1)" class="vote-btn text-lg px-1 hover:scale-125 transition-transform" data-key="destination:' + d.suggestion_id + '" data-dir="down">&#x1F44E;</button>';
-        html += '</div>';
-        html += '<div class="text-xs text-gray-400">' + (d.suggested_by_name || '') + '</div>';
-        html += '</div>';
-        html += '</div></div>';
-      });
-      html += '</div>';
-      list.innerHTML = html;
-    } else {
-      list.innerHTML = '<p class="text-sm text-gray-400">No destinations suggested yet. Be the first!</p>';
-    }
-    // Auto-poll if any are still researching
-    if (result.success && result.data.destinations.some(function(d) { return d.status === 'researching'; })) {
-      pollDestinations();
+      } else {
+        document.getElementById('dest-tabs').innerHTML = '';
+        document.getElementById('dest-board').innerHTML = '<div class="text-center py-16 border border-dashed border-white/10 rounded-xl"><div class="text-3xl mb-3">🗺️</div><p class="text-crab-sand-dim">Add a destination to get started</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">AI will research stays, activities, food, and events</p></div>';
+      }
     }
   } catch (e) {
-    list.innerHTML = '<p class="text-sm text-gray-400">Could not load destinations.</p>';
+    document.getElementById('dest-board').innerHTML = '<p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Could not load destinations.</p>';
   }
 }
 
-async function submitDestination() {
+async function addDestination() {
   var input = document.getElementById('dest-input');
-  var btn = document.getElementById('submit-dest-btn');
-  var status = document.getElementById('dest-status');
-  if (!input.value.trim()) return;
-
+  var btn = document.getElementById('add-dest-btn');
+  var name = input.value.trim();
+  if (!name) return;
   btn.disabled = true;
-  btn.textContent = 'Researching...';
-  status.textContent = 'Searching flights, hotels, and activities...';
-  status.className = 'text-sm mt-2 text-blue-600 dark:text-blue-400';
-
+  btn.textContent = 'Adding...';
   try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-destination', {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ destination: input.value.trim() }),
+      body: JSON.stringify({ destination: name }),
     });
     var result = await res.json();
     if (result.success) {
-      document.getElementById('suggest-modal').classList.add('hidden');
       input.value = '';
-      loadDestinations();
-      // Poll for research completion
+      await loadDestinations();
+      // Switch to the new one (last)
+      switchDest(_destinations.length - 1);
       pollDestinations();
-    } else {
-      status.textContent = result.error || 'Research failed';
-      status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
     }
-  } catch (e) {
-    status.textContent = 'Network error';
-    status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
-  }
+  } catch (e) {}
   btn.disabled = false;
-  btn.textContent = 'Research It';
+  btn.textContent = '+ Add';
 }
 
 var _pollTimer = null;
@@ -409,81 +284,33 @@ function pollDestinations() {
   _pollCount = 0;
   _pollTimer = setInterval(async function() {
     _pollCount++;
-    if (_pollCount > 40) { // stop after ~2 minutes
+    if (_pollCount > 40) { clearInterval(_pollTimer); _pollTimer = null; return; }
+    await loadDestinations();
+    if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
       clearInterval(_pollTimer);
       _pollTimer = null;
-      return;
-    }
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/destinations');
-    var result = await res.json();
-    if (result.success) {
-      var stillResearching = result.data.destinations.some(function(d) { return d.status === 'researching'; });
-      loadDestinations();
-      if (!stillResearching) {
-        clearInterval(_pollTimer);
-        _pollTimer = null;
-      }
     }
   }, 3000);
 }
 
 async function retryResearch(suggestionId, destName) {
-  // Re-suggest same destination (creates new entry, old one stays as error)
-  var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-destination', {
+  var res = await fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ destination: destName }),
   });
-  if (res.ok) {
-    loadDestinations();
-    pollDestinations();
-  }
-}
-
-async function suggestAnywhere() {
-  var btn = document.getElementById('anywhere-btn');
-  var results = document.getElementById('anywhere-results');
-  btn.textContent = 'Thinking...';
-
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-anywhere', { method: 'POST' });
-    var result = await res.json();
-    if (result.success && result.data.suggestions.length > 0) {
-      var html = '<div class="space-y-2">';
-      result.data.suggestions.forEach(function(s) {
-        html += '<div class="flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-600">';
-        html += '<div>';
-        html += '<span class="font-medium text-sm">' + s.destination + '</span>';
-        html += '<p class="text-xs text-gray-500 dark:text-gray-400">' + s.reason + '</p>';
-        if (s.estimated_cost) html += '<p class="text-xs text-blue-600 dark:text-blue-400">' + s.estimated_cost + '</p>';
-        html += '</div>';
-        html += '<button onclick="quickSuggest(\'' + s.destination.replace(/'/g, "\\'") + '\')" class="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Research</button>';
-        html += '</div>';
-      });
-      html += '</div>';
-      results.innerHTML = html;
-      results.classList.remove('hidden');
-    }
-  } catch (e) {}
-  btn.textContent = 'Not sure? Let AI suggest destinations based on group preferences';
-}
-
-async function quickSuggest(dest) {
-  document.getElementById('dest-input').value = dest;
-  document.getElementById('suggest-modal').classList.remove('hidden');
+  if (res.ok) { loadDestinations(); pollDestinations(); }
 }
 
 async function vote(targetType, targetId, voteVal) {
   try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/vote', {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/vote', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ target_type: targetType, target_id: targetId, vote: voteVal }),
     });
     var result = await res.json();
-    if (result.success) {
-      updateVoteScores(result.data.tallies);
-    }
+    if (result.success) updateVoteScores(result.data.tallies);
   } catch (e) {}
 }
 
@@ -496,119 +323,14 @@ function updateVoteScores(tallies) {
 
 async function loadVotes() {
   try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/votes');
+    var res = await fetch('/api/plan/' + PLAN_ID + '/votes');
     var result = await res.json();
-    if (result.success) {
-      updateVoteScores(result.data.tallies);
-    }
+    if (result.success) updateVoteScores(result.data.tallies);
   } catch (e) {}
 }
 
-async function generateRecs() {
-  var btn = document.getElementById('gen-btn');
-  var status = document.getElementById('gen-status');
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
-  status.textContent = 'Asking AI to analyze group preferences...';
-  status.className = 'text-sm mt-2 text-blue-600 dark:text-blue-400';
-
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/generate', { method: 'POST' });
-    var result = await res.json();
-    if (result.success) {
-      status.textContent = result.data.count + ' recommendations generated!';
-      status.className = 'text-sm mt-2 text-green-600 dark:text-green-400';
-      setTimeout(function() { window.location.reload(); }, 1000);
-    } else {
-      status.textContent = result.error || 'Generation failed';
-      status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
-      btn.disabled = false;
-      btn.textContent = 'Try Again';
-    }
-  } catch (e) {
-    status.textContent = 'Network error. Try again.';
-    status.className = 'text-sm mt-2 text-red-600 dark:text-red-400';
-    btn.disabled = false;
-    btn.textContent = 'Try Again';
-  }
-}
-
-async function setRecStatus(recId, status) {
-  var res = await fetch('/api/recommendation/' + recId + '/status', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ status: status }),
-  });
-  if (res.ok) {
-    window.location.reload();
-  }
-}
-
-{% if is_organizer %}
-async function loadPlanDeals() {
-  var feed = document.getElementById('plan-deals-feed');
-  if (!feed) return;
-  feed.innerHTML = '<div class="col-span-full text-center py-6 text-gray-400 text-sm animate-pulse">Scanning for deals...</div>';
-  try {
-    var res = await fetch('/api/plan/{{ plan.plan_id }}/deals?limit=12');
-    var result = await res.json();
-    if (!result.success || !result.data.deals.length) {
-      feed.innerHTML = '<div class="col-span-full text-center py-6 text-gray-400 text-sm">No deals found right now.</div>';
-      return;
-    }
-    feed.innerHTML = result.data.deals.map(function(d) { return planDealCard(d); }).join('');
-  } catch(e) {
-    feed.innerHTML = '<div class="col-span-full text-center py-6 text-gray-400 text-sm">Could not load deals.</div>';
-  }
-}
-
-function planDealCard(d) {
-  var label = d.deal_type === 'flight' ? '✈️ Flight' : d.deal_type === 'activity' ? '🎟️ Activity' : '🏨 Hotel';
-  var duration = d.duration_mins ? Math.round(d.duration_mins / 60) + 'h' : '';
-  var meta = [d.airline, duration, d.depart_date ? 'Departs ' + d.depart_date : ''].filter(Boolean).join(' · ');
-  var total = d.total_for_group ? '$' + d.total_for_group.toLocaleString() + ' total for ' + d.group_size : '';
-
-  return '<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-col gap-2">' +
-    '<div class="flex items-start justify-between gap-2">' +
-      '<div class="flex-1 min-w-0">' +
-        '<span class="text-xs text-blue-600 dark:text-blue-400 font-medium">' + label + '</span>' +
-        '<h3 class="font-semibold text-sm leading-tight mt-0.5">' + (d.title || d.destination_name) + '</h3>' +
-        (d.origin_name ? '<p class="text-xs text-gray-400">from ' + d.origin_name + '</p>' : '') +
-      '</div>' +
-      '<div class="text-right shrink-0">' +
-        '<div class="text-xl font-bold text-green-600 dark:text-green-400">$' + d.price_per_person + '</div>' +
-        '<div class="text-xs text-gray-400">/ person</div>' +
-      '</div>' +
-    '</div>' +
-    (meta ? '<p class="text-xs text-gray-400">' + meta + '</p>' : '') +
-    '<div class="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 mt-auto">' +
-      '<span class="text-xs text-gray-500">' + total + '</span>' +
-      '<div class="flex gap-1">' +
-        '<button onclick="shareWithGroup(' + JSON.stringify(d) + ')" class="text-xs px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700">Share with group</button>' +
-        '<a href="' + d.deep_link + '" target="_blank" class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">View</a>' +
-      '</div>' +
-    '</div>' +
-  '</div>';
-}
-
-async function shareWithGroup(deal) {
-  // Suggest this destination to the group (creates a destination suggestion with deal data)
-  var res = await fetch('/api/plan/{{ plan.plan_id }}/suggest-destination', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      destination: deal.destination_name,
-      deal_context: deal,
-    }),
-  });
-  var result = await res.json();
-  if (result.success) {
-    alert('Shared with group! It will appear in the Destinations section for everyone to vote on.');
-    loadDestinations();
-  }
-}
-
-loadPlanDeals();
-{% endif %}
+// Init
+loadDestinations();
+loadVotes();
 </script>
 {% endblock %}

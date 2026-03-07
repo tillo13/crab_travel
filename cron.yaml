@@ -1,0 +1,5 @@
+cron:
+- description: "Refresh global deals cache from all travel APIs"
+  url: /tasks/refresh-deals
+  schedule: every 24 hours
+  timezone: America/Los_Angeles

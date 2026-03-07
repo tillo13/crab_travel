@@ -1,20 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Profile — crab.travel{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">Your Travel Profile</h1>
-<p class="text-gray-600 dark:text-gray-400 mb-8 text-sm">This info helps us match you to plans and pre-fill your preferences when you join trips.</p>
+<div class="max-w-2xl mx-auto animate-in">
 
-<form id="profile-form" class="max-w-2xl space-y-6">
+<!-- Google account info -->
+<div class="flex items-center gap-4 mb-8">
+  {% if session.user.picture %}
+  <img src="{{ session.user.picture }}" class="w-16 h-16 rounded-full ring-2 ring-white/10" alt="">
+  {% else %}
+  <div class="w-16 h-16 rounded-full bg-crab-coral text-white flex items-center justify-center text-2xl font-bold">{{ session.user.name[0]|upper }}</div>
+  {% endif %}
+  <div>
+    <h1 class="text-2xl font-display">{{ session.user.name }}</h1>
+    <p class="text-sm text-crab-sand-dim">{{ session.user.email }}</p>
+  </div>
+</div>
+
+<p class="text-crab-sand-dim mb-8 text-sm">All fields are optional. The more you fill in, the better we can match you to plans and pre-fill your info when you join trips.</p>
+
+<form id="profile-form" class="space-y-6">
+
+  <!-- Home Airport -->
+  <div>
+    <label class="block font-semibold font-display mb-2 text-sm">Home airport</label>
+    <p class="text-xs text-crab-sand-dim mb-1">IATA code — used for flight price tracking</p>
+    <input type="text" name="home_airport" placeholder="e.g. PHX, JFK, LAX" maxlength="4"
+      value="{{ profile.home_airport or '' }}"
+      class="w-32 px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm uppercase">
+  </div>
+
+  <!-- Home Location -->
+  <div>
+    <label class="block font-semibold font-display mb-2 text-sm">Home base</label>
+    <input type="text" name="home_location" placeholder="e.g. Scottsdale, AZ"
+      value="{{ profile.home_location or '' }}"
+      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
+  </div>
+
   <!-- Interests -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">What lights you up?</label>
+    <label class="block font-semibold font-display mb-2 text-sm">What lights you up?</label>
     <div id="interest-tiles" class="flex flex-wrap gap-2">
       {% set all_interests = ['Hiking', 'Nightlife', 'Museums', 'Food Tours', 'Beach', 'Shopping', 'Golf', 'Spa', 'History', 'Music', 'Wine/Beer', 'Adventure Sports', 'Photography', 'Cooking', 'Fishing', 'Skiing', 'Cycling', 'Theatre', 'Pickleball', 'Yoga'] %}
       {% set current_interests = profile.interests if profile and profile.interests else [] %}
       {% for interest in all_interests %}
       <button type="button" onclick="toggleInterest(this)" data-interest="{{ interest }}"
         class="interest-tile px-3 py-1.5 rounded-full text-sm border cursor-pointer transition-colors
-        {% if interest in current_interests %}bg-blue-600 text-white border-blue-600{% else %}bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400{% endif %}">
+        {% if interest in current_interests %}bg-crab-coral text-white border-crab-coral{% else %}bg-crab-card border-white/10 hover:border-crab-coral/40{% endif %}">
         {{ interest }}
       </button>
       {% endfor %}
@@ -23,13 +55,13 @@
 
   <!-- Travel Style -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Travel style</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Travel style</label>
     <div class="flex flex-wrap gap-2">
       {% for style in ['Adventure', 'Relaxation', 'Cultural', 'Foodie', 'Party', 'Outdoors'] %}
       <label class="cursor-pointer">
         <input type="radio" name="travel_style" value="{{ style|lower }}" class="peer hidden"
           {% if profile and profile.travel_style == style|lower %}checked{% endif %}>
-        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ style }}</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ style }}</span>
       </label>
       {% endfor %}
     </div>
@@ -37,13 +69,13 @@
 
   <!-- Accommodation -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Accommodation preference</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Accommodation preference</label>
     <div class="flex flex-wrap gap-2">
       {% for acc in ['Hotel', 'Airbnb', 'Hostel', 'Resort', 'Flexible'] %}
       <label class="cursor-pointer">
         <input type="radio" name="accommodation_preference" value="{{ acc|lower }}" class="peer hidden"
           {% if profile and profile.accommodation_preference == acc|lower %}checked{% endif %}>
-        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ acc }}</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ acc }}</span>
       </label>
       {% endfor %}
     </div>
@@ -51,13 +83,13 @@
 
   <!-- Budget Comfort -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Budget comfort</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Budget comfort</label>
     <div class="flex flex-wrap gap-2">
       {% for level in ['Budget', 'Moderate', 'Premium', 'Luxury'] %}
       <label class="cursor-pointer">
         <input type="radio" name="budget_comfort" value="{{ level|lower }}" class="peer hidden"
           {% if profile and profile.budget_comfort == level|lower %}checked{% endif %}>
-        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ level }}</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ level }}</span>
       </label>
       {% endfor %}
     </div>
@@ -65,76 +97,47 @@
 
   <!-- Dietary -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Dietary needs</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Dietary needs</label>
     <input type="text" name="dietary_needs" placeholder="e.g. vegetarian, nut allergy, gluten-free"
       value="{{ profile.dietary_needs or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
   </div>
 
   <!-- Mobility -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Mobility or accessibility notes</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Mobility or accessibility notes</label>
     <input type="text" name="mobility_notes" placeholder="e.g. limited walking, wheelchair access needed"
       value="{{ profile.mobility_notes or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-  </div>
-
-  <!-- Home Location -->
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Home base</label>
-    <input type="text" name="home_location" placeholder="e.g. Scottsdale, AZ"
-      value="{{ profile.home_location or '' }}"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-  </div>
-
-  <!-- Home Airport -->
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Home airport</label>
-    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">IATA code — used for flight price estimates on group trips</p>
-    <input type="text" name="home_airport" placeholder="e.g. PHX, JFK, LAX" maxlength="4"
-      value="{{ profile.home_airport or '' }}"
-      class="w-32 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm uppercase">
-  </div>
-
-  <!-- Calendar Sync -->
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Google Calendar</label>
-    {% if profile and profile.calendar_synced %}
-    <p class="text-sm text-green-600 dark:text-green-400 mb-2">Calendar synced</p>
-    {% else %}
-    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Sync your calendar so we can find dates that work for everyone.</p>
-    {% endif %}
-    <button type="button" onclick="syncCalendar()" id="cal-sync-btn"
-      class="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-      {{ 'Re-sync Calendar' if profile and profile.calendar_synced else 'Sync Calendar' }}
-    </button>
-    <span id="cal-sync-status" class="ml-3 text-sm hidden"></span>
+      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
   </div>
 
   <!-- Bio -->
   <div>
-    <label class="block font-semibold mb-2 text-sm">Anything else we should know?</label>
+    <label class="block font-semibold font-display mb-2 text-sm">Anything else we should know?</label>
     <textarea name="bio" rows="3" placeholder="Travel quirks, must-haves, deal-breakers..."
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">{{ profile.bio or '' }}</textarea>
+      class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">{{ profile.bio or '' }}</textarea>
   </div>
 
-  <button type="submit" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-    Save Profile
-  </button>
-  <span id="save-status" class="ml-3 text-sm text-green-600 dark:text-green-400 hidden">Saved!</span>
+  <div class="flex items-center gap-3">
+    <button type="submit" class="bg-crab-coral text-white px-6 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
+      Save Profile
+    </button>
+    <span id="save-status" class="text-sm text-teal-400 hidden">Saved!</span>
+  </div>
 </form>
+</div>
 
 <script>
 function toggleInterest(el) {
-  el.classList.toggle('bg-blue-600');
+  el.classList.toggle('bg-crab-coral');
   el.classList.toggle('text-white');
-  el.classList.toggle('border-blue-600');
+  el.classList.toggle('border-crab-coral');
 }
 
 document.getElementById('profile-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;
-  var interests = Array.from(form.querySelectorAll('.interest-tile.bg-blue-600')).map(el => el.dataset.interest);
+  var interests = Array.from(form.querySelectorAll('.interest-tile.bg-crab-coral')).map(el => el.dataset.interest);
   var data = {
     interests: interests,
     travel_style: form.travel_style?.value || null,
@@ -157,34 +160,5 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     setTimeout(function() { status.classList.add('hidden'); }, 2000);
   }
 });
-
-async function syncCalendar() {
-  var btn = document.getElementById('cal-sync-btn');
-  var status = document.getElementById('cal-sync-status');
-  btn.disabled = true;
-  btn.textContent = 'Syncing...';
-  status.className = 'ml-3 text-sm text-blue-600 dark:text-blue-400';
-  status.textContent = 'Connecting to Google Calendar...';
-  status.classList.remove('hidden');
-
-  try {
-    var res = await fetch('/api/calendar/sync', { method: 'POST' });
-    var result = await res.json();
-    if (result.success) {
-      status.className = 'ml-3 text-sm text-green-600 dark:text-green-400';
-      status.textContent = result.data.event_count + ' events found, ' + result.data.free_windows.length + ' free windows';
-      btn.textContent = 'Re-sync Calendar';
-    } else {
-      status.className = 'ml-3 text-sm text-red-600 dark:text-red-400';
-      status.textContent = result.error || 'Sync failed';
-      btn.textContent = 'Try Again';
-    }
-  } catch (e) {
-    status.className = 'ml-3 text-sm text-red-600 dark:text-red-400';
-    status.textContent = 'Network error';
-    btn.textContent = 'Try Again';
-  }
-  btn.disabled = false;
-}
 </script>
 {% endblock %}

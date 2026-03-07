@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS crab.plans (
     invite_token VARCHAR(64) UNIQUE NOT NULL,
     status VARCHAR(20) DEFAULT 'planning',
     recurring BOOLEAN DEFAULT FALSE,
+    travel_window_start DATE,
+    travel_window_end DATE,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -67,6 +69,8 @@ CREATE TABLE IF NOT EXISTS crab.plan_members (
     email VARCHAR(255),
     member_token VARCHAR(64) UNIQUE NOT NULL,
     role VARCHAR(20) DEFAULT 'member',
+    home_airport VARCHAR(10),
+    is_flexible BOOLEAN DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(plan_id, user_id)
 );
@@ -151,6 +155,16 @@ CREATE TABLE IF NOT EXISTS crab.expenses (
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_plan ON crab.expenses(plan_id);
+
+-- Member Blackouts (dates people CANNOT travel)
+CREATE TABLE IF NOT EXISTS crab.member_blackouts (
+    pk_id SERIAL PRIMARY KEY,
+    plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES crab.users(pk_id),
+    blackout_start DATE NOT NULL,
+    blackout_end DATE NOT NULL,
+    UNIQUE(plan_id, user_id, blackout_start, blackout_end)
+);
 
 -- AI Usage Tracking
 CREATE TABLE IF NOT EXISTS crab.ai_usage (

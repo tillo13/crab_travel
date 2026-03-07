@@ -303,6 +303,63 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_key ON crab.price_history(canonical_key, result_type, observed_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_date ON crab.price_history(travel_date, canonical_key)")
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.deals_cache (
+                deal_key        TEXT PRIMARY KEY,
+                source          VARCHAR(50) NOT NULL,
+                deal_type       VARCHAR(20) NOT NULL,
+                origin          VARCHAR(10),
+                destination     VARCHAR(100),
+                destination_name TEXT,
+                title           TEXT,
+                airline         VARCHAR(100),
+                price_per_person NUMERIC(10,2) NOT NULL,
+                lowest_price_seen NUMERIC(10,2) NOT NULL,
+                price_unit      VARCHAR(20) DEFAULT 'person',
+                depart_date     TEXT,
+                deep_link       TEXT,
+                bookable        BOOLEAN DEFAULT FALSE,
+                first_seen_at   TIMESTAMPTZ DEFAULT NOW(),
+                last_seen_at    TIMESTAMPTZ DEFAULT NOW(),
+                seen_count      INTEGER DEFAULT 1
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_cache_source ON crab.deals_cache(source)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_cache_origin ON crab.deals_cache(origin)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_cache_price ON crab.deals_cache(price_per_person)")
+
+        # ── Phase 0 migrations: blackouts, member airport/flexible, travel window ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.member_blackouts (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES crab.users(pk_id),
+                blackout_start DATE NOT NULL,
+                blackout_end DATE NOT NULL,
+                UNIQUE(plan_id, user_id, blackout_start, blackout_end)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_blackouts_plan ON crab.member_blackouts(plan_id)")
+
+        for col, col_type, default in [
+            ('home_airport', 'VARCHAR(10)', None),
+            ('is_flexible', 'BOOLEAN', 'FALSE'),
+        ]:
+            try:
+                default_clause = f" DEFAULT {default}" if default else ""
+                cursor.execute(f"ALTER TABLE crab.plan_members ADD COLUMN IF NOT EXISTS {col} {col_type}{default_clause}")
+            except Exception:
+                pass
+
+        for col, col_type in [
+            ('travel_window_start', 'DATE'),
+            ('travel_window_end', 'DATE'),
+        ]:
+            try:
+                cursor.execute(f"ALTER TABLE crab.plans ADD COLUMN IF NOT EXISTS {col} {col_type}")
+            except Exception:
+                pass
+
         conn.commit()
         logger.info("✅ Database initialized")
     except Exception as e:
@@ -531,8 +588,9 @@ def create_plan(organizer_id, data, invite_token):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token,
+                travel_window_start, travel_window_end)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING plan_id, title, invite_token
         """, (
             organizer_id,
@@ -540,6 +598,8 @@ def create_plan(organizer_id, data, invite_token):
             data.get('description'),
             data.get('timeframe'),
             invite_token,
+            data.get('travel_window_start'),
+            data.get('travel_window_end'),
         ))
         plan = cursor.fetchone()
         conn.commit()
@@ -563,12 +623,13 @@ def get_plans_for_user(user_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT DISTINCT p.*, COUNT(m2.pk_id) as member_count
+            SELECT DISTINCT p.*, u.full_name as organizer_name, COUNT(m2.pk_id) as member_count
             FROM crab.plans p
+            LEFT JOIN crab.users u ON u.pk_id = p.organizer_id
             LEFT JOIN crab.plan_members m ON m.plan_id = p.plan_id AND m.user_id = %s
             LEFT JOIN crab.plan_members m2 ON m2.plan_id = p.plan_id
             WHERE p.organizer_id = %s OR m.user_id = %s
-            GROUP BY p.pk_id
+            GROUP BY p.pk_id, u.full_name
             ORDER BY p.created_at DESC
         """, (user_id, user_id, user_id))
         return [dict(r) for r in cursor.fetchall()]
@@ -665,8 +726,10 @@ def get_plan_members(plan_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT * FROM crab.plan_members
-            WHERE plan_id = %s ORDER BY joined_at
+            SELECT m.*, u.home_airport as user_home_airport
+            FROM crab.plan_members m
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE m.plan_id = %s ORDER BY m.joined_at
         """, (plan_id,))
         return [dict(r) for r in cursor.fetchall()]
     except Exception as e:
@@ -1385,6 +1448,128 @@ def save_price_history(result_type, canonical_key, source, price_usd, travel_dat
             conn.close()
 
 
+def upsert_deals_cache(deals):
+    """
+    Upsert a list of deal dicts into crab.deals_cache.
+    deal_key = source:deal_type:origin:destination (unique per route/service).
+    Tracks lowest_price_seen, last_seen_at, seen_count automatically.
+    """
+    if not deals:
+        return 0
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        count = 0
+        for d in deals:
+            key = f"{d.get('source')}:{d.get('deal_type')}:{d.get('origin', '')}:{d.get('destination', '')}"
+            cursor.execute("""
+                INSERT INTO crab.deals_cache (
+                    deal_key, source, deal_type, origin, destination, destination_name,
+                    title, airline, price_per_person, lowest_price_seen, price_unit,
+                    depart_date, deep_link, bookable
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (deal_key) DO UPDATE SET
+                    price_per_person  = EXCLUDED.price_per_person,
+                    lowest_price_seen = LEAST(crab.deals_cache.lowest_price_seen, EXCLUDED.price_per_person),
+                    depart_date       = EXCLUDED.depart_date,
+                    deep_link         = EXCLUDED.deep_link,
+                    title             = EXCLUDED.title,
+                    airline           = EXCLUDED.airline,
+                    last_seen_at      = NOW(),
+                    seen_count        = crab.deals_cache.seen_count + 1
+            """, (
+                key,
+                d.get('source'), d.get('deal_type'),
+                d.get('origin'), d.get('destination'), d.get('destination_name'),
+                d.get('title'), d.get('airline'),
+                d.get('price_per_person'), d.get('price_per_person'),
+                d.get('price_unit', 'person'),
+                d.get('depart_date'), d.get('deep_link'),
+                d.get('bookable', False),
+            ))
+            count += 1
+        conn.commit()
+        logger.info(f"💾 Upserted {count} deals to cache")
+        return count
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ upsert_deals_cache failed: {e}")
+        return 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_deals_cache_grouped(origin=None):
+    """
+    Read deals from cache grouped by source, sorted by price.
+    If origin provided, filter flight deals to that origin (hotels/activities are global).
+    Returns list of tab dicts matching the deals_engine grouped format.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if origin:
+            cursor.execute("""
+                SELECT *, (NOW() - last_seen_at) AS age
+                FROM crab.deals_cache
+                WHERE (origin = %s OR origin IS NULL)
+                ORDER BY source, price_per_person ASC
+            """, (origin.upper(),))
+        else:
+            cursor.execute("""
+                SELECT *, (NOW() - last_seen_at) AS age
+                FROM crab.deals_cache
+                ORDER BY source, price_per_person ASC
+            """)
+
+        rows = cursor.fetchall()
+        buckets = {}
+        latest_seen_at = None
+        for r in rows:
+            d = dict(r)
+            d['price_per_person'] = float(d['price_per_person'])
+            d['lowest_price_seen'] = float(d['lowest_price_seen'])
+            lsa = d.pop('age', None)  # remove timedelta — not JSON serializable
+            # track the most recent last_seen_at across all rows
+            if d.get('last_seen_at'):
+                ts = d['last_seen_at'].isoformat() if hasattr(d['last_seen_at'], 'isoformat') else str(d['last_seen_at'])
+                if latest_seen_at is None or ts > latest_seen_at:
+                    latest_seen_at = ts
+                d['last_seen_at'] = ts
+            buckets.setdefault(d['source'], []).append(d)
+
+        TAB_ORDER = [
+            ("travelpayouts",       "✈️ Aviasales Specials"),
+            ("travelpayouts_cheap", "✈️ Aviasales All Flights"),
+            ("duffel",              "✈️ Duffel Flights"),
+            ("liteapi",             "🏨 LiteAPI Hotels"),
+            ("viator",              "🎟️ Viator Activities"),
+        ]
+        tabs = []
+        for src_key, label in TAB_ORDER:
+            deals = buckets.get(src_key, [])
+            if deals:
+                tabs.append({"key": src_key, "label": f"{label} ({len(deals)})", "deals": deals})
+        return {"tabs": tabs, "last_updated": latest_seen_at}
+    except Exception as e:
+        logger.error(f"❌ get_deals_cache_grouped failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_price_average(canonical_key, result_type, days=90):
     """90-day average price for a route/property — the deal detection baseline."""
     conn = None
@@ -1406,6 +1591,140 @@ def get_price_average(canonical_key, result_type, days=90):
     except Exception as e:
         logger.error(f"❌ Get price average failed: {e}")
         return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Blackout CRUD ──────────────────────────────────────────
+
+def save_member_blackouts(plan_id, user_id, blackouts):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.member_blackouts WHERE plan_id = %s AND user_id = %s", (plan_id, user_id))
+        for b in blackouts:
+            cursor.execute("""
+                INSERT INTO crab.member_blackouts (plan_id, user_id, blackout_start, blackout_end)
+                VALUES (%s, %s, %s, %s)
+            """, (plan_id, user_id, b['start'], b['end']))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Save blackouts failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_plan_blackouts(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT b.*, u.full_name
+            FROM crab.member_blackouts b
+            JOIN crab.users u ON u.pk_id = b.user_id
+            WHERE b.plan_id = %s
+            ORDER BY b.blackout_start
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get blackouts failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_member_blackouts(plan_id, user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT blackout_start, blackout_end
+            FROM crab.member_blackouts
+            WHERE plan_id = %s AND user_id = %s
+            ORDER BY blackout_start
+        """, (plan_id, user_id))
+        return [{'start': r['blackout_start'].isoformat(), 'end': r['blackout_end'].isoformat()} for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ Get member blackouts failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def delete_plan(plan_id, organizer_id):
+    """Delete a plan and all related data (CASCADE handles children)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM crab.plans WHERE plan_id = %s AND organizer_id = %s",
+            (plan_id, organizer_id)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        logger.info(f"🗑️ Plan deleted: {plan_id} (rows={deleted})")
+        return deleted > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Delete plan failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_member_details(member_id, home_airport=None, is_flexible=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        parts = []
+        vals = []
+        if home_airport is not None:
+            parts.append("home_airport = %s")
+            vals.append(home_airport.upper().strip() if home_airport else None)
+        if is_flexible is not None:
+            parts.append("is_flexible = %s")
+            vals.append(is_flexible)
+        if not parts:
+            return True
+        vals.append(member_id)
+        cursor.execute(f"UPDATE crab.plan_members SET {', '.join(parts)} WHERE pk_id = %s", vals)
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Update member details failed: {e}")
+        return False
     finally:
         if cursor:
             cursor.close()

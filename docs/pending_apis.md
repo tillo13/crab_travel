@@ -9,10 +9,10 @@
 
 ## Expedia Partner Solutions (Rapid API)
 - **Applied:** March 5, 2026
-- **Status:** Waiting for review (they said they'll reach out)
-- **What it unlocks:** Hotels, VRBO whole-home rentals, vacation packages, all-inclusive resorts — 3M+ properties
-- **Portal:** https://partner.expediagroup.com/en-us/join-us/rapid-api
-- **Next step:** Once approved, build ExpediaAdapter + VRBOAdapter
+- **Status:** REJECTED — "minimum size threshold for new integrations" not met
+- **What it would unlock:** Hotels, VRBO whole-home rentals, vacation packages, all-inclusive resorts — 3M+ properties
+- **Alternatives offered:** Expedia TAAP (travel agent program), Expedia Affiliate Program (referral commissions)
+- **Next step:** Consider Expedia Affiliate Program for deep-link commissions, or revisit Rapid API once we have traction. LiteAPI covers hotel inventory in the meantime.
 
 ## Already Active
 - **Duffel** — flights, test key active (`duffel_test_...`), go live = swap key

@@ -24,13 +24,15 @@ from utilities.postgres_utils import (
     upsert_vote, get_vote_tallies, get_user_votes, lock_plan,
     save_recommendations, get_recommendations, update_recommendation_status,
     delete_recommendations_for_plan,
+    save_member_blackouts, get_member_blackouts, update_member_details,
+    delete_plan,
 )
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
 from utilities.search_engine import trigger_search, is_searching
-from utilities.postgres_utils import get_search_results, clear_search_results
-from utilities.deals_engine import get_hot_deals
+from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped
+from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
 # ── App setup ────────────────────────────────────────────────
 
@@ -111,6 +113,36 @@ def _get_rec_status(plan_id):
         return _rec_status.get(str(plan_id))
 
 
+def _research_destination(plan_id, suggestion_id, destination_name, plan):
+    def _do_research():
+        try:
+            all_prefs = get_all_plan_preferences(plan_id)
+            airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
+            checkin = str(plan.get('start_date') or plan.get('travel_window_start') or '')
+            checkout = str(plan.get('end_date') or plan.get('travel_window_end') or '')
+            trigger_search(plan_id, destination_name, checkin or None, checkout or None, airports or None)
+            research = {'destination': destination_name}
+            travel_window = None
+            ws = plan.get('travel_window_start')
+            we = plan.get('travel_window_end')
+            if ws or we:
+                travel_window = {'start': str(ws) if ws else 'flexible', 'end': str(we) if we else 'flexible'}
+            card = generate_destination_card(destination_name, research, all_prefs, travel_window=travel_window)
+            update_data = {
+                'destination_data': {'research': research, 'card': card},
+                'avg_flight_cost': research.get('avg_flight_cost'),
+                'compatibility_score': card.get('compatibility_score') if card else None,
+                'status': 'ready',
+            }
+            update_destination_suggestion(suggestion_id, update_data)
+            logger.info(f"🔍 Destination researched: {destination_name} for plan {plan_id}")
+        except Exception as e:
+            logger.error(f"❌ Background research failed for {destination_name}: {e}")
+            update_destination_suggestion(suggestion_id, {'destination_data': {'error': str(e)}, 'status': 'error'})
+
+    threading.Thread(target=_do_research, daemon=True).start()
+
+
 # ── Public routes ────────────────────────────────────────────
 
 @app.route('/')
@@ -173,7 +205,7 @@ def auth_callback():
                     # Redirect to pending join if there was one
                     pending_join = session.pop('pending_join', None)
                     if pending_join:
-                        return redirect(f"/join/{pending_join}")
+                        return redirect(f"/in/{pending_join}")
                     return redirect('/dashboard')
                 else:
                     logger.error("🔑 DB upsert returned None")
@@ -254,50 +286,124 @@ def api_create_plan():
     # Add organizer as first member
     member_token = generate_token()
     add_plan_member(plan['plan_id'], user['name'], member_token, email=user['email'], user_id=user['id'], role='organizer')
-    logger.info(f"💬 Plan created: {plan['title']} by {user['email']}")
+
+    # Create candidate destinations and kick off research
+    destinations = data.get('destinations', [])
+    for dest_name in destinations:
+        dest_name = dest_name.strip()
+        if not dest_name:
+            continue
+        suggestion = create_destination_suggestion(plan['plan_id'], user['id'], dest_name)
+        if suggestion:
+            _research_destination(plan['plan_id'], suggestion['suggestion_id'], dest_name, plan)
+
+    logger.info(f"💬 Plan created: {plan['title']} by {user['email']} with {len(destinations)} destinations")
     return jsonify({'success': True, 'data': {'plan_id': str(plan['plan_id']), 'invite_token': plan['invite_token']}})
 
 
-@app.route('/join/<invite_token>', methods=['GET', 'POST'])
+@app.route('/api/plan/<plan_id>/delete', methods=['POST'])
+@api_auth_required
+def api_delete_plan(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    if plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can delete a plan'}), 403
+    success = delete_plan(plan_id, user['id'])
+    if success:
+        logger.info(f"🗑️ Plan deleted: {plan['title']} by {user['email']}")
+        return jsonify({'success': True})
+    return jsonify({'error': 'Delete failed'}), 500
+
+
+@app.route('/join/<invite_token>')
 def join_plan(invite_token):
+    return redirect(f'/in/{invite_token}', code=301)
+
+
+@app.route('/in/<invite_token>')
+def invite_page(invite_token):
     plan = get_plan_by_invite_token(invite_token)
     if not plan:
         return render_template('index.html', active_page='home', error='Plan not found'), 404
 
     user = session.get('user')
+    destinations = get_destination_suggestions(plan['plan_id'])
+    members = get_plan_members(plan['plan_id'])
+    vote_tallies = get_vote_tallies(plan['plan_id'], 'destination')
 
-    if request.method == 'GET':
-        # Must be logged in to join
-        if not user:
-            session['pending_join'] = invite_token
-            return render_template('join.html', plan=plan, already_member=False, user=None, needs_login=True)
+    is_member = False
+    member = None
+    my_votes = {}
+    blackouts = []
+    member_airport = None
+    member_flexible = False
 
-        # Check if already a member
-        existing = get_member_for_plan(plan['plan_id'], user['id'])
-        if existing:
-            return render_template('join.html', plan=plan, already_member=True, user=user, needs_login=False)
+    if user:
+        member = get_member_for_plan(plan['plan_id'], user['id'])
+        is_member = member is not None
+        my_votes = get_user_votes(plan['plan_id'], user['id'])
+        if member:
+            blackouts = get_member_blackouts(plan['plan_id'], user['id'])
+            member_airport = member.get('home_airport') or user.get('home_airport')
+            member_flexible = member.get('is_flexible', False)
+    else:
+        session['pending_join'] = invite_token
 
-        return render_template('join.html', plan=plan, already_member=False, user=user, needs_login=False)
+    # Serialize destinations for client-side board rendering
+    def _default_ser(o):
+        if hasattr(o, 'isoformat'):
+            return o.isoformat()
+        return str(o)
+    destinations_json = json.dumps(destinations, default=_default_ser)
 
-    # POST — join the plan (must be logged in)
-    if not user:
-        return jsonify({'error': 'Must be logged in to join'}), 401
-
-    # Check if already a member
-    existing = get_member_for_plan(plan['plan_id'], user['id'])
-    if existing:
-        return jsonify({'success': True, 'data': {'already_member': True}})
-
-    member_token = generate_token()
-    member = add_plan_member(
-        plan['plan_id'], user['name'], member_token,
-        email=user['email'], user_id=user['id'],
+    return render_template('invite.html',
+        plan=plan, destinations=destinations, members=members,
+        vote_tallies=vote_tallies, my_votes=my_votes,
+        user=user, is_member=is_member, member=member,
+        blackouts=blackouts, member_airport=member_airport,
+        member_flexible=member_flexible,
+        needs_login=(user is None),
+        destinations_json=destinations_json,
     )
-    if not member:
-        return jsonify({'error': 'Failed to join'}), 500
 
-    logger.info(f"👋 Joined plan: {user['name']} → {plan['title']}")
-    return jsonify({'success': True, 'data': {'plan_id': str(plan['plan_id'])}})
+
+@app.route('/api/plan/<plan_id>/join-full', methods=['POST'])
+@api_auth_required
+def api_join_full(plan_id):
+    user = session['user']
+    data = request.get_json() or {}
+
+    # Join or get existing membership
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        member_token = generate_token()
+        member = add_plan_member(
+            plan_id, user['name'], member_token,
+            email=user['email'], user_id=user['id'],
+        )
+        if not member:
+            return jsonify({'error': 'Failed to join'}), 500
+        logger.info(f"👋 Joined plan: {user['name']} → plan {plan_id}")
+
+    # Update airport + flexible
+    home_airport = data.get('home_airport', '').strip()
+    is_flexible = data.get('is_flexible', False)
+    update_member_details(member['pk_id'], home_airport=home_airport or None, is_flexible=is_flexible)
+
+    # Save blackouts
+    blackouts = data.get('blackouts', [])
+    if blackouts or not is_flexible:
+        save_member_blackouts(plan_id, user['id'], blackouts)
+
+    # Save votes
+    votes = data.get('votes', {})
+    for target_id, vote_val in votes.items():
+        if vote_val in (1, -1):
+            upsert_vote(plan_id, user['id'], 'destination', target_id, vote_val)
+
+    return jsonify({'success': True, 'data': {'plan_id': str(plan_id), 'member_id': member['pk_id']}})
 
 
 @app.route('/plan/<plan_id>')
@@ -479,43 +585,14 @@ def api_suggest_destination(plan_id):
     if not suggestion:
         return jsonify({'error': 'Failed to create suggestion'}), 500
 
-    # Kick off research in background thread
-    import threading
-    suggestion_id = suggestion['suggestion_id']
-
-    def _do_research():
-        try:
-            all_prefs = get_all_plan_preferences(plan_id)
-            airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
-
-            # Kick off real adapter search in background (writes to search_results)
-            checkin = str(plan.get('start_date') or '')
-            checkout = str(plan.get('end_date') or '')
-            trigger_search(plan_id, destination_name, checkin or None, checkout or None,
-                           airports or None)
-
-            # AI synthesis into destination card (no flight data yet — adapters run async)
-            research = {'destination': destination_name}
-            card = generate_destination_card(destination_name, research, all_prefs)
-            update_data = {
-                'destination_data': {'research': research, 'card': card},
-                'avg_flight_cost': research.get('avg_flight_cost'),
-                'compatibility_score': card.get('compatibility_score') if card else None,
-                'status': 'ready',
-            }
-            update_destination_suggestion(suggestion_id, update_data)
-            logger.info(f"🔍 Destination researched: {destination_name} for plan {plan_id}")
-        except Exception as e:
-            logger.error(f"❌ Background research failed for {destination_name}: {e}")
-            update_destination_suggestion(suggestion_id, {'destination_data': {'error': str(e)}, 'status': 'error'})
-
-    threading.Thread(target=_do_research, daemon=True).start()
+    plan = get_plan_by_id(plan_id)
+    _research_destination(plan_id, suggestion['suggestion_id'], destination_name, plan)
 
     # Return immediately — card shows as "researching"
     return jsonify({
         'success': True,
         'data': {
-            'suggestion_id': str(suggestion_id),
+            'suggestion_id': str(suggestion['suggestion_id']),
             'status': 'researching',
         }
     })
@@ -795,31 +872,84 @@ def api_search_stream(plan_id):
 @app.route('/api/deals')
 @login_required
 def api_deals():
-    """Global hot deals feed — best deals right now for a group."""
+    """Global hot deals feed — reads from nightly cache, grouped by source tab."""
     try:
         group_size = int(request.args.get('group_size', 15))
         group_size = max(2, min(group_size, 100))
-        limit = int(request.args.get('limit', 20))
         origin = request.args.get('origin', '').strip() or None
-        deals = get_hot_deals(group_size=group_size, limit=limit, origin=origin)
-        return jsonify({'success': True, 'data': {'deals': deals, 'group_size': group_size}})
+
+        from utilities.deals_engine import resolve_iata
+        iata = resolve_iata(origin) if origin else None
+
+        cache = get_deals_cache_grouped(origin=iata)
+        tabs = cache.get('tabs', []) if isinstance(cache, dict) else []
+        last_updated = cache.get('last_updated') if isinstance(cache, dict) else None
+
+        # Cache empty — fall back to live fetch so the first visit still works
+        if not tabs:
+            logger.info("💡 Deals cache empty — falling back to live fetch")
+            tabs = get_hot_deals_grouped(group_size=group_size, origin=origin)
+
+        # Annotate group totals (cache stores raw prices)
+        for tab in tabs:
+            for d in tab['deals']:
+                d['group_size'] = group_size
+                if d.get('deal_type') != 'hotel':
+                    d['total_for_group'] = round(d['price_per_person'] * group_size, 2)
+
+        return jsonify({'success': True, 'data': {'tabs': tabs, 'group_size': group_size, 'last_updated': last_updated}})
     except Exception as e:
         logger.error(f"❌ api_deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/refresh-deals')
+def task_refresh_deals():
+    """Nightly cron job — refresh deals cache from all sources for all hubs."""
+    # App Engine cron jobs set this header; reject external calls
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        total = refresh_deals_cache()
+        logger.info(f"✅ /tasks/refresh-deals complete: {total} deals cached")
+        return jsonify({'success': True, 'deals_upserted': total})
+    except Exception as e:
+        logger.error(f"❌ refresh-deals failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/plan/<plan_id>/deals')
 @api_auth_required
 def api_plan_deals(plan_id):
-    """Hot deals scoped to a specific plan's headcount."""
+    """Hot deals for a plan's Deal Desk — reads from cache, flat list sorted by price."""
     plan = get_plan_by_id(plan_id)
     if not plan:
         return jsonify({'success': False, 'error': 'Plan not found'}), 404
     try:
         group_size = plan.get('headcount') or int(request.args.get('group_size', 15))
         limit = int(request.args.get('limit', 20))
-        deals = get_hot_deals(group_size=group_size, limit=limit)
-        return jsonify({'success': True, 'data': {'deals': deals, 'group_size': group_size}})
+
+        cache = get_deals_cache_grouped()
+        tabs = cache.get('tabs', []) if isinstance(cache, dict) else []
+
+        # Flatten all tabs into one sorted list
+        all_deals = []
+        for tab in tabs:
+            all_deals.extend(tab.get('deals', []))
+        all_deals.sort(key=lambda d: d['price_per_person'])
+
+        # Annotate group totals
+        for d in all_deals[:limit]:
+            d['group_size'] = group_size
+            if d.get('deal_type') != 'hotel':
+                d['total_for_group'] = round(d['price_per_person'] * group_size, 2)
+
+        # Fall back to live fetch if cache empty
+        if not all_deals:
+            all_deals = get_hot_deals(group_size=group_size, limit=limit)
+
+        return jsonify({'success': True, 'data': {'deals': all_deals[:limit], 'group_size': group_size}})
     except Exception as e:
         logger.error(f"❌ api_plan_deals failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -1,58 +1,145 @@
 {% extends "base.html" %}
 {% block title %}New Plan — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .dest-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: rgba(13, 148, 136, 0.12);
+    border: 1px solid rgba(13, 148, 136, 0.25);
+    color: #14B8A6;
+  }
+  .dest-chip button {
+    opacity: 0.6; cursor: pointer; background: none; border: none; color: inherit; font-size: 1rem; line-height: 1;
+  }
+  .dest-chip button:hover { opacity: 1; }
+  .input-field {
+    width: 100%; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.9rem;
+    border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04);
+    color: #F0EAE0; outline: none; transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; }
+  .input-field::placeholder { color: rgba(200, 194, 184, 0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+  .radio-pill input:checked + span {
+    background: #E8593A; color: white; border-color: #E8593A;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1 class="text-2xl font-bold mb-2">Start a Plan</h1>
-<p class="text-gray-500 dark:text-gray-400 text-sm mb-8">Name it and invite your crew. Dates, destinations, and details will come from the group.</p>
+<div class="max-w-2xl mx-auto animate-in">
+  <h1 class="text-3xl font-display mb-2">Start a plan</h1>
+  <p class="text-crab-sand-dim text-sm mb-8">Name it, suggest some destinations, and share the link with your crew.</p>
 
-<form id="plan-form" class="max-w-2xl space-y-6">
-  <div>
-    <label class="block font-semibold mb-2 text-sm">What's the plan called?</label>
-    <input type="text" name="title" required placeholder="e.g. Summer 2026 Trip, Nashville Reunion"
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
-  </div>
-
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Rough timeframe</label>
-    <div class="flex flex-wrap gap-2">
-      {% for val, label in [('next-month', 'Next Month'), ('next-3-months', 'Next 3 Months'), ('spring', 'Spring'), ('summer', 'Summer'), ('fall', 'Fall'), ('winter', 'Winter'), ('anytime', 'Anytime')] %}
-      <label class="cursor-pointer">
-        <input type="radio" name="timeframe" value="{{ val }}" class="peer hidden" {% if val == 'anytime' %}checked{% endif %}>
-        <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ label }}</span>
-      </label>
-      {% endfor %}
+  <form id="plan-form" class="space-y-7">
+    <div>
+      <label class="block text-sm font-medium mb-1.5">What's the plan called?</label>
+      <input type="text" name="title" required placeholder="e.g. Summer 2027 Trip, Nashville Reunion" class="input-field">
     </div>
-  </div>
 
-  <div>
-    <label class="block font-semibold mb-2 text-sm">Description <span class="font-normal text-gray-400">(optional)</span></label>
-    <textarea name="description" rows="2" placeholder="Any context for the group..."
-      class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm"></textarea>
-  </div>
+    <!-- Candidate destinations -->
+    <div>
+      <label class="block text-sm font-medium mb-1.5">Destinations to consider</label>
+      <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Add a few cities your group might be into. AI will research each one.</p>
+      <div id="dest-chips" class="flex flex-wrap gap-2 mb-2"></div>
+      <div class="flex gap-2">
+        <input type="text" id="dest-input" placeholder="e.g. Phoenix, Nashville, Lisbon" class="input-field flex-1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDest()}">
+        <button type="button" onclick="addDest()" class="px-4 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors">+ Add</button>
+      </div>
+    </div>
 
-  <button type="submit" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-    Create Plan
-  </button>
-</form>
+    <div>
+      <label class="block text-sm font-medium mb-1.5">Rough timeframe</label>
+      <div class="flex flex-wrap gap-2">
+        {% for val, label in [('next-month', 'Next Month'), ('next-3-months', 'Next 3 Months'), ('spring', 'Spring'), ('summer', 'Summer'), ('fall', 'Fall'), ('winter', 'Winter'), ('anytime', 'Anytime')] %}
+        <label class="radio-pill cursor-pointer">
+          <input type="radio" name="timeframe" value="{{ val }}" class="peer hidden" {% if val == 'anytime' %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 inline-block transition-colors hover:border-white/20">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Travel window -->
+    <div>
+      <label class="block text-sm font-medium mb-1.5">Travel window <span class="font-normal text-crab-sand-dim opacity-60">(optional)</span></label>
+      <p class="text-xs text-crab-sand-dim mb-2 opacity-60">The broadest range of dates your group might travel in.</p>
+      <div class="flex gap-3 items-center">
+        <input type="date" name="travel_window_start" class="input-field w-auto">
+        <span class="text-crab-sand-dim text-sm">to</span>
+        <input type="date" name="travel_window_end" class="input-field w-auto">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1.5">Description <span class="font-normal text-crab-sand-dim opacity-60">(optional)</span></label>
+      <textarea name="description" rows="2" placeholder="Any context for the group..." class="input-field"></textarea>
+    </div>
+
+    <button type="submit" class="bg-crab-coral hover:bg-crab-coral-light text-white px-8 py-3 rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+      Create Plan
+    </button>
+  </form>
+</div>
 
 <script>
+const destinations = [];
+
+function addDest() {
+  const input = document.getElementById('dest-input');
+  const name = input.value.trim();
+  if (!name || destinations.includes(name)) return;
+  destinations.push(name);
+  input.value = '';
+  renderChips();
+}
+
+function removeDest(idx) {
+  destinations.splice(idx, 1);
+  renderChips();
+}
+
+function renderChips() {
+  const container = document.getElementById('dest-chips');
+  container.innerHTML = destinations.map((d, i) =>
+    `<div class="dest-chip">${d} <button onclick="removeDest(${i})">&times;</button></div>`
+  ).join('');
+}
+
 document.getElementById('plan-form').addEventListener('submit', async function(e) {
   e.preventDefault();
-  var form = e.target;
-  var data = {
+  const form = e.target;
+  const data = {
     title: form.title.value,
     timeframe: form.timeframe.value,
     description: form.description.value || null,
+    travel_window_start: form.travel_window_start.value || null,
+    travel_window_end: form.travel_window_end.value || null,
+    destinations: destinations,
   };
-  var res = await fetch('/api/plan/create', {
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  const res = await fetch('/api/plan/create', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data),
   });
-  var result = await res.json();
+  const result = await res.json();
   if (result.success) {
     window.location.href = '/plan/' + result.data.plan_id;
   } else {
     alert(result.error || 'Failed to create plan');
+    btn.disabled = false;
+    btn.textContent = 'Create Plan';
   }
 });
 </script>

@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.title }} — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .pin-grid {
+    columns: 2;
+    column-gap: 0.75rem;
+  }
+  @media (min-width: 768px) { .pin-grid { columns: 3; } }
+  @media (min-width: 1024px) { .pin-grid { columns: 4; } }
+  .pin {
+    break-inside: avoid;
+    margin-bottom: 0.75rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease;
+  }
+  .pin:hover {
+    border-color: rgba(232,89,58,0.25);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+  }
+  .pin-img {
+    width: 100%;
+    height: auto;
+    min-height: 100px;
+    object-fit: cover;
+    display: block;
+    background: rgba(255,255,255,0.03);
+  }
+  .cat-stay { border-left: 3px solid #14B8A6; }
+  .cat-do { border-left: 3px solid #E8593A; }
+  .cat-food { border-left: 3px solid #F59E0B; }
+  .cat-event { border-left: 3px solid #8B5CF6; }
+  .cat-badge-stay { background: rgba(20,184,166,0.12); color: #14B8A6; }
+  .cat-badge-do { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .cat-badge-food { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
+  html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
+  html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+  .dest-tab { cursor:pointer; padding:0.5rem 1rem; border-radius:0.5rem; font-size:0.9rem; font-weight:500; transition:all 0.2s; border:none; background:transparent; }
+  .dest-tab.active { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .dest-tab:not(.active) { color: rgba(200,194,184,0.6); }
+  .dest-tab:not(.active):hover { color: rgba(200,194,184,1); }
+  html:not(.dark) .dest-tab.active { background: rgba(232,89,58,0.08); color: #E8593A; }
+  html:not(.dark) .dest-tab:not(.active) { color: #9ca3af; }
+  .vote-pill {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.3rem 0.6rem; border-radius: 9999px; font-size: 0.8rem;
+    font-weight: 500; border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer; transition: all 0.2s; background: transparent;
+    color: rgba(200,194,184,0.7);
+  }
+  .vote-pill:hover { border-color: rgba(255,255,255,0.15); color: #F0EAE0; }
+  .vote-pill.voted-up { background: rgba(13,148,136,0.15); border-color: #0D9488; color: #14B8A6; }
+  .vote-pill.voted-down { background: rgba(232,89,58,0.12); border-color: #E8593A; color: #F47A5F; }
+  html:not(.dark) .vote-pill { border-color: rgba(0,0,0,0.1); color: #6b7280; }
+  html:not(.dark) .vote-pill:hover { border-color: rgba(0,0,0,0.2); color: #111; }
+  .stat-card {
+    text-align: center; padding: 0.75rem 1rem; border-radius: 0.75rem;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  }
+  html:not(.dark) .stat-card { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.06); }
+  .input-field {
+    width: 100%; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+  .blackout-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+    border-radius: 0.5rem; font-size: 0.8rem;
+    background: rgba(232,89,58,0.1); border: 1px solid rgba(232,89,58,0.2); color: #F47A5F;
+  }
+  .blackout-chip button { opacity:0.6; cursor:pointer; background:none; border:none; color:inherit; font-size:1rem; line-height:1; }
+  .blackout-chip button:hover { opacity:1; }
+  .researching-pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+  <!-- Header -->
+  <div class="text-center mb-8 animate-in">
+    <p class="text-sm font-medium text-crab-coral mb-3 tracking-wide uppercase">You're invited</p>
+    <h1 class="text-3xl md:text-4xl font-display mb-2">{{ plan.title }}</h1>
+    <p class="text-crab-sand-dim">
+      <span class="font-medium text-crab-sand">{{ plan.organizer_name }}</span> is putting this together
+    </p>
+    {% if plan.description %}
+    <p class="text-crab-sand-dim text-sm mt-2 max-w-lg mx-auto">{{ plan.description }}</p>
+    {% endif %}
+  </div>
+
+  <!-- Stats bar -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-in stagger-1">
+    <div class="stat-card">
+      <div class="text-2xl font-display text-crab-coral" id="stat-members">{{ members|length }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">{{ 'person' if members|length == 1 else 'people' }} joined</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-display text-crab-teal" id="stat-destinations">{{ destinations|length }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">destinations</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-display" id="stat-votes">{{ vote_tallies|length if vote_tallies else 0 }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">votes cast</div>
+    </div>
+    <div class="stat-card">
+      {% if plan.travel_window_start and plan.travel_window_end %}
+      <div class="text-sm font-semibold">{{ plan.travel_window_start.strftime('%b %d') }} – {{ plan.travel_window_end.strftime('%b %d') }}</div>
+      {% elif plan.timeframe and plan.timeframe != 'anytime' %}
+      <div class="text-sm font-semibold">{{ plan.timeframe|replace('-', ' ')|title }}</div>
+      {% else %}
+      <div class="text-sm font-semibold">Flexible</div>
+      {% endif %}
+      <div class="text-xs text-crab-sand-dim mt-0.5">travel window</div>
+    </div>
+  </div>
+
+  <!-- Who's in -->
+  <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-1 animate-in stagger-1">
+    <span class="text-xs font-medium text-crab-sand-dim shrink-0 uppercase tracking-wide">Who's in:</span>
+    {% for m in members %}
+    <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1 shrink-0 text-sm">
+      {{ m.display_name }}
+      {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if destinations %}
+  <!-- Destination tabs -->
+  <div id="dest-tabs" class="flex items-center gap-1 mb-6 flex-wrap animate-in stagger-2">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- Destination board -->
+  <div id="dest-board" class="animate-in stagger-2">
+    <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
+  </div>
+  {% else %}
+  <div class="text-center py-12 border border-dashed border-white/10 rounded-xl mb-8">
+    <div class="text-3xl mb-3">🗺️</div>
+    <p class="text-crab-sand-dim">No destinations added yet. Check back soon!</p>
+  </div>
+  {% endif %}
+
+  {% if not needs_login %}
+  <!-- Suggest a destination -->
+  <div class="mt-6 mb-10 flex gap-2">
+    <input type="text" id="suggest-input" class="input-field flex-1" placeholder="Suggest a destination... (e.g. Nashville, Lisbon)" onkeydown="if(event.key==='Enter'){suggestDestination()}">
+    <button onclick="suggestDestination()" class="px-4 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors">Add</button>
+  </div>
+  {% endif %}
+
+  {% if needs_login %}
+  <!-- Login gate -->
+  <div class="text-center py-12 animate-in stagger-3">
+    <div class="bg-crab-card/50 border border-white/6 rounded-2xl p-8 max-w-md mx-auto">
+      <h2 class="text-xl font-display mb-2">Sign in to join</h2>
+      <p class="text-sm text-crab-sand-dim mb-6">Sign in with Google to vote, suggest destinations, and share your travel details.</p>
+      <a href="/login/google"
+        class="inline-flex items-center gap-3 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-lg px-6 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-colors">
+        <svg class="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Sign in with Google
+      </a>
+    </div>
+  </div>
+
+  {% else %}
+  <!-- Your Details -->
+  <div class="animate-in stagger-3">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-6 md:p-8">
+      <h2 class="text-xl font-display mb-1">
+        {% if is_member %}Update your info{% else %}Join {{ plan.title }}{% endif %}
+      </h2>
+      <p class="text-sm text-crab-sand-dim mb-6">
+        {% if is_member %}Change your details anytime.{% else %}Tell us where you're flying from and when you can't go.{% endif %}
+      </p>
+
+      <div class="mb-5">
+        <label class="block text-sm font-medium mb-1.5">Home airport</label>
+        <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. ORD, SFO, JFK" value="{{ member_airport or '' }}" maxlength="5" oninput="this.value=this.value.toUpperCase()">
+        <p class="text-xs text-crab-sand-dim mt-1 opacity-60">The airport you'd fly out of</p>
+      </div>
+
+      <div class="mb-5">
+        <label class="flex items-center gap-3 cursor-pointer group">
+          <input type="checkbox" id="is-flexible" class="w-4 h-4 rounded border-white/20 accent-crab-teal" {{ 'checked' if member_flexible else '' }} onchange="toggleBlackouts()">
+          <span class="text-sm font-medium group-hover:text-crab-sand transition-colors">I'm flexible — I'll make whatever dates work</span>
+        </label>
+      </div>
+
+      <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
+        <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
+        <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're unavailable</p>
+        <div id="blackout-list" class="flex flex-wrap gap-2 mb-3">
+          {% for b in blackouts %}
+          <div class="blackout-chip" data-start="{{ b.start }}" data-end="{{ b.end }}">
+            {{ b.start }} to {{ b.end }}
+            <button onclick="removeBlackout(this.parentElement)">&times;</button>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="flex items-end gap-2">
+          <div>
+            <label class="text-xs text-crab-sand-dim">From</label>
+            <input type="date" id="blackout-start" class="input-field text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-crab-sand-dim">To</label>
+            <input type="date" id="blackout-end" class="input-field text-sm">
+          </div>
+          <button onclick="addBlackout()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+        </div>
+      </div>
+
+      <div class="mt-8">
+        <button onclick="submitJoin()" id="submit-btn"
+          class="w-full sm:w-auto px-8 py-3 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+          {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title }}{% endif %}
+        </button>
+        <p id="submit-status" class="text-sm mt-3 hidden"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmation" class="hidden animate-in mt-8">
+    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl">
+      <div class="text-3xl mb-2">🦀</div>
+      <h2 class="text-xl font-display mb-2">You're in!</h2>
+      <p class="text-sm text-crab-sand-dim" id="confirm-msg">We'll track flights and email you as things develop.</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+const PLAN_ID = '{{ plan.plan_id }}';
+const NEEDS_LOGIN = {{ 'true' if needs_login else 'false' }};
+
+// ── Destination data from server (avoid extra fetch for initial render) ──
+var _destinations = {{ destinations_json|safe if destinations_json is defined else '[]' }};
+var _activeDestIdx = 0;
+
+function unsplashUrl(query, w, h) {
+  return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
+}
+
+function pinCard(item, type) {
+  var catClass = {stay:'cat-stay',do:'cat-do',food:'cat-food',event:'cat-event'}[type] || '';
+  var badgeClass = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'}[type] || '';
+  var label = {stay:'Stay',do:'Activity',food:'Eat & Drink',event:'Event'}[type] || type;
+  var imgQuery = item.image_search || item.name;
+  var imgH = type === 'stay' ? 280 : (type === 'event' ? 200 : 220);
+
+  var html = '<div class="pin ' + catClass + '">';
+  html += '<img class="pin-img" src="' + unsplashUrl(imgQuery, 400, imgH) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  html += '<div class="p-3">';
+  html += '<div class="flex items-start justify-between gap-2 mb-1">';
+  html += '<span class="font-semibold text-sm leading-snug">' + item.name + '</span>';
+  if (item.price_hint) html += '<span class="text-xs text-crab-sand-dim shrink-0">' + item.price_hint + '</span>';
+  html += '</div>';
+  html += '<span class="inline-block text-xs px-1.5 py-0.5 rounded ' + badgeClass + ' mb-1.5">' + label + '</span>';
+  if (item.description) html += '<p class="text-xs text-crab-sand-dim leading-relaxed">' + item.description + '</p>';
+  if (item.date_range) html += '<p class="text-xs text-purple-400 font-medium mt-1">' + item.date_range + '</p>';
+  if (item.neighborhood) html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-1">' + item.neighborhood + '</p>';
+  html += '</div></div>';
+  return html;
+}
+
+function renderBoard(dest) {
+  var board = document.getElementById('dest-board');
+  var card = dest.destination_data ? dest.destination_data.card : null;
+
+  if (dest.status === 'researching') {
+    board.innerHTML = '<div class="text-center py-16"><div class="text-3xl mb-3 researching-pulse">🔍</div><p class="text-crab-sand-dim">AI is researching ' + dest.destination_name + '...</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">Finding stays, activities, restaurants, and events</p></div>';
+    return;
+  }
+  if (dest.status === 'error') {
+    board.innerHTML = '<div class="text-center py-16"><p class="text-red-400 mb-2">Research failed for ' + dest.destination_name + '</p></div>';
+    return;
+  }
+  if (!card) {
+    board.innerHTML = '<div class="text-center py-16 text-crab-sand-dim"><p>No research data yet.</p></div>';
+    return;
+  }
+
+  var html = '';
+
+  // Destination header with summary + vote
+  html += '<div class="mb-6">';
+  html += '<div class="flex items-start justify-between gap-4 mb-3">';
+  html += '<div>';
+  html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
+  if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
+  html += '</div>';
+  if (!NEEDS_LOGIN) {
+    html += '<div class="flex items-center gap-1.5 shrink-0">';
+    html += '<button class="vote-pill" onclick="vote(\'' + dest.suggestion_id + '\', 1, this)" title="Love it">👍 <span class="vc" data-id="' + dest.suggestion_id + '-up">0</span></button>';
+    html += '<button class="vote-pill" onclick="vote(\'' + dest.suggestion_id + '\', -1, this)" title="Not for me">👎 <span class="vc" data-id="' + dest.suggestion_id + '-down">0</span></button>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Meta chips
+  html += '<div class="flex flex-wrap gap-2 text-xs">';
+  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+  html += '</div>';
+
+  // Highlights
+  if (card.highlights && card.highlights.length > 0) {
+    html += '<div class="flex flex-wrap gap-2 mt-3">';
+    card.highlights.forEach(function(h) {
+      html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2.5 py-1 rounded-full">' + h + '</span>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Pinterest grid
+  html += '<div class="pin-grid">';
+  if (card.stays) card.stays.forEach(function(s) { html += pinCard(s, 'stay'); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { html += pinCard(t, 'do'); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { html += pinCard(f, 'food'); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { html += pinCard(e, 'event'); });
+  html += '</div>';
+
+  board.innerHTML = html;
+
+  // Refresh vote counts for this view
+  refreshVoteCounts();
+}
+
+function renderTabs() {
+  var tabBar = document.getElementById('dest-tabs');
+  if (!tabBar) return;
+  var html = '<span class="text-xs font-medium text-crab-sand-dim mr-2 shrink-0 uppercase tracking-wide">Destinations:</span>';
+  _destinations.forEach(function(d, i) {
+    var active = i === _activeDestIdx ? 'active' : '';
+    var emoji = d.status === 'researching' ? '⏳ ' : '';
+    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + '</button>';
+  });
+  tabBar.innerHTML = html;
+}
+
+function switchDest(idx) {
+  _activeDestIdx = idx;
+  renderTabs();
+  renderBoard(_destinations[idx]);
+}
+
+// ── Voting ──
+var _voteTallies = {};
+{% if vote_tallies %}
+{% for t in vote_tallies %}
+_voteTallies['{{ t.target_id }}'] = {up: {{ t.upvotes|int }}, down: {{ t.downvotes|int }}};
+{% endfor %}
+{% endif %}
+
+function refreshVoteCounts() {
+  document.querySelectorAll('.vc').forEach(function(el) {
+    var id = el.dataset.id;
+    var parts = id.split('-');
+    var targetId = parts.slice(0, -1).join('-');
+    var dir = parts[parts.length - 1];
+    var tally = _voteTallies[targetId] || {up:0, down:0};
+    el.textContent = dir === 'up' ? tally.up : tally.down;
+  });
+}
+
+function vote(targetId, voteVal, btn) {
+  if (NEEDS_LOGIN) return;
+  fetch('/api/plan/' + PLAN_ID + '/vote', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({target_type: 'destination', target_id: targetId, vote: voteVal}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success && data.data.tallies) {
+      data.data.tallies.forEach(function(t) {
+        _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
+      });
+      refreshVoteCounts();
+      // Toggle pill style
+      var row = btn.parentElement;
+      var pills = row.querySelectorAll('.vote-pill');
+      pills[0].classList.toggle('voted-up', voteVal === 1);
+      pills[1].classList.toggle('voted-down', voteVal === -1);
+    }
+  });
+}
+
+// ── Suggest destination ──
+function suggestDestination() {
+  var input = document.getElementById('suggest-input');
+  if (!input) return;
+  var name = input.value.trim();
+  if (!name) return;
+  input.value = '';
+  input.disabled = true;
+
+  fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({destination: name}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    input.disabled = false;
+    if (data.success) location.reload();
+  })
+  .catch(function() { input.disabled = false; });
+}
+
+// ── Your Details (join form) ──
+function toggleBlackouts() {
+  var section = document.getElementById('blackout-section');
+  var checkbox = document.getElementById('is-flexible');
+  if (section && checkbox) section.classList.toggle('hidden', checkbox.checked);
+}
+
+function addBlackout() {
+  var start = document.getElementById('blackout-start').value;
+  var end = document.getElementById('blackout-end').value;
+  if (!start || !end || start > end) return;
+  var list = document.getElementById('blackout-list');
+  var chip = document.createElement('div');
+  chip.className = 'blackout-chip';
+  chip.dataset.start = start;
+  chip.dataset.end = end;
+  chip.innerHTML = start + ' to ' + end + ' <button onclick="removeBlackout(this.parentElement)">&times;</button>';
+  list.appendChild(chip);
+  document.getElementById('blackout-start').value = '';
+  document.getElementById('blackout-end').value = '';
+}
+
+function removeBlackout(chip) { chip.remove(); }
+
+function getBlackouts() {
+  var chips = document.querySelectorAll('#blackout-list .blackout-chip');
+  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end}; });
+}
+
+function getVotes() {
+  var votes = {};
+  document.querySelectorAll('.vote-pill.voted-up').forEach(function(btn) {
+    var span = btn.querySelector('.vc');
+    if (span) {
+      var id = span.dataset.id.replace(/-up$/, '');
+      votes[id] = 1;
+    }
+  });
+  document.querySelectorAll('.vote-pill.voted-down').forEach(function(btn) {
+    var span = btn.querySelector('.vc');
+    if (span) {
+      var id = span.dataset.id.replace(/-down$/, '');
+      votes[id] = -1;
+    }
+  });
+  return votes;
+}
+
+function submitJoin() {
+  var btn = document.getElementById('submit-btn');
+  var status = document.getElementById('submit-status');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  var payload = {
+    home_airport: document.getElementById('home-airport').value.trim(),
+    is_flexible: document.getElementById('is-flexible').checked,
+    blackouts: document.getElementById('is-flexible').checked ? [] : getBlackouts(),
+    votes: getVotes(),
+  };
+
+  fetch('/api/plan/' + PLAN_ID + '/join-full', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var airport = payload.home_airport || 'your city';
+      document.getElementById('confirm-msg').textContent = "You're in! We'll track flights from " + airport + " and keep you updated.";
+      document.getElementById('confirmation').classList.remove('hidden');
+      btn.textContent = 'Saved!';
+      btn.className = btn.className.replace('bg-crab-coral', 'bg-crab-teal').replace('hover:bg-crab-coral-light', 'hover:bg-crab-teal-light');
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.textContent = 'Save changes';
+        btn.className = btn.className.replace('bg-crab-teal', 'bg-crab-coral').replace('hover:bg-crab-teal-light', 'hover:bg-crab-coral-light');
+      }, 3000);
+    } else {
+      status.textContent = data.error || 'Something went wrong';
+      status.className = 'text-sm mt-3 text-crab-coral';
+      btn.disabled = false;
+      btn.textContent = 'Try again';
+    }
+  })
+  .catch(function() {
+    status.textContent = 'Network error';
+    status.className = 'text-sm mt-3 text-crab-coral';
+    btn.disabled = false;
+    btn.textContent = 'Try again';
+  });
+}
+
+// ── Init ──
+if (_destinations.length > 0) {
+  renderTabs();
+  renderBoard(_destinations[0]);
+
+  // Poll if any are researching
+  if (_destinations.some(function(d) { return d.status === 'researching'; })) {
+    var _pollCount = 0;
+    var _pollTimer = setInterval(function() {
+      _pollCount++;
+      if (_pollCount > 40) { clearInterval(_pollTimer); return; }
+      fetch('/api/plan/' + PLAN_ID + '/destinations')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.success) {
+            _destinations = data.data.destinations;
+            renderTabs();
+            renderBoard(_destinations[_activeDestIdx]);
+            if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
+              clearInterval(_pollTimer);
+            }
+          }
+        });
+    }, 3000);
+  }
+}
+</script>
+{% endblock %}

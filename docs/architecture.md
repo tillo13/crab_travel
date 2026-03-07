@@ -81,10 +81,10 @@ crab_co/
 │   ├── login.html
 │   ├── dashboard.html              # My plans
 │   ├── plan_new.html               # Create plan form
-│   ├── join.html                   # Invite landing (no auth needed)
+│   ├── invite.html                 # Invite page /in/<token> (preview + interactive form)
 │   ├── preferences.html            # Plan-specific preference intake
 │   ├── profile.html                # Persistent user profile (interests, dietary, etc.)
-│   └── plan_dashboard.html         # Shared plan view (tabs: overview, recs, itinerary, expenses)
+│   └── plan.html                   # Shared plan view (overview, destinations, recs, deals)
 ├── static/
 │   ├── css/style.css
 │   ├── js/app.js
@@ -133,7 +133,8 @@ Full SQL in `docs/tables.sql`. Key tables:
 | `crab.users` | Google OAuth users + home_location |
 | `crab.user_profiles` | Persistent preferences (1:1 with users) — the data asset |
 | `crab.plans` | Universal container: trips, monthly plans, events (plan_type field) |
-| `crab.plan_members` | Members per plan — authed or anonymous (member_token cookie) |
+| `crab.plan_members` | Members per plan (Google auth required). Includes home_airport + is_flexible per member |
+| `crab.member_blackouts` | Dates members CANNOT travel (per plan per user) |
 | `crab.plan_preferences` | Per-plan preference overrides (1:1 with plan_members) |
 | `crab.search_results` | Raw normalized results from all adapters per plan — the live feed data |
 | `crab.recommendations` | Claude-curated shortlist per plan (subset of search_results + AI reasoning) |
@@ -188,12 +189,13 @@ One product, one experience. No dual-mode UI. Group travel is the entire focus o
 4. Redirected to dashboard — immediately sees AI-suggested plan ideas based on profile
 
 ### Plan Creation + Invite Flow
-1. Organizer creates plan → gets `https://crab.travel/join/{invite_token}`
-2. Invitee clicks link → sees plan info + name form (no signup required)
-3. Submits name → gets `member_token` cookie (30 days) → redirected to preferences
-4. Authed members: plan preferences pre-filled from their user profile
-5. Anonymous members: full preference form (acts as their profile for this plan)
-6. Everyone lands on plan dashboard
+1. Organizer creates plan with candidate destinations + travel window → gets `https://crab.travel/in/{invite_token}`
+2. AI researches each destination in background (flights, hotels, activities)
+3. Invitee clicks link → sees plan info, destinations, vote tallies (read-only)
+4. Invitee signs in with Google → interactive form: vote on destinations, enter home airport, add blackout dates
+5. One-shot submit via `/api/plan/<id>/join-full` → member created with airport + blackouts + votes
+6. Confirmation: "You're in. We'll track flights from [airport]."
+7. Everyone lands on plan dashboard
 
 ### Background Search (non-blocking, streaming)
 1. Organizer sets destination + dates on a plan → triggers background search automatically
@@ -245,11 +247,12 @@ One product, one experience. No dual-mode UI. Group travel is the entire focus o
 - `GET /profile` — View/edit persistent preference profile
 - `POST /api/profile` — Save profile preferences
 
-### Invite Flow (no auth — member_token cookie)
-- `GET /join/<invite_token>` — Invite landing page
-- `POST /join/<invite_token>` — Submit name to join
+### Invite Flow (Google auth required)
+- `GET /in/<invite_token>` — Invite page (read-only preview for unauthenticated, full interactive form after Google auth)
+- `GET /join/<invite_token>` — 301 redirect to `/in/<invite_token>` (backward compat)
+- `POST /api/plan/<plan_id>/join-full` — One-shot join: saves member + airport + blackouts + votes + flexible flag
 - `GET /plan/<plan_id>/preferences` — Plan-specific preference form
-- `POST /api/preferences` — Save plan preferences
+- `POST /api/plan/<plan_id>/preferences` — Save plan preferences
 
 ### Plan Views (member_token cookie required)
 - `GET /plan/<plan_id>` — Plan dashboard (overview tab)

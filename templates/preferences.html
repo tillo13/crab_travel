@@ -1,41 +1,41 @@
 {% extends "base.html" %}
 {% block title %}Preferences — {{ plan.title }} — crab.travel{% endblock %}
 {% block content %}
-<div class="max-w-2xl">
-  <h1 class="text-2xl font-bold mb-1">Your Preferences</h1>
-  <p class="text-gray-500 dark:text-gray-400 text-sm mb-6">for <strong>{{ plan.title }}</strong> · {{ member.display_name }}</p>
+<div class="max-w-2xl animate-in">
+  <h1 class="text-2xl font-display mb-1">Your Preferences</h1>
+  <p class="text-crab-sand-dim text-sm mb-6">for <strong>{{ plan.title }}</strong> · {{ member.display_name }}</p>
 
   <form id="pref-form" class="space-y-6">
     <!-- Budget -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Budget range (per person, total trip)</label>
+      <label class="block font-display mb-2 text-sm">Budget range (per person, total trip)</label>
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-1">
-          <span class="text-sm text-gray-500">$</span>
+          <span class="text-sm text-crab-sand-dim">$</span>
           <input type="number" name="budget_min" min="0" step="100" placeholder="500"
             value="{{ prefs.budget_min // 100 if prefs and prefs.budget_min else '' }}"
-            class="w-28 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+            class="w-28 px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
         </div>
-        <span class="text-gray-400">to</span>
+        <span class="text-crab-sand-dim">to</span>
         <div class="flex items-center gap-1">
-          <span class="text-sm text-gray-500">$</span>
+          <span class="text-sm text-crab-sand-dim">$</span>
           <input type="number" name="budget_max" min="0" step="100" placeholder="2000"
             value="{{ prefs.budget_max // 100 if prefs and prefs.budget_max else '' }}"
-            class="w-28 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+            class="w-28 px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
         </div>
       </div>
     </div>
 
     <!-- Interests -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">What are you into?</label>
+      <label class="block font-display mb-2 text-sm">What are you into?</label>
       <div id="interest-tiles" class="flex flex-wrap gap-2">
         {% set all_interests = ['Hiking', 'Nightlife', 'Museums', 'Food Tours', 'Beach', 'Shopping', 'Golf', 'Spa', 'History', 'Music', 'Wine/Beer', 'Adventure Sports', 'Photography', 'Cooking', 'Fishing', 'Skiing', 'Cycling', 'Theatre', 'Pickleball', 'Yoga'] %}
         {% set current_interests = prefs.interests if prefs and prefs.interests else [] %}
         {% for interest in all_interests %}
         <button type="button" onclick="toggleInterest(this)" data-interest="{{ interest }}"
           class="interest-tile px-3 py-1.5 rounded-full text-sm border cursor-pointer transition-colors
-          {% if interest in current_interests %}bg-blue-600 text-white border-blue-600{% else %}bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400{% endif %}">
+          {% if interest in current_interests %}bg-crab-coral text-white border-crab-coral{% else %}bg-crab-card border-white/10 hover:border-crab-coral/40{% endif %}">
           {{ interest }}
         </button>
         {% endfor %}
@@ -44,13 +44,13 @@
 
     <!-- Accommodation -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Accommodation style</label>
+      <label class="block font-display mb-2 text-sm">Accommodation style</label>
       <div class="flex flex-wrap gap-2">
         {% for acc in ['Hotel', 'Airbnb', 'Hostel', 'Resort', 'Flexible'] %}
         <label class="cursor-pointer">
           <input type="radio" name="accommodation_style" value="{{ acc|lower }}" class="peer hidden"
             {% if prefs and prefs.accommodation_style == acc|lower %}checked{% endif %}>
-          <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ acc }}</span>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ acc }}</span>
         </label>
         {% endfor %}
       </div>
@@ -58,13 +58,13 @@
 
     <!-- Room preference -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Room preference</label>
+      <label class="block font-display mb-2 text-sm">Room preference</label>
       <div class="flex flex-wrap gap-2">
         {% for room in ['Own room', 'Share room', 'Flexible'] %}
         <label class="cursor-pointer">
           <input type="radio" name="room_preference" value="{{ room|lower }}" class="peer hidden"
             {% if prefs and prefs.room_preference == room|lower %}checked{% endif %}>
-          <span class="px-3 py-1.5 rounded-full text-sm border border-gray-300 dark:border-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors inline-block">{{ room }}</span>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ room }}</span>
         </label>
         {% endfor %}
       </div>
@@ -72,47 +72,47 @@
 
     <!-- Dietary -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Dietary needs</label>
+      <label class="block font-display mb-2 text-sm">Dietary needs</label>
       <input type="text" name="dietary_needs" placeholder="e.g. vegetarian, nut allergy, gluten-free"
         value="{{ prefs.dietary_needs or '' }}"
-        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+        class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
     </div>
 
     <!-- Mobility -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Mobility or accessibility notes</label>
+      <label class="block font-display mb-2 text-sm">Mobility or accessibility notes</label>
       <input type="text" name="mobility_notes" placeholder="e.g. limited walking, wheelchair access needed"
         value="{{ prefs.mobility_notes or '' }}"
-        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+        class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">
     </div>
 
     <!-- Notes -->
     <div>
-      <label class="block font-semibold mb-2 text-sm">Anything else?</label>
+      <label class="block font-display mb-2 text-sm">Anything else?</label>
       <textarea name="notes" rows="3" placeholder="Must-haves, deal-breakers, ideas..."
-        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">{{ prefs.notes or '' }}</textarea>
+        class="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/4 text-crab-sand text-sm">{{ prefs.notes or '' }}</textarea>
     </div>
 
     <div class="flex items-center gap-3">
-      <button type="submit" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+      <button type="submit" class="bg-crab-coral text-white px-6 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
         Save Preferences
       </button>
-      <span id="save-status" class="text-sm text-green-600 dark:text-green-400 hidden">Saved!</span>
+      <span id="save-status" class="text-sm text-teal-400 hidden">Saved!</span>
     </div>
   </form>
 </div>
 
 <script>
 function toggleInterest(el) {
-  el.classList.toggle('bg-blue-600');
+  el.classList.toggle('bg-crab-coral');
   el.classList.toggle('text-white');
-  el.classList.toggle('border-blue-600');
+  el.classList.toggle('border-crab-coral');
 }
 
 document.getElementById('pref-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;
-  var interests = Array.from(form.querySelectorAll('.interest-tile.bg-blue-600')).map(el => el.dataset.interest);
+  var interests = Array.from(form.querySelectorAll('.interest-tile.bg-crab-coral')).map(el => el.dataset.interest);
   var budgetMin = form.budget_min.value ? parseInt(form.budget_min.value) * 100 : null;
   var budgetMax = form.budget_max.value ? parseInt(form.budget_max.value) * 100 : null;
   var data = {

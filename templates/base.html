@@ -5,55 +5,213 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}crab.travel{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = { darkMode: 'class' };
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            crab: {
+              coral: '#E8593A',
+              'coral-light': '#F47A5F',
+              'coral-dark': '#C9432A',
+              teal: '#0D9488',
+              'teal-light': '#14B8A6',
+              navy: '#0B1222',
+              'navy-light': '#131D33',
+              card: '#1A2540',
+              'card-hover': '#1F2E4A',
+              sand: '#F0EAE0',
+              'sand-dim': '#C8C2B8',
+            }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Outfit"', 'system-ui', 'sans-serif'],
+          },
+        }
+      }
+    };
     (function() {
       var theme = localStorage.getItem('crab-theme');
       if (theme === 'light') document.documentElement.classList.remove('dark');
     })();
   </script>
   <style>
-    .user-menu { display:none; position:absolute; right:0; top:100%; margin-top:0.5rem; width:13rem; background:white; border-radius:0.5rem; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:50; overflow:hidden; }
-    .dark .user-menu { background:#1f2937; }
+    body { font-family: 'Outfit', system-ui, sans-serif; }
+    h1, h2, h3, .font-display { font-family: 'DM Serif Display', Georgia, serif; }
+
+    /* Noise texture overlay */
+    .noise::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 256px;
+    }
+
+    /* Animations */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .animate-in {
+      animation: fadeInUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .animate-fade {
+      animation: fadeIn 0.8s ease both;
+    }
+    .stagger-1 { animation-delay: 0.1s; }
+    .stagger-2 { animation-delay: 0.2s; }
+    .stagger-3 { animation-delay: 0.3s; }
+    .stagger-4 { animation-delay: 0.4s; }
+    .stagger-5 { animation-delay: 0.5s; }
+
+    /* Glass nav */
+    .glass-nav {
+      background: rgba(11, 18, 34, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    html:not(.dark) .glass-nav {
+      background: rgba(255, 255, 255, 0.8);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    /* Card glow on hover */
+    .card-glow {
+      transition: all 0.3s ease;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .card-glow:hover {
+      border-color: rgba(232, 89, 58, 0.3);
+      box-shadow: 0 0 30px rgba(232, 89, 58, 0.08);
+    }
+
+    /* Status badges */
+    .badge-success { background: rgba(13, 148, 136, 0.15); color: #14B8A6; }
+    .badge-pending { background: rgba(232, 89, 58, 0.15); color: #F47A5F; }
+    .badge-neutral { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.5); }
+
+    /* User menu */
+    .user-menu { display:none; position:absolute; right:0; top:100%; margin-top:0.5rem; width:13rem; border-radius:0.75rem; overflow:hidden; z-index:50; border: 1px solid rgba(255,255,255,0.08); }
+    .dark .user-menu { background: #1A2540; }
+    html:not(.dark) .user-menu { background: white; box-shadow: 0 10px 25px rgba(0,0,0,0.15); border-color: rgba(0,0,0,0.08); }
     .user-menu.show { display:block; }
-    .menu-item { display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem; font-size:0.875rem; color:#374151; text-decoration:none; }
-    .dark .menu-item { color:#d1d5db; }
-    .menu-item:hover { background:#f3f4f6; }
-    .dark .menu-item:hover { background:#374151; }
-    .menu-danger { color:#dc2626 !important; }
+    .menu-item { display:flex; align-items:center; gap:0.5rem; padding:0.6rem 1rem; font-size:0.85rem; text-decoration:none; transition: background 0.15s; }
+    .dark .menu-item { color: #C8C2B8; }
+    .dark .menu-item:hover { background: rgba(255,255,255,0.05); }
+    html:not(.dark) .menu-item { color: #374151; }
+    html:not(.dark) .menu-item:hover { background: #f3f4f6; }
+    .menu-danger { color: #E8593A !important; }
+
+    /* Gradient text */
+    .text-gradient {
+      background: linear-gradient(135deg, #E8593A 0%, #F47A5F 50%, #14B8A6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Smooth scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    /* ── Light mode overrides ── */
+    /* Cards and surfaces */
+    html:not(.dark) [class*="bg-crab-card"] { background: #f8f6f3 !important; }
+    html:not(.dark) [class*="bg-white/3"],
+    html:not(.dark) [class*="bg-white/4"],
+    html:not(.dark) [class*="bg-white/5"] { background: rgba(0,0,0,0.03) !important; }
+    /* Borders */
+    html:not(.dark) [class*="border-white/4"],
+    html:not(.dark) [class*="border-white/5"],
+    html:not(.dark) [class*="border-white/6"],
+    html:not(.dark) [class*="border-white/8"],
+    html:not(.dark) [class*="border-white/10"] { border-color: rgba(0,0,0,0.1) !important; }
+    /* Text */
+    html:not(.dark) .text-crab-sand { color: #1a1a1a !important; }
+    html:not(.dark) .text-crab-sand-dim { color: #6b7280 !important; }
+    /* Badge overrides */
+    html:not(.dark) .badge-success { background: rgba(13,148,136,0.1); color: #0D9488; }
+    html:not(.dark) .badge-pending { background: rgba(232,89,58,0.1); color: #E8593A; }
+    html:not(.dark) .badge-neutral { background: rgba(0,0,0,0.05); color: #6b7280; }
+    /* Status badges in cards */
+    html:not(.dark) [class*="bg-white/5"][class*="text-crab-sand-dim"] { background: rgba(0,0,0,0.05) !important; color: #6b7280 !important; }
+    /* Input fields */
+    html:not(.dark) .input-field,
+    html:not(.dark) [class*="bg-white/4"][class*="text-crab-sand"] { background: white !important; border-color: #e5e7eb !important; color: #1a1a1a !important; }
+    html:not(.dark) .input-field:focus { border-color: #E8593A !important; }
+    /* Invite link input */
+    html:not(.dark) input[readonly] { background: #f3f4f6 !important; color: #374151 !important; border-color: #e5e7eb !important; }
+    /* Dark mode: ensure bg-white/4 inputs are visible */
+    .dark input[readonly] { background: rgba(19, 29, 51, 1) !important; }
+    /* General body text */
+    html:not(.dark) body { color: #1a1a1a; }
+    html:not(.dark) p, html:not(.dark) span, html:not(.dark) div { color: inherit; }
+    /* Ensure headings readable in light mode */
+    html:not(.dark) h1, html:not(.dark) h2, html:not(.dark) h3 { color: #111827; }
+    /* User menu light mode text */
+    html:not(.dark) .text-crab-sand-dim.opacity-60 { color: #9ca3af !important; }
+    /* Footer */
+    html:not(.dark) footer { border-color: rgba(0,0,0,0.06); }
+    /* JS-generated dynamic cards — destination cards, deal cards */
+    html:not(.dark) [class*="bg-crab-card/40"] { background: #f8f6f3 !important; }
   </style>
+  {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen transition-colors">
-  <nav class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 md:px-6 py-2.5 md:py-3 sticky top-0 z-50 shadow-sm">
+<body class="bg-white dark:bg-crab-navy text-gray-900 dark:text-crab-sand font-body min-h-screen noise">
+  <nav class="glass-nav px-4 md:px-6 py-3 sticky top-0 z-50">
     <div class="max-w-5xl mx-auto flex items-center justify-between">
-      <div class="flex items-center gap-6">
-        <a href="/" class="text-xl font-bold text-gray-900 dark:text-white">🦀 crab.travel</a>
+      <div class="flex items-center gap-8">
+        <a href="/" class="flex items-center gap-2 group">
+          <span class="text-2xl">🦀</span>
+          <span class="text-lg font-display tracking-tight text-gray-900 dark:text-crab-sand group-hover:text-crab-coral transition-colors">crab.travel</span>
+        </a>
         {% if session.user %}
-        <div class="hidden md:flex gap-4 text-sm">
-          <a href="/dashboard" class="{% if active_page == 'dashboard' %}text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">My Plans</a>
-          <a href="/profile" class="{% if active_page == 'profile' %}text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Profile</a>
+        <div class="hidden md:flex gap-5 text-sm font-medium">
+          <a href="/dashboard" class="{% if active_page == 'dashboard' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Plans</a>
+          <a href="/profile" class="{% if active_page == 'profile' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Profile</a>
         </div>
         {% endif %}
       </div>
-      <div class="flex items-center gap-2 text-sm">
-        <button onclick="toggleTheme()" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Toggle dark mode">
-          <svg id="sun-icon" class="w-5 h-5 text-yellow-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-          <svg id="moon-icon" class="w-5 h-5 text-gray-500 dark:text-gray-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+      <div class="flex items-center gap-3 text-sm">
+        <button onclick="toggleTheme()" class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors" title="Toggle dark mode">
+          <svg id="sun-icon" class="w-4 h-4 text-amber-500 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg id="moon-icon" class="w-4 h-4 text-crab-sand-dim hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
         </button>
         {% if session.user %}
         <div class="relative">
-          <button onclick="document.getElementById('user-menu').classList.toggle('show')" class="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+          <button onclick="document.getElementById('user-menu').classList.toggle('show')" class="flex items-center gap-2 p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
             {% if session.user.picture %}
-            <img src="{{ session.user.picture }}" class="w-7 h-7 rounded-full" alt="">
+            <img src="{{ session.user.picture }}" class="w-7 h-7 rounded-full ring-2 ring-transparent hover:ring-crab-coral/30 transition-all" alt="">
             {% else %}
-            <div class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{{ session.user.name[0]|upper }}</div>
+            <div class="w-7 h-7 rounded-full bg-crab-coral text-white flex items-center justify-center text-xs font-bold">{{ session.user.name[0]|upper }}</div>
             {% endif %}
           </button>
           <div id="user-menu" class="user-menu">
-            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+            <div class="px-4 py-3 border-b border-white/5">
               <div class="font-semibold text-sm truncate">{{ session.user.name }}</div>
-              <div class="text-xs text-gray-400 truncate">{{ session.user.email }}</div>
+              <div class="text-xs text-crab-sand-dim truncate">{{ session.user.email }}</div>
             </div>
             <div class="py-1">
               <a href="/profile" class="menu-item">Profile</a>
@@ -62,7 +220,7 @@
           </div>
         </div>
         {% else %}
-        <a href="/login" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-700">Sign in</a>
+        <a href="/login" class="bg-crab-coral text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-crab-coral-light transition-colors">Sign in</a>
         {% endif %}
       </div>
     </div>
@@ -71,6 +229,13 @@
   <main class="max-w-5xl mx-auto px-4 py-6 md:px-6 md:py-8">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="border-t border-white/5 mt-auto">
+    <div class="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-crab-sand-dim">
+      <span class="font-display text-sm">🦀 crab.travel</span>
+      <span>Group trips, without the chaos.</span>
+    </div>
+  </footer>
 
   <script>
     function toggleTheme() {
@@ -85,7 +250,6 @@
       document.getElementById('moon-icon').style.display = isDark ? 'block' : 'none';
     }
     updateThemeIcons();
-    // Close dropdown on outside click
     document.addEventListener('click', function(e) {
       var menu = document.getElementById('user-menu');
       if (menu && !e.target.closest('.relative')) menu.classList.remove('show');

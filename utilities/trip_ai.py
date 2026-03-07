@@ -134,8 +134,8 @@ Be specific — use real places if you know the destination, otherwise create re
         return None, str(e)
 
 
-def generate_destination_card(destination_name, research_data, group_prefs):
-    """Use Claude to synthesize Amadeus data into a readable destination card."""
+def generate_destination_card(destination_name, research_data, group_prefs, travel_window=None):
+    """Use Claude to research a destination — fun things to do, events, activities with dates."""
     flights_summary = []
     for airport, fdata in (research_data.get('flights') or {}).items():
         cheapest = fdata.get('cheapest')
@@ -143,8 +143,6 @@ def generate_destination_card(destination_name, research_data, group_prefs):
             flights_summary.append(f"From {airport}: ${cheapest} (cheapest found)")
         elif fdata.get('flights') and fdata['flights'][0].get('price_range'):
             flights_summary.append(f"From {airport}: {fdata['flights'][0]['price_range']}")
-        else:
-            flights_summary.append(f"From {airport}: no flights found")
 
     # Build group context
     pref_summary = aggregate_preferences(group_prefs) if group_prefs else None
@@ -158,30 +156,84 @@ GROUP ({pref_summary['member_count']} members):
 - Dietary: {', '.join(pref_summary.get('dietary_needs', [])) or 'None'}
 - Mobility: {', '.join(pref_summary.get('mobility_notes', [])) or 'None'}"""
 
-    prompt = f"""Synthesize this travel research into a destination assessment for a group trip.
+    window_context = ""
+    if travel_window:
+        window_context = f"\nTRAVEL WINDOW: {travel_window.get('start', 'flexible')} to {travel_window.get('end', 'flexible')}"
+
+    prompt = f"""You are a local expert and event researcher for {destination_name}. Research this destination thoroughly for a group trip.
 
 DESTINATION: {destination_name}
 {group_context}
+{window_context}
 
 FLIGHT DATA:
-{chr(10).join(flights_summary) if flights_summary else 'No flight data available'}
+{chr(10).join(flights_summary) if flights_summary else 'No flight data yet'}
+
+Think like a friend who lives in {destination_name} and is excited to show visitors around. Build a Pinterest-style board of "pins" — specific places, events, and experiences that would make the group want to go.
+
+Research and include:
+
+1. **Where to stay** — 3-4 real hotels, Airbnbs, or unique stays. Mix budget levels. Include neighborhood context.
+2. **Things to do** — 6-8 specific activities, attractions, day trips. Real place names. Group-friendly.
+3. **Where to eat & drink** — 4-5 restaurants, bars, food experiences. Specific names, what they're known for.
+4. **Upcoming events** — 3-5 festivals, concerts, sporting events, seasonal happenings with dates. What's happening in {destination_name} in the next 3-6 months?
 
 Return ONLY valid JSON:
 {{
-  "summary": "2-3 sentence overview of this destination for the group",
+  "summary": "2-3 sentence pitch for why this destination is great for the group",
   "weather_note": "Brief weather/season context",
-  "highlights": ["3-4 key reasons this destination could work"],
-  "concerns": ["Any potential issues for the group"],
-  "estimated_total_per_person": "Rough estimate in USD for a 5-day trip (flights + hotel + activities)",
+  "stays": [
+    {{
+      "name": "Hotel/property name",
+      "description": "1-2 sentences — vibe, location, why it works for a group",
+      "neighborhood": "Area/district name",
+      "price_hint": "$ / $$ / $$$ / $$$$",
+      "image_search": "one or two keywords for finding a photo of this place"
+    }}
+  ],
+  "things_to_do": [
+    {{
+      "name": "Specific place or activity name",
+      "description": "1-2 sentences — why it's fun, what makes it special",
+      "category": "outdoors | culture | sports | shopping | music | day-trip | adventure | tours",
+      "group_vibe": "chill | active | party | cultural | adventurous",
+      "price_hint": "Free / $ / $$ / $$$",
+      "image_search": "one or two keywords for a photo"
+    }}
+  ],
+  "food_and_drink": [
+    {{
+      "name": "Restaurant or bar name",
+      "description": "1-2 sentences — what to order, the vibe",
+      "category": "restaurant | bar | cafe | food-market | brewery | rooftop",
+      "price_hint": "$ / $$ / $$$ / $$$$",
+      "image_search": "one or two keywords for a photo"
+    }}
+  ],
+  "upcoming_events": [
+    {{
+      "name": "Event name",
+      "date_range": "Mar 15-17, 2026 or Spring 2026 or Monthly etc",
+      "description": "What it is and why it's worth planning around",
+      "category": "festival | sports | music | food | cultural | seasonal",
+      "image_search": "one or two keywords for a photo"
+    }}
+  ],
+  "best_dates": "When to go and why — tie to events if possible",
+  "highlights": ["3-4 top reasons to pick this destination"],
+  "concerns": ["Any potential issues or downsides"],
+  "estimated_total_per_person": "Rough USD estimate for a 4-5 day trip",
   "compatibility_score": 75
 }}
 
-compatibility_score: 1-100 based on how well this destination fits the group's preferences and budget."""
+Be specific and real. Use actual venue names, actual event names, actual dates. Don't make up events — if you're unsure of a date, say "typically" or give the month. The image_search field should be 1-2 keywords that would find a great photo (e.g. "nashville broadway", "hot air balloon desert"). The goal is to build a visual board that gets people excited.
 
-    system = "You are a travel research analyst. Respond with valid JSON only."
+compatibility_score: 1-100 based on how well this destination fits the group."""
+
+    system = "You are an expert travel researcher and local guide. You know real venues, real events, real dates. Respond with valid JSON only."
 
     try:
-        text, _, _ = generate_text(prompt, system=system, max_tokens=1024, temperature=0.5)
+        text, _, _ = generate_text(prompt, system=system, max_tokens=3000, temperature=0.7)
         text = text.strip()
         if text.startswith('```'):
             text = text.split('\n', 1)[1]

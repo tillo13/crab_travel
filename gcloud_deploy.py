@@ -10,7 +10,7 @@ import select
 
 EXPECTED_PROJECT_ID = "crab-travel"
 SERVICE_NAME = "default"
-VERSION_MAX = 5
+VERSION_MAX = 3
 
 
 def print_separator():
