@@ -324,11 +324,14 @@ var _researchSteps = [
 var _researchTimerInterval = null;
 var _researchStartTime = null;
 
-function renderResearchProgress(destName) {
+function renderResearchProgress() {
+  var researching = _destinations.filter(function(d) { return d.status === 'researching'; });
+  var names = researching.map(function(d) { return d.destination_name; });
+  var namesHtml = names.map(function(n) { return '<span class="text-crab-coral">' + n + '</span>'; }).join(', ');
   var html = '<div class="py-10">';
   html += '<div class="research-progress">';
   html += '<div class="text-center mb-6">';
-  html += '<p class="text-lg font-display mb-1">CrabAI is researching <span class="text-crab-coral">' + destName + '</span></p>';
+  html += '<p class="text-lg font-display mb-1">CrabAI is researching ' + namesHtml + '</p>';
   html += '<p class="research-timer" id="research-timer">0:00</p>';
   html += '</div>';
   html += '<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5" id="research-steps">';
@@ -377,7 +380,7 @@ function renderBoard(dest) {
   var card = dest.destination_data?.card;
 
   if (dest.status === 'researching') {
-    board.innerHTML = renderResearchProgress(dest.destination_name);
+    board.innerHTML = renderResearchProgress();
     startResearchTimer();
     return;
   }
