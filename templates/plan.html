@@ -399,6 +399,7 @@ function renderBoard(dest) {
   html += '<div class="mb-6">';
   html += '<div class="mb-3">';
   html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
+  if (dest.suggested_by_name) html += '<p class="text-xs text-crab-sand-dim mt-0.5 opacity-60">Suggested by ' + dest.suggested_by_name + '</p>';
   if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
   html += '</div>';
   // Meta chips

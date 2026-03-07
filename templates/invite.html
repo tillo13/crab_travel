@@ -862,7 +862,18 @@ function suggestDestination() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     input.disabled = false;
-    if (data.success) location.reload();
+    if (data.success) {
+      // Add to local destinations array as "researching" and re-render immediately
+      _destinations.push({
+        suggestion_id: data.data.suggestion_id,
+        destination_name: name,
+        status: 'researching',
+        destination_data: null,
+      });
+      renderCards();
+      // Start polling for research completion
+      pollDestinations();
+    }
   })
   .catch(function() { input.disabled = false; });
 }
@@ -1145,27 +1156,34 @@ if (!NEEDS_LOGIN) {
   setInterval(loadChat, 15000);
 }
 
+var _pollTimer = null;
+var _pollCount = 0;
+
+function pollDestinations() {
+  if (_pollTimer) return; // already polling
+  _pollCount = 0;
+  _pollTimer = setInterval(function() {
+    _pollCount++;
+    if (_pollCount > 40) { clearInterval(_pollTimer); _pollTimer = null; return; }
+    fetch('/api/plan/' + PLAN_ID + '/destinations')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          _destinations = data.data.destinations;
+          renderCards();
+          if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+          }
+        }
+      });
+  }, 3000);
+}
+
 if (_destinations.length > 0) {
   renderCards();
-
-  // Poll if any are researching
   if (_destinations.some(function(d) { return d.status === 'researching'; })) {
-    var _pollCount = 0;
-    var _pollTimer = setInterval(function() {
-      _pollCount++;
-      if (_pollCount > 40) { clearInterval(_pollTimer); return; }
-      fetch('/api/plan/' + PLAN_ID + '/destinations')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.success) {
-            _destinations = data.data.destinations;
-            renderCards();
-            if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
-              clearInterval(_pollTimer);
-            }
-          }
-        });
-    }, 3000);
+    pollDestinations();
   }
 }
 </script>
