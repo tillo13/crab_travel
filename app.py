@@ -34,7 +34,7 @@ from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
 from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
 from utilities.search_engine import trigger_search, is_searching
-from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats, get_db_connection
+from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats, get_db_connection, get_all_member_votes
 from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
 # ── App setup ────────────────────────────────────────────────
@@ -468,9 +468,20 @@ def view_plan(plan_id):
     recs = get_recommendations(plan_id)
     destinations = get_destination_suggestions(plan_id)
     view_stats = get_invite_view_stats(plan_id) if is_organizer else None
+    member_votes = {}
+    vote_tallies = None
+    if is_organizer:
+        raw_votes = get_all_member_votes(plan_id)
+        # Build a set of user_ids who have voted
+        voted_user_ids = set()
+        for uid, mv in raw_votes.items():
+            if mv.get('votes'):
+                voted_user_ids.add(uid)
+        member_votes = {'voted_user_ids': voted_user_ids, 'raw': raw_votes}
+        vote_tallies = get_vote_tallies(plan_id, 'destination')
     return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
                            recs=recs, destinations=destinations, is_organizer=is_organizer, user=user,
-                           view_stats=view_stats)
+                           view_stats=view_stats, member_votes=member_votes, vote_tallies=vote_tallies)
 
 
 def _resolve_member(plan_id):

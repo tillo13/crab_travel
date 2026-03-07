@@ -1322,6 +1322,36 @@ def get_user_votes(plan_id, user_id):
             conn.close()
 
 
+def get_all_member_votes(plan_id):
+    """Get all destination votes grouped by user_id for organizer dashboard."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT v.user_id, v.target_id, v.vote, m.display_name
+            FROM crab.votes v
+            JOIN crab.plan_members m ON m.plan_id = v.plan_id AND m.user_id = v.user_id
+            WHERE v.plan_id = %s AND v.target_type = 'destination'
+        """, (plan_id,))
+        results = {}
+        for r in cursor.fetchall():
+            uid = r['user_id']
+            if uid not in results:
+                results[uid] = {'display_name': r['display_name'], 'votes': {}}
+            results[uid]['votes'][r['target_id']] = r['vote']
+        return results
+    except Exception as e:
+        logger.error(f"Get all member votes failed: {e}")
+        return {}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def lock_plan(plan_id, destination, start_date=None, end_date=None):
     conn = None
     cursor = None

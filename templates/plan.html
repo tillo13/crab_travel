@@ -253,13 +253,45 @@
 </div>
 {% endif %}
 
-<!-- Members strip -->
-<div class="flex items-center gap-3 mb-6 overflow-x-auto pb-1">
-  <span class="text-sm font-medium shrink-0">{{ members|length }} {{ 'person' if members|length == 1 else 'people' }}:</span>
+<!-- Members & engagement -->
+{% if is_organizer and view_stats %}
+<div class="grid grid-cols-3 gap-3 mb-4">
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    <div class="text-lg font-display text-crab-coral">{{ view_stats.unique_visitors }}</div>
+    <div class="text-xs text-crab-sand-dim">opened link</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    <div class="text-lg font-display text-crab-teal">{{ members|length }}</div>
+    <div class="text-xs text-crab-sand-dim">signed up</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    {% set voted_count = member_votes.voted_user_ids|length if member_votes and member_votes.voted_user_ids else 0 %}
+    <div class="text-lg font-display" style="color: {% if voted_count == members|length and members|length > 0 %}#14B8A6{% else %}#F0EAE0{% endif %};">{{ voted_count }}</div>
+    <div class="text-xs text-crab-sand-dim">voted</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="mb-6">
+  <div class="flex items-center gap-2 mb-2">
+    <span class="text-sm font-medium">{{ members|length }} {{ 'person' if members|length == 1 else 'people' }} joined</span>
+    {% if is_organizer and view_stats and view_stats.unique_visitors > members|length %}
+    <span class="text-xs text-crab-sand-dim opacity-60">({{ view_stats.unique_visitors - members|length }} opened link but haven't joined)</span>
+    {% endif %}
+  </div>
   {% for m in members %}
-  <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1.5 shrink-0">
-    <span class="text-sm">{{ m.display_name }}</span>
+  <div class="flex items-center gap-2 py-1.5 {% if not loop.last %}border-b border-white/4{% endif %}">
+    <span class="text-sm font-medium">{{ m.display_name }}</span>
     {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
+    {% if is_organizer and member_votes and member_votes.voted_user_ids %}
+      {% if m.user_id in member_votes.voted_user_ids %}
+        <span class="text-xs text-crab-teal ml-auto font-medium">✓ voted</span>
+      {% else %}
+        <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">no vote yet</span>
+      {% endif %}
+    {% elif is_organizer %}
+      <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">no vote yet</span>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
