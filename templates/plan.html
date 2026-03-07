@@ -119,6 +119,57 @@
     color: rgba(200,194,184,0.5);
   }
   html:not(.dark) .research-timer { color: #9ca3af; }
+  /* Chat */
+  .chat-container { max-height: 24rem; overflow-y: auto; }
+  .chat-msg { display: flex; gap: 0.6rem; padding: 0.5rem 0; }
+  .chat-avatar {
+    width: 2rem; height: 2rem; border-radius: 50%; background: rgba(232,89,58,0.12);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 0.8rem; font-weight: 600; color: #E8593A;
+    overflow: hidden;
+  }
+  .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .chat-name { font-size: 0.8rem; font-weight: 600; }
+  .chat-time { font-size: 0.7rem; color: rgba(200,194,184,0.4); margin-left: 0.4rem; }
+  html:not(.dark) .chat-time { color: #9ca3af; }
+  .chat-text { font-size: 0.85rem; line-height: 1.45; margin-top: 0.15rem; color: rgba(240,234,224,0.85); }
+  html:not(.dark) .chat-text { color: #374151; }
+  .chat-actions { display: none; gap: 0.5rem; margin-top: 0.25rem; }
+  .chat-msg:hover .chat-actions { display: flex; }
+  .chat-action-btn {
+    font-size: 0.7rem; color: rgba(200,194,184,0.5); cursor: pointer;
+    background: none; border: none; padding: 0; transition: color 0.15s;
+  }
+  .chat-action-btn:hover { color: #E8593A; }
+  .thread-line {
+    border-left: 2px solid rgba(255,255,255,0.08); margin-left: 1.7rem;
+    padding-left: 0.75rem; margin-top: 0.15rem;
+  }
+  html:not(.dark) .thread-line { border-color: rgba(0,0,0,0.08); }
+  .thread-toggle {
+    font-size: 0.75rem; color: #E8593A; cursor: pointer; background: none;
+    border: none; padding: 0.2rem 0; font-weight: 500; display: flex;
+    align-items: center; gap: 0.3rem;
+  }
+  .thread-toggle:hover { text-decoration: underline; }
+  .chat-input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+  .chat-input {
+    flex: 1; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.85rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; resize: none; min-height: 2.4rem; max-height: 8rem;
+    font-family: inherit; transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: #E8593A; }
+  .chat-input::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .chat-input { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .chat-input:focus { border-color: #E8593A; }
+  .chat-send-btn {
+    padding: 0.55rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600;
+    background: #E8593A; color: white; border: none; cursor: pointer;
+    transition: background 0.2s; white-space: nowrap;
+  }
+  .chat-send-btn:hover { background: #d4472a; }
+  .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
 </style>
 {% endblock %}
 
@@ -216,6 +267,45 @@
 <!-- Destination board (Pinterest-style) -->
 <div id="dest-board">
   <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
+</div>
+
+<!-- Group Chat -->
+<div class="mt-8 mb-10" id="chat-section">
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-display">Group Chat</span>
+        <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
+      </div>
+    </div>
+    <div class="chat-container p-3" id="chat-messages">
+      <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
+    </div>
+    <div class="px-4 py-3 border-t border-white/6">
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input-main" placeholder="Message the group..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+        <button class="chat-send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Thread panel (slides in) -->
+<div id="thread-panel" class="hidden fixed inset-0 z-50">
+  <div class="absolute inset-0 bg-black/50" onclick="closeThread()"></div>
+  <div class="absolute right-0 top-0 bottom-0 w-full max-w-md bg-crab-bg border-l border-white/6 flex flex-col">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Thread</span>
+      <button onclick="closeThread()" class="text-crab-sand-dim hover:text-crab-sand transition-colors text-lg">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-3" id="thread-messages"></div>
+    <div class="px-4 py-3 border-t border-white/6">
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="thread-input" placeholder="Reply in thread..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendThreadReply()}"></textarea>
+        <button class="chat-send-btn" onclick="sendThreadReply()">Reply</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 </div><!-- /animate-in -->
@@ -821,10 +911,171 @@ async function loadVotes() {
   } catch (e) {}
 }
 
+// ── Chat ──
+var _chatMessages = [];
+var _openThreadId = null;
+var _currentUserId = {{ user.id if user and user.id else 'null' }};
+
+function chatAvatar(msg) {
+  if (msg.user_picture) return '<img src="' + msg.user_picture + '" alt="" onerror="this.parentElement.textContent=\'' + (msg.display_name||'?')[0].toUpperCase() + '\'">';
+  return (msg.display_name || '?')[0].toUpperCase();
+}
+
+function chatTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  var now = new Date();
+  var diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+
+function escapeHtml(t) {
+  var d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+function renderMsg(msg, showThread) {
+  var html = '<div class="chat-msg" data-id="' + msg.message_id + '">';
+  html += '<div class="chat-avatar">' + chatAvatar(msg) + '</div>';
+  html += '<div class="flex-1 min-w-0">';
+  html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + (msg.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(msg.created_at) + '</span></div>';
+  html += '<div class="chat-text">' + escapeHtml(msg.content).replace(/\n/g, '<br>') + '</div>';
+  html += '<div class="chat-actions">';
+  if (showThread) html += '<button class="chat-action-btn" onclick="openThread(\'' + msg.message_id + '\')">💬 Reply</button>';
+  if (msg.user_id === _currentUserId) html += '<button class="chat-action-btn" onclick="deleteMsg(\'' + msg.message_id + '\')">Delete</button>';
+  html += '</div>';
+  if (showThread && msg.reply_count > 0) {
+    html += '<button class="thread-toggle" onclick="openThread(\'' + msg.message_id + '\')">';
+    html += '<span>' + msg.reply_count + (msg.reply_count === 1 ? ' reply' : ' replies') + '</span>';
+    html += '</button>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderChat() {
+  var container = document.getElementById('chat-messages');
+  var countEl = document.getElementById('chat-count');
+  if (!container) return;
+  if (_chatMessages.length === 0) {
+    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">No messages yet. Start the conversation!</p>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  var total = _chatMessages.reduce(function(s, m) { return s + 1 + (m.reply_count || 0); }, 0);
+  if (countEl) countEl.textContent = total + ' message' + (total === 1 ? '' : 's');
+  var html = '';
+  _chatMessages.forEach(function(m) { html += renderMsg(m, true); });
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function loadChat() {
+  fetch('/api/plan/' + PLAN_ID + '/messages')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        _chatMessages = data.data.messages;
+        renderChat();
+        if (_openThreadId) renderThread(_openThreadId);
+      }
+    })
+    .catch(function(e) { console.warn('Chat fetch error:', e); });
+}
+
+function sendMessage() {
+  var input = document.getElementById('chat-input-main');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function openThread(msgId) {
+  _openThreadId = msgId;
+  document.getElementById('thread-panel').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  renderThread(msgId);
+}
+
+function closeThread() {
+  _openThreadId = null;
+  document.getElementById('thread-panel').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function renderThread(msgId) {
+  var panel = document.getElementById('thread-messages');
+  if (!panel) return;
+  var parent = _chatMessages.find(function(m) { return m.message_id === msgId; });
+  if (!parent) return;
+  var html = renderMsg(parent, false);
+  html += '<div class="thread-line">';
+  if (parent.replies && parent.replies.length > 0) {
+    parent.replies.forEach(function(r) { html += renderMsg(r, false); });
+  } else {
+    html += '<p class="text-xs text-crab-sand-dim py-3 opacity-50">No replies yet</p>';
+  }
+  html += '</div>';
+  panel.innerHTML = html;
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function sendThreadReply() {
+  if (!_openThreadId) return;
+  var input = document.getElementById('thread-input');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text, parent_id: _openThreadId}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function deleteMsg(msgId) {
+  if (!confirm('Delete this message?')) return;
+  fetch('/api/plan/' + PLAN_ID + '/messages/' + msgId, {method: 'DELETE'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) loadChat();
+    });
+}
+
+// Auto-grow textareas
+document.addEventListener('input', function(e) {
+  if (e.target.classList.contains('chat-input')) {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+  }
+});
+
 // Init
 loadDestinations();
 loadVotes();
-// Poll votes every 15s so organizer sees live updates
+loadChat();
+// Poll votes and chat so organizer sees live updates
 setInterval(loadVotes, 15000);
+setInterval(loadChat, 15000);
 </script>
 {% endblock %}
