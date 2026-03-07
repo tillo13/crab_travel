@@ -1,5 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Profile — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .input-field {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: inherit;
+    font-size: 0.875rem;
+    transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; outline: none; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto animate-in">
 
