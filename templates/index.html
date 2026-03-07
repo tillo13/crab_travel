@@ -6,25 +6,6 @@
     background: radial-gradient(ellipse at 30% 0%, rgba(232, 89, 58, 0.15) 0%, transparent 60%),
                 radial-gradient(ellipse at 70% 100%, rgba(13, 148, 136, 0.1) 0%, transparent 50%);
   }
-  .hero-logo-bg {
-    position: absolute;
-    width: 22rem;
-    height: 22rem;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    opacity: 0.06;
-    filter: blur(1px);
-    pointer-events: none;
-    z-index: 0;
-  }
-  @media (min-width: 768px) {
-    .hero-logo-bg {
-      width: 30rem;
-      height: 30rem;
-      opacity: 0.07;
-    }
-  }
   .step-number {
     width: 2.5rem;
     height: 2.5rem;
@@ -71,13 +52,10 @@
 
   <!-- Hero -->
   <section class="hero-gradient px-4 md:px-6 py-20 md:py-32 relative overflow-hidden">
-    <!-- Large atmospheric logo behind hero text -->
-    <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="hero-logo-bg hidden dark:block rounded-[4rem]" alt="">
-    <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="hero-logo-bg block dark:hidden rounded-[4rem]" alt="">
-
     <div class="max-w-3xl mx-auto text-center relative z-10">
       <div class="animate-in">
-        <p class="text-sm font-medium text-crab-coral mb-4 tracking-widest uppercase">For groups that actually happen</p>
+        <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl shadow-crab-coral/15 hidden dark:block" alt="">
+        <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl block dark:hidden" alt="">
         <h1 class="text-4xl md:text-6xl font-display leading-tight mb-6">
           Your group trip shouldn't live<br class="hidden md:block"> in a spreadsheet.
         </h1>

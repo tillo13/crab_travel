@@ -391,6 +391,20 @@
 <script>
 const PLAN_ID = '{{ plan.plan_id }}';
 const NEEDS_LOGIN = {{ 'true' if needs_login else 'false' }};
+const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
+
+function vibeScore(item) {
+  if (!GROUP_VIBES) return 0;
+  var words = GROUP_VIBES.split(/[\s,]+/).filter(function(w) { return w.length > 2; });
+  var text = ((item.name || '') + ' ' + (item.description || '') + ' ' + (item.category || '')).toLowerCase();
+  var score = 0;
+  words.forEach(function(w) {
+    var re = new RegExp(w, 'gi');
+    var matches = text.match(re);
+    if (matches) score += matches.length;
+  });
+  return score;
+}
 
 // ── Destination data from server (avoid extra fetch for initial render) ──
 var _destinations = {{ destinations_json|safe if destinations_json is defined else '[]' }};
@@ -534,10 +548,16 @@ function renderBoard(dest) {
   // Pinterest grid
   html += '<div class="pin-grid">';
   var dn = dest.destination_name;
-  if (card.stays) card.stays.forEach(function(s) { html += pinCard(s, 'stay', dn); });
-  if (card.things_to_do) card.things_to_do.forEach(function(t) { html += pinCard(t, 'do', dn); });
-  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { html += pinCard(f, 'food', dn); });
-  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { html += pinCard(e, 'event', dn); });
+  // Flatten all pins, score by vibe relevance, sort highest first
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
+  }
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
   html += '</div>';
 
   board.innerHTML = html;

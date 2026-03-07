@@ -229,8 +229,22 @@
 <script>
 const PLAN_ID = '{{ plan.plan_id }}';
 const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
+const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
 let _destinations = [];
 let _activeDestIdx = 0;
+
+function vibeScore(item) {
+  if (!GROUP_VIBES) return 0;
+  var words = GROUP_VIBES.split(/[\s,]+/).filter(function(w) { return w.length > 2; });
+  var text = ((item.name || '') + ' ' + (item.description || '') + ' ' + (item.category || '')).toLowerCase();
+  var score = 0;
+  words.forEach(function(w) {
+    var re = new RegExp(w, 'gi');
+    var matches = text.match(re);
+    if (matches) score += matches.length;
+  });
+  return score;
+}
 
 async function deletePlan() {
   var btn = document.getElementById('delete-plan-btn');
@@ -393,10 +407,16 @@ function renderBoard(dest) {
   html += '<div id="board-pins" class="pin-grid">';
   var dn = dest.destination_name;
   var sid = dest.suggestion_id;
-  if (card.stays) card.stays.forEach(function(s, i) { html += pinCard(s, 'stay', dn, sid, 'stays', i); });
-  if (card.things_to_do) card.things_to_do.forEach(function(t, i) { html += pinCard(t, 'do', dn, sid, 'things_to_do', i); });
-  if (card.food_and_drink) card.food_and_drink.forEach(function(f, i) { html += pinCard(f, 'food', dn, sid, 'food_and_drink', i); });
-  if (card.upcoming_events) card.upcoming_events.forEach(function(e, i) { html += pinCard(e, 'event', dn, sid, 'upcoming_events', i); });
+  // Flatten all pins, score by vibe relevance, sort highest first
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s, i) { allPins.push({item: s, type: 'stay', cat: 'stays', idx: i}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t, i) { allPins.push({item: t, type: 'do', cat: 'things_to_do', idx: i}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f, i) { allPins.push({item: f, type: 'food', cat: 'food_and_drink', idx: i}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e, i) { allPins.push({item: e, type: 'event', cat: 'upcoming_events', idx: i}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
+  }
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn, sid, p.cat, p.idx); });
 
   // Add custom pin (organizer)
   if (IS_ORGANIZER) {
