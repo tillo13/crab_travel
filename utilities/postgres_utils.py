@@ -1232,6 +1232,30 @@ def upsert_vote(plan_id, user_id, target_type, target_id, vote):
             conn.close()
 
 
+def delete_vote(plan_id, user_id, target_type, target_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM crab.votes
+            WHERE plan_id = %s AND user_id = %s AND target_type = %s AND target_id = %s
+        """, (plan_id, user_id, target_type, target_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Delete vote failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_vote_tallies(plan_id, target_type=None):
     conn = None
     cursor = None
@@ -1893,7 +1917,7 @@ def get_plan_messages(plan_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT m.*, u.picture as user_picture
+            SELECT m.*, u.picture_url as user_picture
             FROM crab.messages m
             LEFT JOIN crab.users u ON m.user_id = u.pk_id
             WHERE m.plan_id = %s

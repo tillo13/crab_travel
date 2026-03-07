@@ -240,7 +240,7 @@ Return ONLY valid JSON:
   "best_dates": "When to go and why — tie to events if possible",
   "highlights": ["3-4 top reasons to pick this destination"],
   "concerns": ["Any potential issues or downsides"],
-  "estimated_total_per_person": "Rough USD estimate for a 4-5 day trip",
+  "estimated_total_per_person": "Specific USD range (e.g. '$1,500-2,200') for a 4-5 day trip including flights, hotel, food, and activities. Be realistic — a trip to Helsinki costs far more than Nashville. Factor in local cost of living, typical hotel rates, and flight costs from major US cities.",
   "compatibility_score": 75
 }}
 

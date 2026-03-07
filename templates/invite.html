@@ -39,12 +39,6 @@
   .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
   html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
   html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
-  .dest-tab { cursor:pointer; padding:0.5rem 1rem; border-radius:0.5rem; font-size:0.9rem; font-weight:500; transition:all 0.2s; border:none; background:transparent; }
-  .dest-tab.active { background: rgba(232,89,58,0.12); color: #E8593A; }
-  .dest-tab:not(.active) { color: rgba(200,194,184,0.6); }
-  .dest-tab:not(.active):hover { color: rgba(200,194,184,1); }
-  html:not(.dark) .dest-tab.active { background: rgba(232,89,58,0.08); color: #E8593A; }
-  html:not(.dark) .dest-tab:not(.active) { color: #9ca3af; }
   .vote-pill {
     display: inline-flex; align-items: center; gap: 0.25rem;
     padding: 0.3rem 0.6rem; border-radius: 9999px; font-size: 0.8rem;
@@ -57,6 +51,40 @@
   .vote-pill.voted-down { background: rgba(232,89,58,0.12); border-color: #E8593A; color: #F47A5F; }
   html:not(.dark) .vote-pill { border-color: rgba(0,0,0,0.1); color: #6b7280; }
   html:not(.dark) .vote-pill:hover { border-color: rgba(0,0,0,0.2); color: #111; }
+  /* Destination voting cards */
+  .dest-vote-card {
+    border-radius: 1rem; overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.06);
+    transition: all 0.3s ease; cursor: pointer;
+    background: rgba(255,255,255,0.02);
+  }
+  .dest-vote-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+  .dest-vote-card.voted { border-color: #14B8A6; box-shadow: 0 0 20px rgba(20,184,166,0.15); }
+  html:not(.dark) .dest-vote-card { border-color: rgba(0,0,0,0.08); background: white; }
+  html:not(.dark) .dest-vote-card:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+  html:not(.dark) .dest-vote-card.voted { border-color: #0D9488; box-shadow: 0 0 20px rgba(13,148,136,0.1); }
+  .vote-btn-big {
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    padding: 0.65rem 1.5rem; border-radius: 0.75rem; font-size: 0.9rem;
+    font-weight: 600; border: 2px solid rgba(255,255,255,0.1);
+    cursor: pointer; transition: all 0.25s; background: transparent;
+    color: rgba(200,194,184,0.8); width: 100%;
+  }
+  .vote-btn-big:hover { border-color: #14B8A6; color: #14B8A6; background: rgba(20,184,166,0.08); }
+  .vote-btn-big.voted { background: rgba(20,184,166,0.15); border-color: #14B8A6; color: #14B8A6; }
+  html:not(.dark) .vote-btn-big { border-color: rgba(0,0,0,0.12); color: #6b7280; }
+  html:not(.dark) .vote-btn-big:hover { border-color: #0D9488; color: #0D9488; background: rgba(13,148,136,0.05); }
+  html:not(.dark) .vote-btn-big.voted { background: rgba(13,148,136,0.1); border-color: #0D9488; color: #0D9488; }
+  .dest-detail-tabs { display: flex; gap: 0.25rem; }
+  .detail-tab {
+    cursor:pointer; padding:0.4rem 0.9rem; border-radius:0.4rem; font-size:0.8rem;
+    font-weight:500; transition:all 0.2s; border: 1px solid transparent;
+    background: transparent; color: rgba(200,194,184,0.5);
+  }
+  .detail-tab.active { background: rgba(232,89,58,0.1); color: #E8593A; border-color: rgba(232,89,58,0.2); }
+  .detail-tab:not(.active):hover { color: rgba(200,194,184,0.9); }
+  html:not(.dark) .detail-tab.active { background: rgba(232,89,58,0.06); color: #E8593A; }
+  html:not(.dark) .detail-tab:not(.active) { color: #9ca3af; }
   .stat-card {
     text-align: center; padding: 0.75rem 1rem; border-radius: 0.75rem;
     background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
@@ -241,14 +269,20 @@
   </div>
 
   {% if destinations %}
-  <!-- Destination tabs -->
-  <div id="dest-tabs" class="flex items-center gap-1 mb-6 flex-wrap animate-in stagger-2">
+  <!-- Vote prompt -->
+  <div class="text-center mb-6 animate-in stagger-2">
+    <h2 class="text-xl font-display mb-1">Where should we go?</h2>
+    <p class="text-sm text-crab-sand-dim">Vote for the destinations you'd be down for. You can pick as many as you want.</p>
+  </div>
+
+  <!-- Destination voting cards -->
+  <div id="dest-cards" class="space-y-4 mb-6 animate-in stagger-2">
     <!-- populated by JS -->
   </div>
 
-  <!-- Destination board -->
-  <div id="dest-board" class="animate-in stagger-2">
-    <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
+  <!-- Expanded detail for selected destination -->
+  <div id="dest-detail" class="animate-in stagger-2" style="display:none;">
+    <!-- populated by JS when a card is expanded -->
   </div>
   {% else %}
   <div class="text-center py-12 border border-dashed border-white/10 rounded-xl mb-8">
@@ -259,7 +293,7 @@
 
   {% if not needs_login %}
   <!-- Suggest a destination -->
-  <div class="mt-6 mb-10 flex gap-2">
+  <div class="mt-2 mb-10 flex gap-2">
     <input type="text" id="suggest-input" class="input-field flex-1" placeholder="Suggest a destination... (e.g. Nashville, Lisbon)" onkeydown="if(event.key==='Enter'){suggestDestination()}">
     <button onclick="suggestDestination()" class="px-4 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors">Add</button>
   </div>
@@ -443,7 +477,6 @@ function vibeScore(item) {
 
 // ── Destination data from server (avoid extra fetch for initial render) ──
 var _destinations = {{ destinations_json|safe if destinations_json is defined else '[]' }};
-var _activeDestIdx = 0;
 
 function unsplashUrl(query, w, h) {
   return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
@@ -461,11 +494,13 @@ var _researchSteps = [
 var _researchTimerInterval = null;
 var _researchStartTime = null;
 
-function renderResearchProgress(destName) {
+function renderResearchProgress(researchingDests) {
+  var names = researchingDests.map(function(d) { return d.destination_name; });
+  var namesHtml = names.map(function(n) { return '<span class="text-crab-coral">' + n + '</span>'; }).join(', ');
   var html = '<div class="py-10">';
   html += '<div class="research-progress">';
   html += '<div class="text-center mb-6">';
-  html += '<p class="text-lg font-display mb-1">CrabAI is researching <span class="text-crab-coral">' + destName + '</span></p>';
+  html += '<p class="text-lg font-display mb-1">CrabAI is researching ' + namesHtml + '</p>';
   html += '<p class="research-timer" id="research-timer">0:00</p>';
   html += '</div>';
   html += '<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5" id="research-steps">';
@@ -527,67 +562,196 @@ function pinCard(item, type, destName) {
   return html;
 }
 
-function renderBoard(dest) {
-  var board = document.getElementById('dest-board');
-  var card = dest.destination_data ? dest.destination_data.card : null;
+var _expandedDest = null;
+var _userVotes = {}; // {suggestion_id: true}
 
-  if (dest.status === 'researching') {
-    board.innerHTML = renderResearchProgress(dest.destination_name);
-    startResearchTimer();
-    return;
-  }
-  if (dest.status === 'error') {
-    board.innerHTML = '<div class="text-center py-16"><p class="text-red-400 mb-2">Research failed for ' + dest.destination_name + '</p></div>';
-    return;
-  }
-  if (!card) {
-    board.innerHTML = '<div class="text-center py-16 text-crab-sand-dim"><p>No research data yet.</p></div>';
-    return;
-  }
+// Initialize user's own votes from server
+{% if my_votes %}
+{% for key, val in my_votes.items() %}
+{% if val == 1 %}
+(function() { var k = '{{ key }}'; var sid = k.replace('destination:', ''); _userVotes[sid] = true; })();
+{% endif %}
+{% endfor %}
+{% endif %}
+
+function renderCards() {
+  var container = document.getElementById('dest-cards');
+  var detailEl = document.getElementById('dest-detail');
+  if (!container) return;
+
+  // Check if any are researching
+  var researching = _destinations.filter(function(d) { return d.status === 'researching'; });
+  var ready = _destinations.filter(function(d) { return d.status !== 'researching' && d.status !== 'error'; });
 
   var html = '';
+
+  // Show researching progress if any
+  if (researching.length > 0) {
+    html += renderResearchProgress(researching);
+  }
+
+  // Render voting cards for ready destinations
+  ready.forEach(function(dest, i) {
+    var card = dest.destination_data ? dest.destination_data.card : null;
+    if (!card) return;
+    var sid = dest.suggestion_id;
+    var tally = _voteTallies[sid] || {up: 0, down: 0};
+    var isVoted = _userVotes[sid] || false;
+    var isExpanded = _expandedDest === sid;
+
+    html += '<div class="dest-vote-card' + (isVoted ? ' voted' : '') + '" id="dcard-' + sid + '">';
+    html += '<div class="p-5">';
+
+    // Top row: name + vote count
+    html += '<div class="flex items-start justify-between gap-4 mb-2">';
+    html += '<div class="flex-1">';
+    html += '<h3 class="text-lg font-display">' + dest.destination_name + '</h3>';
+    if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1 leading-relaxed">' + card.summary + '</p>';
+    html += '</div>';
+    if (tally.up > 0) {
+      html += '<div class="shrink-0 text-center">';
+      html += '<div class="text-xl font-display text-crab-teal">' + tally.up + '</div>';
+      html += '<div class="text-xs text-crab-sand-dim">vote' + (tally.up === 1 ? '' : 's') + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Meta chips
+    html += '<div class="flex flex-wrap gap-2 text-xs mb-3">';
+    if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+    if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+    if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+    if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+    html += '</div>';
+
+    // Highlights
+    if (card.highlights && card.highlights.length > 0) {
+      html += '<div class="flex flex-wrap gap-1.5 mb-4">';
+      card.highlights.forEach(function(h) {
+        html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2 py-0.5 rounded-full">' + h + '</span>';
+      });
+      html += '</div>';
+    }
+
+    // Vote button (big, prominent)
+    if (!NEEDS_LOGIN) {
+      html += '<button class="vote-btn-big' + (isVoted ? ' voted' : '') + '" onclick="event.stopPropagation(); toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
+      html += isVoted ? '✓ I\'d go here' : 'I\'d go here';
+      html += '</button>';
+    }
+
+    // Expand/collapse link
+    html += '<div class="mt-3 text-center">';
+    html += '<button onclick="event.stopPropagation(); toggleDetail(\'' + sid + '\')" class="text-xs text-crab-sand-dim hover:text-crab-coral transition-colors font-medium" id="expand-' + sid + '">';
+    html += isExpanded ? '▲ Hide details' : '▼ See places, media & more';
+    html += '</button>';
+    html += '</div>';
+
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+
+  // If a destination is expanded, render its detail
+  if (_expandedDest) {
+    var dest = _destinations.find(function(d) { return d.suggestion_id === _expandedDest; });
+    if (dest && dest.status !== 'researching') {
+      renderDetail(dest);
+      detailEl.style.display = '';
+    }
+  } else {
+    detailEl.style.display = 'none';
+  }
+
+  // Start timer if researching
+  if (researching.length > 0) startResearchTimer();
+}
+
+function toggleVote(sid) {
+  if (NEEDS_LOGIN) return;
+  var isVoted = _userVotes[sid];
+  var newVote = isVoted ? 0 : 1;
+
+  fetch('/api/plan/' + PLAN_ID + '/vote', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({target_type: 'destination', target_id: sid, vote: newVote}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success && data.data.tallies) {
+      data.data.tallies.forEach(function(t) {
+        _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
+      });
+      if (newVote === 1) _userVotes[sid] = true;
+      else delete _userVotes[sid];
+      renderCards();
+    }
+  });
+}
+
+function toggleDetail(sid) {
+  if (_expandedDest === sid) {
+    _expandedDest = null;
+  } else {
+    _expandedDest = sid;
+  }
+  renderCards();
+  // Scroll to detail if opening
+  if (_expandedDest) {
+    setTimeout(function() {
+      var el = document.getElementById('dest-detail');
+      if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }, 100);
+  }
+}
+
+function renderDetail(dest) {
+  var detailEl = document.getElementById('dest-detail');
+  if (!detailEl) return;
+  var card = dest.destination_data ? dest.destination_data.card : null;
+  if (!card) return;
+
   var dn = dest.destination_name;
+  var sid = dest.suggestion_id;
   var vibeQuery = GROUP_VIBES ? (GROUP_VIBES + ' ' + dn) : dn;
   var customMedia = dest.destination_data?.custom_media || [];
 
-  // Destination header with summary + vote
-  html += '<div class="mb-6">';
-  html += '<div class="flex items-start justify-between gap-4 mb-3">';
-  html += '<div>';
-  html += '<h2 class="text-xl font-display">' + dn + '</h2>';
-  if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
+  var html = '';
+  html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
+
+  // Header with tabs
+  html += '<div class="px-5 py-3 border-b border-white/6 flex items-center justify-between">';
+  html += '<h3 class="font-display text-lg">' + dn + '</h3>';
+  html += '<div class="dest-detail-tabs">';
+  html += '<button class="detail-tab active" onclick="switchDetailTab(\'pins\', this)">Places</button>';
+  html += '<button class="detail-tab" onclick="switchDetailTab(\'media\', this)">Media</button>';
   html += '</div>';
-  if (!NEEDS_LOGIN) {
-    html += '<div class="flex items-center gap-1.5 shrink-0">';
-    html += '<button class="vote-pill" onclick="vote(\'' + dest.suggestion_id + '\', 1, this)" title="Love it">👍 <span class="vc" data-id="' + dest.suggestion_id + '-up">0</span></button>';
-    html += '<button class="vote-pill" onclick="vote(\'' + dest.suggestion_id + '\', -1, this)" title="Not for me">👎 <span class="vc" data-id="' + dest.suggestion_id + '-down">0</span></button>';
-    html += '</div>';
+  html += '</div>';
+
+  // Pins tab
+  html += '<div class="p-5" id="detail-pins">';
+  html += '<p class="text-xs text-crab-sand-dim mb-3">CrabAI found these spots in ' + dn + ' matched to your group\'s vibes.</p>';
+  html += '<div class="pin-grid">';
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
   }
-  html += '</div>';
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
+  html += '</div></div>';
 
-  // Meta chips
-  html += '<div class="flex flex-wrap gap-2 text-xs">';
-  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
-  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
-  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
-  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
-  html += '</div>';
+  // Media tab (hidden by default)
+  html += '<div class="p-5" id="detail-media" style="display:none;">';
+  html += '<p class="text-xs text-crab-sand-dim mb-3">Videos, photos, and media for ' + dn + '.</p>';
 
-  // Highlights
-  if (card.highlights && card.highlights.length > 0) {
-    html += '<div class="flex flex-wrap gap-2 mt-3">';
-    card.highlights.forEach(function(h) {
-      html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2.5 py-1 rounded-full">' + h + '</span>';
-    });
-    html += '</div>';
-  }
-  html += '</div>';
-
-  // Coordinator media (YouTube videos & images added by the organizer)
+  // Coordinator custom media
   if (customMedia.length > 0) {
-    html += '<div class="mb-6">';
-    html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">The organizer picked these out</p>';
-    html += '<div class="media-grid">';
+    html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Picked by the organizer</p>';
+    html += '<div class="media-grid mb-6">';
     customMedia.forEach(function(m) {
       var ytId = youtubeIdFromUrl(m.url);
       html += '<div class="media-card">';
@@ -599,37 +763,30 @@ function renderBoard(dest) {
       if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
       html += '</div>';
     });
-    html += '</div></div>';
+    html += '</div>';
   }
 
-  // YouTube videos (auto-searched by vibes + destination)
-  html += '<div class="mb-6" id="yt-section-' + dest.suggestion_id + '" style="display:none;">';
+  // Auto-fetched YouTube
+  html += '<div id="yt-section-' + sid + '" style="display:none;">';
   html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">Videos</p>';
-  html += '<div class="media-grid" id="yt-grid-' + dest.suggestion_id + '"></div>';
+  html += '<div class="media-grid" id="yt-grid-' + sid + '"></div>';
   html += '</div>';
 
-  // Section intro + Pinterest grid
-  html += '<p class="text-xs text-crab-sand-dim uppercase tracking-wide font-medium mb-3">CrabAI found these spots</p>';
-  html += '<div class="pin-grid">';
-  // Flatten all pins, score by vibe relevance, sort highest first
-  var allPins = [];
-  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
-  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
-  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
-  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
-  if (GROUP_VIBES) {
-    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
-  }
-  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
-  html += '</div>';
+  html += '</div>'; // end media tab
 
-  board.innerHTML = html;
+  html += '</div>'; // end card
 
-  // Refresh vote counts for this view
-  refreshVoteCounts();
+  detailEl.innerHTML = html;
 
-  // Load YouTube videos
-  loadInviteYouTube(dest.suggestion_id, vibeQuery);
+  // Load YouTube
+  loadInviteYouTube(sid, vibeQuery);
+}
+
+function switchDetailTab(tab, btn) {
+  document.getElementById('detail-pins').style.display = tab === 'pins' ? '' : 'none';
+  document.getElementById('detail-media').style.display = tab === 'media' ? '' : 'none';
+  btn.parentElement.querySelectorAll('.detail-tab').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
 }
 
 function youtubeIdFromUrl(url) {
@@ -659,23 +816,6 @@ function loadInviteYouTube(suggestionId, query) {
     .catch(function() {});
 }
 
-function renderTabs() {
-  var tabBar = document.getElementById('dest-tabs');
-  if (!tabBar) return;
-  var html = '<span class="text-xs font-medium text-crab-sand-dim mr-2 shrink-0 uppercase tracking-wide">Destinations:</span>';
-  _destinations.forEach(function(d, i) {
-    var active = i === _activeDestIdx ? 'active' : '';
-    var emoji = d.status === 'researching' ? '⏳ ' : '';
-    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + '</button>';
-  });
-  tabBar.innerHTML = html;
-}
-
-function switchDest(idx) {
-  _activeDestIdx = idx;
-  renderTabs();
-  renderBoard(_destinations[idx]);
-}
 
 // ── Voting ──
 var _voteTallies = {};
@@ -684,40 +824,6 @@ var _voteTallies = {};
 _voteTallies['{{ t.target_id }}'] = {up: {{ t.upvotes|int }}, down: {{ t.downvotes|int }}};
 {% endfor %}
 {% endif %}
-
-function refreshVoteCounts() {
-  document.querySelectorAll('.vc').forEach(function(el) {
-    var id = el.dataset.id;
-    var parts = id.split('-');
-    var targetId = parts.slice(0, -1).join('-');
-    var dir = parts[parts.length - 1];
-    var tally = _voteTallies[targetId] || {up:0, down:0};
-    el.textContent = dir === 'up' ? tally.up : tally.down;
-  });
-}
-
-function vote(targetId, voteVal, btn) {
-  if (NEEDS_LOGIN) return;
-  fetch('/api/plan/' + PLAN_ID + '/vote', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({target_type: 'destination', target_id: targetId, vote: voteVal}),
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success && data.data.tallies) {
-      data.data.tallies.forEach(function(t) {
-        _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
-      });
-      refreshVoteCounts();
-      // Toggle pill style
-      var row = btn.parentElement;
-      var pills = row.querySelectorAll('.vote-pill');
-      pills[0].classList.toggle('voted-up', voteVal === 1);
-      pills[1].classList.toggle('voted-down', voteVal === -1);
-    }
-  });
-}
 
 // ── Suggest destination ──
 function suggestDestination() {
@@ -796,19 +902,8 @@ function getBlackouts() {
 
 function getVotes() {
   var votes = {};
-  document.querySelectorAll('.vote-pill.voted-up').forEach(function(btn) {
-    var span = btn.querySelector('.vc');
-    if (span) {
-      var id = span.dataset.id.replace(/-up$/, '');
-      votes[id] = 1;
-    }
-  });
-  document.querySelectorAll('.vote-pill.voted-down').forEach(function(btn) {
-    var span = btn.querySelector('.vc');
-    if (span) {
-      var id = span.dataset.id.replace(/-down$/, '');
-      votes[id] = -1;
-    }
+  Object.keys(_userVotes).forEach(function(sid) {
+    votes[sid] = 1;
   });
   return votes;
 }
@@ -1031,8 +1126,7 @@ if (!NEEDS_LOGIN) {
 }
 
 if (_destinations.length > 0) {
-  renderTabs();
-  renderBoard(_destinations[0]);
+  renderCards();
 
   // Poll if any are researching
   if (_destinations.some(function(d) { return d.status === 'researching'; })) {
@@ -1045,8 +1139,7 @@ if (_destinations.length > 0) {
         .then(function(data) {
           if (data.success) {
             _destinations = data.data.destinations;
-            renderTabs();
-            renderBoard(_destinations[_activeDestIdx]);
+            renderCards();
             if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
               clearInterval(_pollTimer);
             }

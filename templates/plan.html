@@ -38,6 +38,15 @@
   .cat-badge-do { background: rgba(232,89,58,0.12); color: #E8593A; }
   .cat-badge-food { background: rgba(245,158,11,0.12); color: #F59E0B; }
   .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
+  .input-field {
+    width: 100%; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
   html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
   html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
   .pin:hover .pin-delete { opacity: 1; }
@@ -421,15 +430,15 @@ function renderBoard(dest) {
   // Add custom pin (organizer)
   if (IS_ORGANIZER) {
     html += '<div class="break-inside-avoid mb-3">';
-    html += '<div class="border border-dashed border-white/10 rounded-xl p-3 hover:border-crab-coral/30 transition-colors">';
-    html += '<p class="text-xs font-medium mb-2">Add your own pin</p>';
+    html += '<div class="border border-dashed border-white/10 dark:border-white/10 rounded-xl p-3 hover:border-crab-coral/30 transition-colors" style="border-color: var(--pin-border, rgba(255,255,255,0.1));">';
+    html += '<p class="text-xs font-medium mb-2 text-gray-900 dark:text-crab-sand">Add your own pin</p>';
     html += '<input type="text" id="custom-pin-name" placeholder="Place name" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
     html += '<input type="text" id="custom-pin-desc" placeholder="Quick description (optional)" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
     html += '<input type="text" id="custom-pin-url" placeholder="Link URL (optional)" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
     html += '<div class="flex gap-1.5 mb-1.5 flex-wrap">';
     ['stays','things_to_do','food_and_drink','upcoming_events'].forEach(function(c) {
       var lbl = {stays:'Stay',things_to_do:'Activity',food_and_drink:'Eat & Drink',upcoming_events:'Event'}[c];
-      html += '<label class="cursor-pointer"><input type="radio" name="custom-pin-cat" value="' + c + '" class="peer hidden"' + (c === 'things_to_do' ? ' checked' : '') + '><span class="text-xs px-2 py-0.5 rounded border border-white/10 peer-checked:border-crab-coral peer-checked:text-crab-coral transition-colors">' + lbl + '</span></label>';
+      html += '<label class="cursor-pointer"><input type="radio" name="custom-pin-cat" value="' + c + '" class="peer hidden"' + (c === 'things_to_do' ? ' checked' : '') + '><span class="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-white/10 text-gray-700 dark:text-crab-sand-dim peer-checked:border-crab-coral peer-checked:text-crab-coral transition-colors">' + lbl + '</span></label>';
     });
     html += '</div>';
     html += '<button onclick="addCustomPin(\'' + sid + '\')" class="text-xs bg-crab-coral text-white px-3 py-1.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">+ Add Pin</button>';
