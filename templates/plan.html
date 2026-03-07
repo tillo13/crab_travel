@@ -453,7 +453,7 @@ function renderMediaSection(dest) {
       if (ytId) {
         html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
       } else {
-        html += '<a href="' + m.url + '" target="_blank" rel="noopener"><img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\'p-3 text-xs text-crab-sand-dim\\'>Could not load image</div>\'"></a>';
+        html += '<a href="' + m.url + '" target="_blank" rel="noopener"><img src="' + m.url + '" alt="" loading="lazy" onerror="this.style.display=\'none\'"></a>';
       }
       if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
       html += '</div>';
