@@ -110,10 +110,10 @@ def get_admin_dashboard_data():
     # --- Invite link stats ---
     cur.execute("""
         SELECT p.title, p.invite_token,
-               COALESCE(p.invite_views, 0) as views,
+               (SELECT COUNT(*) FROM crab.invite_views iv WHERE iv.plan_id = p.plan_id) as views,
                (SELECT COUNT(*) FROM crab.plan_members m WHERE m.plan_id = p.plan_id) as joins
         FROM crab.plans p
-        ORDER BY COALESCE(p.invite_views, 0) DESC
+        ORDER BY views DESC
     """)
     invite_stats = cur.fetchall()
 
