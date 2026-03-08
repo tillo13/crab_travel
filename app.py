@@ -165,6 +165,11 @@ def index():
     return render_template('index.html', active_page='home')
 
 
+@app.route('/crab-animations')
+def crab_animations():
+    return render_template('crab_animations.html')
+
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy'}), 200

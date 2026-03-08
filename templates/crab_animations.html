@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crab Animation Demos</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Outfit', sans-serif; background: #0B0735; color: #F0EAE0; min-height: 100vh; }
+    h1 { font-family: 'DM Serif Display', serif; }
+    h2 { font-family: 'DM Serif Display', serif; font-size: 1.1rem; margin-bottom: 0.25rem; }
+
+    .header { padding: 2rem; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    .header p { color: rgba(200,194,184,0.6); font-size: 0.85rem; }
+
+    .demos { max-width: 900px; margin: 0 auto; padding: 2rem; display: grid; gap: 2rem; }
+
+    .demo-card {
+      background: rgba(23,21,72,0.6);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 1rem;
+      overflow: hidden;
+    }
+    .demo-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .demo-tag {
+      font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 0.2rem 0.5rem; border-radius: 0.25rem;
+    }
+    .tag-subtle { background: rgba(20,184,166,0.15); color: #14B8A6; }
+    .tag-playful { background: rgba(245,158,11,0.15); color: #F59E0B; }
+    .tag-easter { background: rgba(232,89,58,0.15); color: #E8593A; }
+    .tag-fancy { background: rgba(168,85,247,0.15); color: #A855F7; }
+
+    .demo-stage {
+      padding: 2.5rem;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 160px;
+      position: relative;
+    }
+    .demo-desc {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.8rem; color: rgba(200,194,184,0.5);
+    }
+    .demo-desc code { color: #E8593A; font-size: 0.75rem; }
+
+    .crab-img { width: 64px; height: 64px; border-radius: 0.5rem; }
+
+    /* ═══════════════════════════════════════════
+       1. IDLE BOB — gentle floating
+       ═══════════════════════════════════════════ */
+    @keyframes crabBob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    .anim-bob { animation: crabBob 3s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════
+       2. HOVER WIGGLE — excited side-to-side
+       ═══════════════════════════════════════════ */
+    @keyframes crabWiggle {
+      0%, 100% { transform: rotate(0deg); }
+      15% { transform: rotate(-12deg); }
+      30% { transform: rotate(10deg); }
+      45% { transform: rotate(-8deg); }
+      60% { transform: rotate(6deg); }
+      75% { transform: rotate(-3deg); }
+    }
+    .anim-wiggle { transition: transform 0.2s; }
+    .anim-wiggle:hover { animation: crabWiggle 0.6s ease-in-out; }
+
+    /* ═══════════════════════════════════════════
+       3. CLAW SNAP — squish on click
+       ═══════════════════════════════════════════ */
+    @keyframes crabSnap {
+      0% { transform: scale(1); }
+      20% { transform: scale(0.82, 1.1); }
+      40% { transform: scale(1.12, 0.9); }
+      60% { transform: scale(0.95, 1.03); }
+      80% { transform: scale(1.03, 0.98); }
+      100% { transform: scale(1); }
+    }
+    .anim-snap { cursor: pointer; }
+    .anim-snap.snapping { animation: crabSnap 0.4s ease-out; }
+
+    /* ═══════════════════════════════════════════
+       4. HELLO BOUNCE — page load entrance
+       ═══════════════════════════════════════════ */
+    @keyframes crabHello {
+      0% { transform: scale(0.3) rotate(-20deg); opacity: 0; }
+      40% { transform: scale(1.15) rotate(8deg); opacity: 1; }
+      60% { transform: scale(0.95) rotate(-3deg); }
+      80% { transform: scale(1.03) rotate(1deg); }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+    .anim-hello { animation: crabHello 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+    /* ═══════════════════════════════════════════
+       5. SIDEWAYS CRAWL — walks across
+       ═══════════════════════════════════════════ */
+    @keyframes crabCrawl {
+      0% { left: -80px; }
+      100% { left: calc(100% + 80px); }
+    }
+    @keyframes crabLegWiggle {
+      0%, 100% { transform: rotate(-5deg); }
+      50% { transform: rotate(5deg); }
+    }
+    .crawl-stage { overflow: hidden; position: relative; min-height: 100px; }
+    .anim-crawl {
+      position: absolute;
+      top: 50%; margin-top: -32px;
+      animation: crabCrawl 8s linear infinite;
+    }
+    .anim-crawl .crab-img {
+      animation: crabLegWiggle 0.3s ease-in-out infinite;
+    }
+
+    /* ═══════════════════════════════════════════
+       6. PEEK-A-BOO — rises from below
+       ═══════════════════════════════════════════ */
+    @keyframes crabPeek {
+      0% { transform: translateY(100%); }
+      20% { transform: translateY(30%) rotate(-5deg); }
+      30% { transform: translateY(25%) rotate(3deg); }
+      40% { transform: translateY(30%) rotate(0deg); }
+      70% { transform: translateY(30%); }
+      85% { transform: translateY(30%) rotate(-3deg); }
+      100% { transform: translateY(100%); }
+    }
+    .peek-stage { overflow: hidden; position: relative; min-height: 140px; }
+    .anim-peek {
+      position: absolute;
+      bottom: 0; left: 50%; margin-left: -40px;
+      animation: crabPeek 4s ease-in-out infinite;
+      animation-delay: 1s;
+    }
+    .anim-peek .crab-img { width: 80px; height: 80px; }
+
+    /* ═══════════════════════════════════════════
+       7. SPIN PARTY — click to go crazy
+       ═══════════════════════════════════════════ */
+    @keyframes crabSpin {
+      0% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(90deg) scale(1.1); }
+      50% { transform: rotate(180deg) scale(1); }
+      75% { transform: rotate(270deg) scale(1.1); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    .anim-spin { cursor: pointer; transition: transform 0.3s; }
+    .anim-spin.spinning { animation: crabSpin 0.5s ease-in-out; }
+
+    /* ═══════════════════════════════════════════
+       8. BREATHING GLOW — subtle pulse + shadow
+       ═══════════════════════════════════════════ */
+    @keyframes crabGlow {
+      0%, 100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 0px rgba(232,89,58,0));
+      }
+      50% {
+        transform: scale(1.04);
+        filter: drop-shadow(0 0 12px rgba(232,89,58,0.4));
+      }
+    }
+    .anim-glow { animation: crabGlow 3s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════
+       9. TIPSY WALK — wobble + drift
+       ═══════════════════════════════════════════ */
+    @keyframes crabTipsy {
+      0% { transform: translateX(0) rotate(0deg); }
+      10% { transform: translateX(8px) rotate(5deg); }
+      20% { transform: translateX(4px) rotate(-3deg); }
+      30% { transform: translateX(14px) rotate(7deg); }
+      40% { transform: translateX(10px) rotate(-5deg); }
+      50% { transform: translateX(20px) rotate(4deg); }
+      60% { transform: translateX(14px) rotate(-6deg); }
+      70% { transform: translateX(24px) rotate(3deg); }
+      80% { transform: translateX(18px) rotate(-4deg); }
+      90% { transform: translateX(8px) rotate(2deg); }
+      100% { transform: translateX(0) rotate(0deg); }
+    }
+    .anim-tipsy { animation: crabTipsy 4s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════
+       10. NAV COMBO — bob + wiggle hover (production-ready)
+       ═══════════════════════════════════════════ */
+    .anim-combo {
+      animation: crabBob 3s ease-in-out infinite;
+      transition: all 0.2s;
+    }
+    .anim-combo:hover {
+      animation: crabWiggle 0.5s ease-in-out;
+      filter: drop-shadow(0 0 8px rgba(232,89,58,0.3));
+    }
+
+    /* Helper for nav mockup */
+    .mock-nav {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: rgba(11,7,53,0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1.25rem;
+    }
+    .mock-nav span { font-family: 'DM Serif Display', serif; font-size: 1.1rem; }
+
+    .replay-btn {
+      padding: 0.3rem 0.75rem; font-size: 0.7rem; font-weight: 600;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      color: rgba(200,194,184,0.6); border-radius: 0.375rem; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .replay-btn:hover { background: rgba(255,255,255,0.1); color: #F0EAE0; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Crab Animation Demos</h1>
+  <p>10 animation options for the crab mascot. Nothing on the live site is changed — this is a preview page only.</p>
+</div>
+
+<div class="demos">
+
+  <!-- 1. Idle Bob -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>1. Idle Bob</h2></div>
+      <span class="demo-tag tag-subtle">subtle</span>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-bob" alt="">
+    </div>
+    <div class="demo-desc">Gentle floating like he's bobbing in water. Always on, barely noticeable. Good for the nav logo.</div>
+  </div>
+
+  <!-- 2. Hover Wiggle -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>2. Hover Wiggle</h2></div>
+      <span class="demo-tag tag-playful">playful</span>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-wiggle" alt="" style="cursor:pointer;">
+      <span style="position:absolute; bottom:12px; font-size:0.7rem; color:rgba(200,194,184,0.3);">hover me</span>
+    </div>
+    <div class="demo-desc">Quick excited wiggle when you hover. Feels alive without being annoying.</div>
+  </div>
+
+  <!-- 3. Claw Snap -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>3. Claw Snap</h2></div>
+      <span class="demo-tag tag-playful">playful</span>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-snap" id="snap-crab" alt="" onclick="snapCrab()">
+      <span style="position:absolute; bottom:12px; font-size:0.7rem; color:rgba(200,194,184,0.3);">click me</span>
+    </div>
+    <div class="demo-desc">Squish-bounce on click, like claws snapping shut. Satisfying micro-interaction.</div>
+  </div>
+
+  <!-- 4. Hello Bounce -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>4. Hello Bounce</h2></div>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span class="demo-tag tag-playful">playful</span>
+        <button class="replay-btn" onclick="replayHello()">Replay</button>
+      </div>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-hello" id="hello-crab" alt="">
+    </div>
+    <div class="demo-desc">Bouncy entrance on page load. Pops in with a little spin — plays once then settles.</div>
+  </div>
+
+  <!-- 5. Sideways Crawl -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>5. Sideways Crawl</h2></div>
+      <span class="demo-tag tag-easter">easter egg</span>
+    </div>
+    <div class="demo-stage crawl-stage">
+      <div class="anim-crawl">
+        <img src="/static/images/crab_logo.png" class="crab-img" alt="">
+      </div>
+    </div>
+    <div class="demo-desc">Walks across the screen sideways with a leg-wiggle. Great as an idle easter egg after 30s, or in the footer area.</div>
+  </div>
+
+  <!-- 6. Peek-a-boo -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>6. Peek-a-boo</h2></div>
+      <span class="demo-tag tag-easter">easter egg</span>
+    </div>
+    <div class="demo-stage peek-stage">
+      <div class="anim-peek">
+        <img src="/static/images/crab_logo.png" class="crab-img" alt="">
+      </div>
+      <span style="position:absolute; top:16px; font-size:0.7rem; color:rgba(200,194,184,0.3);">watch below...</span>
+    </div>
+    <div class="demo-desc">Peeks up from the bottom, looks around, dips back down. Could trigger when you scroll to the footer.</div>
+  </div>
+
+  <!-- 7. Spin Party -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>7. Spin Party</h2></div>
+      <span class="demo-tag tag-playful">playful</span>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-spin" id="spin-crab" alt="" onclick="spinCrab()">
+      <span style="position:absolute; bottom:12px; font-size:0.7rem; color:rgba(200,194,184,0.3);">click me</span>
+    </div>
+    <div class="demo-desc">Full 360 spin on click. Fun reward for clicking the logo. Maybe plays confetti sound too?</div>
+  </div>
+
+  <!-- 8. Breathing Glow -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>8. Breathing Glow</h2></div>
+      <span class="demo-tag tag-fancy">fancy</span>
+    </div>
+    <div class="demo-stage" style="background: rgba(0,0,0,0.3);">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-glow" alt="">
+    </div>
+    <div class="demo-desc">Gentle pulse with a coral glow emanating outward. Premium feel. Good for hero sections or loading states.</div>
+  </div>
+
+  <!-- 9. Tipsy Walk -->
+  <div class="demo-card">
+    <div class="demo-header">
+      <div><h2>9. Tipsy Walk</h2></div>
+      <span class="demo-tag tag-easter">easter egg</span>
+    </div>
+    <div class="demo-stage">
+      <img src="/static/images/crab_logo.png" class="crab-img anim-tipsy" alt="">
+    </div>
+    <div class="demo-desc">Wobbly drunk walk, drifting side to side. Could trigger after a certain time idle, like the crab got into the minibar.</div>
+  </div>
+
+  <!-- 10. Nav Combo (Production Ready) -->
+  <div class="demo-card" style="border-color: rgba(232,89,58,0.2);">
+    <div class="demo-header" style="border-color: rgba(232,89,58,0.1);">
+      <div><h2>10. Nav Combo (Recommended)</h2></div>
+      <span class="demo-tag" style="background:rgba(232,89,58,0.15); color:#E8593A;">ship this</span>
+    </div>
+    <div class="demo-stage">
+      <div class="mock-nav">
+        <img src="/static/images/crab_logo.png" class="crab-img anim-combo" alt="" style="width:32px; height:32px;">
+        <span>crab.travel</span>
+      </div>
+    </div>
+    <div class="demo-desc">
+      <strong style="color:#F0EAE0;">The combo:</strong> Idle bob (always) + hover wiggle + coral glow on hover.
+      This is what I'd put in the nav. Subtle personality without being distracting. Hover to see the wiggle.
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center; padding: 2rem; color: rgba(200,194,184,0.3); font-size: 0.75rem;">
+  Tell me which ones you like and I'll wire them into the real site.
+</div>
+
+<script>
+function snapCrab() {
+  var el = document.getElementById('snap-crab');
+  el.classList.remove('snapping');
+  void el.offsetWidth;
+  el.classList.add('snapping');
+  el.addEventListener('animationend', function() { el.classList.remove('snapping'); }, {once: true});
+}
+
+function spinCrab() {
+  var el = document.getElementById('spin-crab');
+  el.classList.remove('spinning');
+  void el.offsetWidth;
+  el.classList.add('spinning');
+  el.addEventListener('animationend', function() { el.classList.remove('spinning'); }, {once: true});
+}
+
+function replayHello() {
+  var el = document.getElementById('hello-crab');
+  el.classList.remove('anim-hello');
+  void el.offsetWidth;
+  el.classList.add('anim-hello');
+}
+</script>
+</body>
+</html>
