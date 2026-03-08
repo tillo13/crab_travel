@@ -122,19 +122,59 @@
       class="input-field">{{ profile.bio or '' }}</textarea>
   </div>
 
-  <!-- SMS Notifications -->
+  <!-- Notifications -->
   <div class="border-t border-white/6 pt-5 mt-2">
-    <label class="block font-semibold font-display mb-1 text-sm">SMS Notifications</label>
-    <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Get a text when someone sends a message in your trip chat.</p>
-    <div class="flex items-start gap-3">
+    <label class="block font-semibold font-display mb-2 text-sm">Notifications</label>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+
+    <!-- Phone number (optional, enables SMS) -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number <span class="opacity-50">(for SMS)</span></label>
       <input type="tel" name="phone_number" placeholder="+1 (555) 123-4567"
         value="{{ user_phone or '' }}"
         class="input-field max-w-xs">
-      <label class="flex items-center gap-2 cursor-pointer shrink-0 mt-2">
-        <input type="checkbox" name="sms_notifications" class="w-4 h-4 rounded border-white/20 accent-crab-teal"
-          {{ 'checked' if user_sms_on else '' }}>
-        <span class="text-sm">Enable</span>
-      </label>
+    </div>
+
+    <!-- Channel preference -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2">
+        {% for ch, label in [('email', 'Email'), ('sms', 'SMS'), ('both', 'Both')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="notify_channel" value="{{ ch }}" class="peer hidden"
+            {% if notify_prefs.notify_channel == ch %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Chat messages frequency -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Chat messages</label>
+      <div class="flex flex-wrap gap-2">
+        {% for freq, label in [('realtime', 'Real-time'), ('daily', 'Daily digest'), ('weekly', 'Weekly digest'), ('off', 'Off')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="notify_chat" value="{{ freq }}" class="peer hidden"
+            {% if notify_prefs.notify_chat == freq %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-teal peer-checked:text-white peer-checked:border-crab-teal transition-colors inline-block">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Trip updates frequency -->
+    <div>
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Trip updates <span class="opacity-50">(votes, new members, stage changes)</span></label>
+      <div class="flex flex-wrap gap-2">
+        {% for freq, label in [('realtime', 'Real-time'), ('daily', 'Daily digest'), ('weekly', 'Weekly digest'), ('off', 'Off')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="notify_updates" value="{{ freq }}" class="peer hidden"
+            {% if notify_prefs.notify_updates == freq %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-teal peer-checked:text-white peer-checked:border-crab-teal transition-colors inline-block">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
@@ -165,7 +205,9 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     home_airport: form.home_airport.value || null,
     bio: form.bio.value || null,
     phone_number: form.phone_number.value.trim() || null,
-    sms_notifications: form.sms_notifications.checked,
+    notify_channel: form.querySelector('input[name="notify_channel"]:checked')?.value || 'email',
+    notify_chat: form.querySelector('input[name="notify_chat"]:checked')?.value || 'off',
+    notify_updates: form.querySelector('input[name="notify_updates"]:checked')?.value || 'off',
   };
   var res = await fetch('/api/profile', {
     method: 'POST',

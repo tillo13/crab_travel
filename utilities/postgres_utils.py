@@ -120,6 +120,9 @@ def init_database():
             ('calendar_synced', 'BOOLEAN', 'FALSE'),
             ('phone_number', 'VARCHAR(20)', None),
             ('sms_notifications', 'BOOLEAN', 'FALSE'),
+            ('notify_chat', 'VARCHAR(10)', "'off'"),
+            ('notify_updates', 'VARCHAR(10)', "'off'"),
+            ('notify_channel', 'VARCHAR(10)', "'email'"),
         ]:
             try:
                 default_clause = f" DEFAULT {default}" if default else ""
@@ -534,6 +537,10 @@ def update_user_profile(user_id, data):
         if 'sms_notifications' in data:
             update_parts.append("sms_notifications = %s")
             update_vals.append(bool(data['sms_notifications']))
+        for col in ('notify_chat', 'notify_updates', 'notify_channel'):
+            if col in data:
+                update_parts.append(f"{col} = %s")
+                update_vals.append(data[col])
         if update_parts:
             update_parts.append("updated_at = NOW()")
             update_vals.append(user_id)

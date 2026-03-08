@@ -46,9 +46,9 @@ def send_sms(to_number, body):
 
 
 def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=None):
-    """Send SMS notifications to plan members who have phone numbers.
+    """Send SMS notifications to plan members who opted in.
 
-    Only notifies members with sms_notifications enabled and a phone number on file.
+    Respects notify_channel (sms/both) and notify_chat = realtime.
     """
     from utilities.postgres_utils import get_db_connection
     import psycopg2.extras
@@ -58,7 +58,6 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        # Get members with phone numbers who have SMS notifications enabled
         cursor.execute("""
             SELECT DISTINCT u.pk_id, u.full_name, u.phone_number
             FROM crab.plan_members m
@@ -66,7 +65,8 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
             WHERE m.plan_id = %s
               AND u.phone_number IS NOT NULL
               AND u.phone_number != ''
-              AND u.sms_notifications = TRUE
+              AND u.notify_chat = 'realtime'
+              AND u.notify_channel IN ('sms', 'both')
         """, (plan_id,))
         members = cursor.fetchall()
 
@@ -90,3 +90,61 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
             cursor.close()
         if conn:
             conn.close()
+
+
+def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id=None):
+    """Send email notifications to plan members who opted in.
+
+    Respects notify_channel (email/both) and notify_chat = realtime.
+    """
+    from utilities.postgres_utils import get_db_connection
+    from utilities.gmail_utils import send_simple_email
+    import psycopg2.extras
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT DISTINCT u.pk_id, u.full_name, u.email
+            FROM crab.plan_members m
+            JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE m.plan_id = %s
+              AND u.notify_chat = 'realtime'
+              AND u.notify_channel IN ('email', 'both')
+        """, (plan_id,))
+        members = cursor.fetchall()
+
+        # Get plan name for context
+        cursor.execute("SELECT title FROM crab.plans WHERE pk_id = %s", (plan_id,))
+        plan_row = cursor.fetchone()
+        plan_name = plan_row['title'] if plan_row else 'your trip'
+
+        sent = 0
+        for member in members:
+            if exclude_user_id and member['pk_id'] == exclude_user_id:
+                continue
+            preview = message_text[:300] + '...' if len(message_text) > 300 else message_text
+            subject = f"[crab.travel] {sender_name} in {plan_name}"
+            body = f"{sender_name} said:\n\n{preview}\n\n—\nReply at https://crab.travel"
+            if send_simple_email(subject, body, member['email']):
+                sent += 1
+
+        logger.info(f"Email notifications: {sent}/{len(members)} sent for plan {plan_id}")
+        return sent
+    except Exception as e:
+        logger.error(f"Email notification failed: {e}")
+        return 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def notify_plan_members(plan_id, sender_name, message_text, exclude_user_id=None):
+    """Unified dispatcher — sends both SMS and email notifications."""
+    sms_count = notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id)
+    email_count = notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id)
+    return sms_count + email_count

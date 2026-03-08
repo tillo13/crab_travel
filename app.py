@@ -304,24 +304,28 @@ def dashboard():
 def profile():
     user = session['user']
     profile_data = get_user_profile(user['id'])
-    # Get phone/sms from users table
+    # Get phone/notification prefs from users table
     user_phone = ''
-    user_sms_on = False
+    notify_prefs = {'notify_chat': 'off', 'notify_updates': 'off', 'notify_channel': 'email'}
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT phone_number, sms_notifications FROM crab.users WHERE pk_id = %s", (user['id'],))
+        cur.execute("SELECT phone_number, notify_chat, notify_updates, notify_channel FROM crab.users WHERE pk_id = %s", (user['id'],))
         row = cur.fetchone()
         if row:
             user_phone = row[0] or ''
-            user_sms_on = row[1] or False
+            notify_prefs = {
+                'notify_chat': row[1] or 'off',
+                'notify_updates': row[2] or 'off',
+                'notify_channel': row[3] or 'email',
+            }
         cur.close()
         conn.close()
     except Exception:
         pass
     logger.info(f"📍 Profile: {user['email']}")
     return render_template('profile.html', active_page='profile', user=user, profile=profile_data,
-                           user_phone=user_phone, user_sms_on=user_sms_on)
+                           user_phone=user_phone, notify_prefs=notify_prefs)
 
 
 @app.route('/api/profile', methods=['POST'])
@@ -1385,17 +1389,17 @@ def api_post_message(plan_id):
     msg['created_at'] = msg['created_at'].isoformat() if msg['created_at'] else None
     msg['user_picture'] = user.get('picture')
 
-    # Send SMS notifications to members (async, don't block response)
+    # Send notifications to members (async, don't block response)
     try:
-        from utilities.sms_utils import notify_plan_members_sms
+        from utilities.sms_utils import notify_plan_members
         import threading
         threading.Thread(
-            target=notify_plan_members_sms,
+            target=notify_plan_members,
             args=(plan_id, display_name, content, user['id']),
             daemon=True,
         ).start()
     except Exception as e:
-        logger.warning(f"SMS notification dispatch failed: {e}")
+        logger.warning(f"Notification dispatch failed: {e}")
 
     return jsonify({'success': True, 'data': {'message': msg}})
 
