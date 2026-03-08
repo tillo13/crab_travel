@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Speed Test — Admin{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto animate-in">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <a href="/admin" class="text-sm text-crab-sand-dim hover:text-crab-coral transition-colors">&larr; Back to Admin</a>
+      <h1 class="text-3xl font-display mt-2">Page Speed Test</h1>
+      <p class="text-sm text-crab-sand-dim">Server-side data function timing. Threshold: <strong>3.0s</strong></p>
+    </div>
+    <button id="run-btn" onclick="runSpeedTest()" class="bg-crab-coral text-white px-5 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
+      Run Speed Test
+    </button>
+  </div>
+
+  <!-- Current Results -->
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Latest Results</span>
+      <span class="text-xs text-crab-sand-dim" id="result-time">{% if latest %}{{ latest.tested_at.strftime('%b %d, %H:%M') }}{% else %}No tests yet{% endif %}</span>
+    </div>
+    <div id="bar-chart" class="p-5 space-y-3">
+      {% if latest %}
+      {% for r in latest.results %}
+      {% set pct = (r.time_s / 5.0 * 100) | int %}
+      {% set pct = [pct, 100] | min %}
+      {% set color = '#14B8A6' if r.time_s < 1.0 else '#F59E0B' if r.time_s < 3.0 else '#E8593A' %}
+      <div class="speed-bar-row">
+        <div class="speed-bar-label">
+          <strong>{{ r.page }}</strong>
+          <span class="text-xs text-crab-sand-dim block">{{ r.function }}</span>
+        </div>
+        <div class="speed-bar-track">
+          <div class="speed-bar-fill" style="width: {{ pct }}%; background: {{ color }};"></div>
+        </div>
+        <div class="speed-bar-value" style="color: {{ color }};">{{ r.time_s }}s</div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Click "Run Speed Test" to measure page load times.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Trend Chart -->
+  {% if history | length > 1 %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Trend (Last {{ history | length }} Runs)</span>
+      <span class="text-xs text-crab-sand-dim">Slowest page per run</span>
+    </div>
+    <div class="p-5">
+      <div class="trend-chart">
+        {% set max_time = namespace(val=0.1) %}
+        {% for run in history %}
+        {% if run.slowest_time and run.slowest_time > max_time.val %}
+        {% set max_time.val = run.slowest_time %}
+        {% endif %}
+        {% endfor %}
+        {% set chart_max = [max_time.val * 1.2, 5.0] | max %}
+        <div class="trend-threshold" style="bottom: {{ (3.0 / chart_max * 100) | int }}%;">
+          <span>3s</span>
+        </div>
+        <div class="trend-bars">
+          {% for run in history | reverse %}
+          {% set h = (run.slowest_time / chart_max * 100) | int %}
+          {% set color = '#14B8A6' if run.slowest_time < 1.0 else '#F59E0B' if run.slowest_time < 3.0 else '#E8593A' %}
+          <div class="trend-bar-wrap" title="{{ run.slowest_page }}: {{ run.slowest_time }}s @ {{ run.tested_at.strftime('%b %d %H:%M') }}">
+            <div class="trend-bar" style="height: {{ h }}%; background: {{ color }};"></div>
+            <div class="trend-label">{{ run.tested_at.strftime('%H:%M') }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- History Table -->
+  {% if history %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Run History</span>
+      <span class="text-xs text-crab-sand-dim">{{ history | length }} runs</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
+            <th class="px-4 py-3">When</th>
+            <th class="px-4 py-3">Slowest Page</th>
+            <th class="px-4 py-3 text-right">Time</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in history %}
+          {% set color = '#14B8A6' if run.all_ok else '#E8593A' %}
+          <tr class="border-b border-white/4">
+            <td class="px-4 py-2.5 text-crab-sand-dim text-xs">{{ run.tested_at.strftime('%b %d, %H:%M') }}</td>
+            <td class="px-4 py-2.5 font-medium">{{ run.slowest_page or '—' }}</td>
+            <td class="px-4 py-2.5 text-right font-bold" style="color: {{ color }};">{{ run.slowest_time or 0 }}s</td>
+            <td class="px-4 py-2.5" style="color: {{ color }};">{{ 'OK' if run.all_ok else 'SLOW' }}</td>
+            <td class="px-4 py-2.5">
+              <button class="px-2 py-0.5 text-xs bg-white/5 border border-white/10 rounded text-crab-sand-dim hover:bg-white/10 transition-colors" onclick="toggleDetail(this, {{ run.id }})">Show</button>
+              <div id="detail-{{ run.id }}" style="display:none;" class="mt-2 p-2 bg-black/20 rounded text-xs space-y-1">
+                {% for r in run.results %}
+                {% set rc = '#14B8A6' if r.time_s < 1.0 else '#F59E0B' if r.time_s < 3.0 else '#E8593A' %}
+                <div class="flex justify-between">
+                  <span>{{ r.page }}</span>
+                  <span style="color:{{ rc }}; font-weight:600;">{{ r.time_s }}s</span>
+                </div>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<style>
+.speed-bar-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 55px;
+  align-items: center;
+  gap: 12px;
+}
+.speed-bar-track {
+  height: 22px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+html:not(.dark) .speed-bar-track { background: rgba(0,0,0,0.06); }
+.speed-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+.speed-bar-value {
+  font-weight: 700;
+  font-size: 13px;
+  text-align: right;
+}
+.trend-chart {
+  position: relative;
+  height: 140px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+html:not(.dark) .trend-chart { border-color: rgba(0,0,0,0.1); }
+.trend-threshold {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 1px dashed rgba(232, 89, 58, 0.4);
+  z-index: 1;
+}
+.trend-threshold span {
+  position: absolute;
+  right: 0;
+  top: -14px;
+  font-size: 9px;
+  color: rgba(232, 89, 58, 0.6);
+}
+.trend-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  gap: 3px;
+  padding: 0 4px;
+}
+.trend-bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.trend-bar {
+  width: 100%;
+  max-width: 36px;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.4s ease;
+}
+.trend-label {
+  font-size: 8px;
+  color: rgba(200,194,184,0.4);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .speed-bar-row { grid-template-columns: 100px 1fr 45px; }
+  .speed-bar-label span { display: none; }
+}
+</style>
+
+<script>
+function toggleDetail(btn, id) {
+  var el = document.getElementById('detail-' + id);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.textContent = 'Hide';
+  } else {
+    el.style.display = 'none';
+    btn.textContent = 'Show';
+  }
+}
+
+async function runSpeedTest() {
+  var btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Testing...';
+  btn.classList.add('opacity-50');
+  try {
+    var resp = await fetch('/api/admin/speed-test', { method: 'POST' });
+    var data = await resp.json();
+    if (!data.success) {
+      alert('Error: ' + (data.error || 'Unknown'));
+      return;
+    }
+    window.location.reload();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Speed Test';
+    btn.classList.remove('opacity-50');
+  }
+}
+</script>
+{% endblock %}

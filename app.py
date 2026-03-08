@@ -338,6 +338,85 @@ def api_admin_smoke_test():
         return jsonify({'success': False, 'error': str(e)})
 
 
+@app.route('/admin/speed')
+@login_required
+def admin_speed():
+    from utilities.admin_utils import is_admin
+    import json as json_lib
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, tested_by, results, slowest_page, slowest_time, all_ok, tested_at FROM crab.speed_test_runs ORDER BY tested_at DESC LIMIT 30")
+    history = cur.fetchall()
+    cur.close()
+    conn.close()
+    for run in history:
+        if isinstance(run['results'], str):
+            run['results'] = json_lib.loads(run['results'])
+    latest = history[0] if history else None
+    return render_template('admin_speed.html', active_page='admin', latest=latest, history=history)
+
+
+@app.route('/api/admin/speed-test', methods=['POST'])
+@api_auth_required
+def api_admin_speed_test():
+    from utilities.admin_utils import is_admin, get_admin_dashboard_data
+    import time as time_mod
+    import json as json_lib
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    THRESHOLD = 3.0
+    user_id = session['user']['id']
+    tests = [
+        ('Home /', 'index', lambda: render_template('index.html', active_page='home')),
+        ('Dashboard', 'get_plans_for_user', lambda: get_plans_for_user(user_id)),
+        ('Profile', 'get_user_profile', lambda: get_user_profile(user_id)),
+        ('Admin', 'get_admin_dashboard_data', lambda: get_admin_dashboard_data()),
+    ]
+    # Add plan-specific tests if user has plans
+    try:
+        plans = get_plans_for_user(user_id)
+        if plans:
+            plan_id = plans[0]['plan_id']
+            from utilities.postgres_utils import get_plan_blackouts, get_plan_tentative_dates
+            tests.append(('Plan page', 'get_plan_by_id', lambda: get_plan_by_id(str(plan_id))))
+            tests.append(('Blackouts', 'get_plan_blackouts', lambda: get_plan_blackouts(plan_id)))
+    except Exception:
+        pass
+
+    results = []
+    for label, func_name, fn in tests:
+        start = time_mod.time()
+        try:
+            fn()
+            elapsed = round(time_mod.time() - start, 3)
+            status = 'ok'
+        except Exception as e:
+            elapsed = round(time_mod.time() - start, 3)
+            status = str(e)[:100]
+        results.append({'page': label, 'function': func_name, 'time_s': elapsed, 'status': status})
+
+    results.sort(key=lambda x: x['time_s'], reverse=True)
+    slowest = results[0] if results else None
+    all_ok = all(r['status'] == 'ok' and r['time_s'] < THRESHOLD for r in results)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO crab.speed_test_runs (tested_by, results, slowest_page, slowest_time, all_ok) VALUES (%s, %s, %s, %s, %s)",
+        (real_uid, json_lib.dumps(results), slowest['page'] if slowest else None, slowest['time_s'] if slowest else 0, all_ok)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True, 'results': results, 'threshold_s': THRESHOLD, 'all_ok': all_ok})
+
+
 # ── Auth routes ──────────────────────────────────────────────
 
 @app.route('/login')

@@ -387,6 +387,18 @@ def init_database():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invite_views_plan ON crab.invite_views(plan_id)")
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.speed_test_runs (
+                id SERIAL PRIMARY KEY,
+                tested_by INTEGER REFERENCES crab.users(pk_id),
+                results JSONB NOT NULL,
+                slowest_page VARCHAR(200),
+                slowest_time FLOAT,
+                all_ok BOOLEAN DEFAULT TRUE,
+                tested_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),
