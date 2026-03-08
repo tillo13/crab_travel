@@ -160,6 +160,16 @@ def health():
     return jsonify({'status': 'healthy'}), 200
 
 
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html', active_page=None)
+
+
+@app.route('/terms')
+def terms():
+    return render_template('terms.html', active_page=None)
+
+
 # ── Auth routes ──────────────────────────────────────────────
 
 @app.route('/login')
