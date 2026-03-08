@@ -170,6 +170,54 @@ def terms():
     return render_template('terms.html', active_page=None)
 
 
+@app.route('/contact')
+def contact():
+    return render_template('contact.html', active_page=None)
+
+
+@app.route('/api/contact', methods=['POST'])
+def api_contact():
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip()
+        message = data.get('message', '').strip()
+        honeypot = data.get('honeypot', '').strip()
+        time_open = data.get('time_open', 0)
+
+        if honeypot:
+            logger.warning(f"Spam blocked: honeypot from {request.remote_addr}")
+            return jsonify({'error': 'Invalid submission'}), 400
+
+        if time_open < 3000:
+            return jsonify({'error': 'Please take a moment to review your message'}), 400
+
+        if not email or not message:
+            return jsonify({'error': 'Email and message are required'}), 400
+
+        from utilities.gmail_utils import send_simple_email
+        subject = f"[crab] Contact: {email}"
+        body = f"""New contact from crab.travel:
+
+From: {email}
+IP: {request.remote_addr}
+User Agent: {request.headers.get('User-Agent', 'Unknown')}
+Time open: {time_open/1000:.1f}s
+
+Message:
+{message}
+
+---
+Sent from crab.travel/contact
+"""
+        success = send_simple_email(subject=subject, body=body, to_email='andy.tillo@gmail.com', from_name='crab.travel')
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to send'}), 500
+    except Exception as e:
+        logger.error(f"Contact form error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ── Auth routes ──────────────────────────────────────────────
 
 @app.route('/login')

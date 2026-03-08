@@ -236,7 +236,11 @@
   <footer class="border-t border-white/5 mt-auto">
     <div class="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-crab-sand-dim">
       <span class="font-display text-sm flex items-center gap-1.5"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-5 h-5 rounded hidden dark:inline-block" alt=""><img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-5 h-5 inline-block dark:hidden" alt=""> crab.travel</span>
-      <span>Group trips, without the chaos.</span>
+      <div class="flex items-center gap-4">
+        <a href="/contact" class="hover:text-crab-coral transition-colors">Contact</a>
+        <a href="/privacy" class="hover:text-crab-coral transition-colors">Privacy</a>
+        <a href="/terms" class="hover:text-crab-coral transition-colors">Terms</a>
+      </div>
     </div>
   </footer>
 
