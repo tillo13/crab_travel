@@ -118,6 +118,8 @@ def init_database():
             ('google_access_token', 'TEXT', None),
             ('google_refresh_token', 'TEXT', None),
             ('calendar_synced', 'BOOLEAN', 'FALSE'),
+            ('phone_number', 'VARCHAR(20)', None),
+            ('sms_notifications', 'BOOLEAN', 'FALSE'),
         ]:
             try:
                 default_clause = f" DEFAULT {default}" if default else ""
@@ -517,16 +519,22 @@ def update_user_profile(user_id, data):
             data.get('bio'),
             user_id,
         ))
-        # Update home_location and home_airport on users table
-        if data.get('home_location') or data.get('home_airport'):
-            update_parts = []
-            update_vals = []
-            if data.get('home_location'):
-                update_parts.append("home_location = %s")
-                update_vals.append(data['home_location'])
-            if data.get('home_airport'):
-                update_parts.append("home_airport = %s")
-                update_vals.append(data['home_airport'].upper().strip())
+        # Update fields on users table
+        update_parts = []
+        update_vals = []
+        if data.get('home_location'):
+            update_parts.append("home_location = %s")
+            update_vals.append(data['home_location'])
+        if data.get('home_airport'):
+            update_parts.append("home_airport = %s")
+            update_vals.append(data['home_airport'].upper().strip())
+        if 'phone_number' in data:
+            update_parts.append("phone_number = %s")
+            update_vals.append(data['phone_number'])
+        if 'sms_notifications' in data:
+            update_parts.append("sms_notifications = %s")
+            update_vals.append(bool(data['sms_notifications']))
+        if update_parts:
             update_parts.append("updated_at = NOW()")
             update_vals.append(user_id)
             cursor.execute(f"UPDATE crab.users SET {', '.join(update_parts)} WHERE pk_id = %s", update_vals)

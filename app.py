@@ -246,8 +246,24 @@ def dashboard():
 def profile():
     user = session['user']
     profile_data = get_user_profile(user['id'])
+    # Get phone/sms from users table
+    user_phone = ''
+    user_sms_on = False
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT phone_number, sms_notifications FROM crab.users WHERE pk_id = %s", (user['id'],))
+        row = cur.fetchone()
+        if row:
+            user_phone = row[0] or ''
+            user_sms_on = row[1] or False
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
     logger.info(f"📍 Profile: {user['email']}")
-    return render_template('profile.html', active_page='profile', user=user, profile=profile_data)
+    return render_template('profile.html', active_page='profile', user=user, profile=profile_data,
+                           user_phone=user_phone, user_sms_on=user_sms_on)
 
 
 @app.route('/api/profile', methods=['POST'])
@@ -1311,6 +1327,18 @@ def api_post_message(plan_id):
     msg['created_at'] = msg['created_at'].isoformat() if msg['created_at'] else None
     msg['user_picture'] = user.get('picture')
 
+    # Send SMS notifications to members (async, don't block response)
+    try:
+        from utilities.sms_utils import notify_plan_members_sms
+        import threading
+        threading.Thread(
+            target=notify_plan_members_sms,
+            args=(plan_id, display_name, content, user['id']),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        logger.warning(f"SMS notification dispatch failed: {e}")
+
     return jsonify({'success': True, 'data': {'message': msg}})
 
 
@@ -1320,6 +1348,45 @@ def api_delete_message(plan_id, message_id):
     user = session['user']
     success = delete_message(message_id, user['id'])
     return jsonify({'success': success})
+
+
+# ── Twilio SMS Webhook (inbound) ─────────────────────────────
+
+@app.route('/api/sms/inbound', methods=['POST'])
+def sms_inbound():
+    """Handle inbound SMS replies from Twilio and post them to the user's most recent plan chat."""
+    from_number = request.form.get('From', '')
+    body = request.form.get('Body', '').strip()
+    if not from_number or not body:
+        return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Find user by phone number
+        cur.execute("SELECT pk_id, full_name FROM crab.users WHERE phone_number = %s", (from_number,))
+        user_row = cur.fetchone()
+        if user_row:
+            user_id, display_name = user_row
+            # Find their most recent plan
+            cur.execute("""
+                SELECT m.plan_id FROM crab.plan_members m
+                JOIN crab.plans p ON p.plan_id = m.plan_id
+                WHERE m.user_id = %s
+                ORDER BY p.updated_at DESC LIMIT 1
+            """, (user_id,))
+            plan_row = cur.fetchone()
+            if plan_row:
+                plan_id = str(plan_row[0])
+                create_message(plan_id, user_id, display_name, f"[via SMS] {body}")
+                logger.info(f"📱 SMS→Chat: {display_name} in plan {plan_id}")
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"SMS inbound error: {e}")
+
+    # Always return valid TwiML
+    return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
 
 
 # ── Run ──────────────────────────────────────────────────────

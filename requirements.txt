@@ -5,3 +5,4 @@ python-dotenv==1.2.1
 psycopg2-binary
 google-cloud-secret-manager==2.26.0
 requests>=2.31.0
+twilio>=9.0.0

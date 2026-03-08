@@ -1,0 +1,92 @@
+import logging
+import os
+
+from utilities.google_auth_utils import get_secret
+
+logger = logging.getLogger(__name__)
+
+_twilio_client = None
+
+
+def _get_twilio_client():
+    global _twilio_client
+    if _twilio_client:
+        return _twilio_client
+    try:
+        from twilio.rest import Client
+        account_sid = get_secret('CRAB_TWILIO_ACCOUNT_SID')
+        auth_token = get_secret('CRAB_TWILIO_AUTH_TOKEN')
+        if not account_sid or not auth_token:
+            logger.warning("Twilio credentials not found")
+            return None
+        _twilio_client = Client(account_sid, auth_token)
+        return _twilio_client
+    except Exception as e:
+        logger.error(f"Twilio client init failed: {e}")
+        return None
+
+
+def send_sms(to_number, body):
+    """Send an SMS via Twilio. Returns message SID or None."""
+    client = _get_twilio_client()
+    if not client:
+        return None
+    try:
+        messaging_sid = get_secret('CRAB_TWILIO_MESSAGING_SERVICE_SID')
+        msg = client.messages.create(
+            to=to_number,
+            messaging_service_sid=messaging_sid,
+            body=body,
+        )
+        logger.info(f"SMS sent to {to_number}: {msg.sid}")
+        return msg.sid
+    except Exception as e:
+        logger.error(f"SMS send failed to {to_number}: {e}")
+        return None
+
+
+def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=None):
+    """Send SMS notifications to plan members who have phone numbers.
+
+    Only notifies members with sms_notifications enabled and a phone number on file.
+    """
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Get members with phone numbers who have SMS notifications enabled
+        cursor.execute("""
+            SELECT DISTINCT u.pk_id, u.full_name, u.phone_number
+            FROM crab.plan_members m
+            JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE m.plan_id = %s
+              AND u.phone_number IS NOT NULL
+              AND u.phone_number != ''
+              AND u.sms_notifications = TRUE
+        """, (plan_id,))
+        members = cursor.fetchall()
+
+        sent = 0
+        for member in members:
+            if exclude_user_id and member['pk_id'] == exclude_user_id:
+                continue
+            # Truncate long messages
+            preview = message_text[:140] + '...' if len(message_text) > 140 else message_text
+            body = f"[crab.travel] {sender_name}: {preview}"
+            if send_sms(member['phone_number'], body):
+                sent += 1
+
+        logger.info(f"SMS notifications: {sent}/{len(members)} sent for plan {plan_id}")
+        return sent
+    except Exception as e:
+        logger.error(f"SMS notification failed: {e}")
+        return 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

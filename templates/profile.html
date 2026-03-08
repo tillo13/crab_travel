@@ -122,6 +122,22 @@
       class="input-field">{{ profile.bio or '' }}</textarea>
   </div>
 
+  <!-- SMS Notifications -->
+  <div class="border-t border-white/6 pt-5 mt-2">
+    <label class="block font-semibold font-display mb-1 text-sm">SMS Notifications</label>
+    <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Get a text when someone sends a message in your trip chat.</p>
+    <div class="flex items-start gap-3">
+      <input type="tel" name="phone_number" placeholder="+1 (555) 123-4567"
+        value="{{ user_phone or '' }}"
+        class="input-field max-w-xs">
+      <label class="flex items-center gap-2 cursor-pointer shrink-0 mt-2">
+        <input type="checkbox" name="sms_notifications" class="w-4 h-4 rounded border-white/20 accent-crab-teal"
+          {{ 'checked' if user_sms_on else '' }}>
+        <span class="text-sm">Enable</span>
+      </label>
+    </div>
+  </div>
+
   <div class="flex items-center gap-3">
     <button type="submit" class="bg-crab-coral text-white px-6 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
       Save Profile
@@ -148,6 +164,8 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     mobility_notes: form.mobility_notes.value || null,
     home_airport: form.home_airport.value || null,
     bio: form.bio.value || null,
+    phone_number: form.phone_number.value.trim() || null,
+    sms_notifications: form.sms_notifications.checked,
   };
   var res = await fetch('/api/profile', {
     method: 'POST',
