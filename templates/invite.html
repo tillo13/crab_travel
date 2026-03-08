@@ -126,15 +126,24 @@
   .cal-day {
     aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     border-radius: 0.375rem; font-size: 0.75rem; position: relative; cursor: default;
-    border: 1px solid transparent; transition: all 0.15s;
+    border: 1px solid transparent; transition: all 0.15s; overflow: hidden;
   }
   .cal-day.empty { opacity: 0; }
   .cal-day.past { opacity: 0.25; }
   .cal-day.green { background: rgba(20,184,166,0.15); border-color: rgba(20,184,166,0.25); color: #14B8A6; }
   .cal-day.yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.2); color: #F59E0B; }
   .cal-day.red { background: rgba(232,89,58,0.12); border-color: rgba(232,89,58,0.2); color: #E8593A; }
+  .cal-day .cal-names { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font-size: 0.45rem; line-height: 1.1; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 1px; opacity: 0.8; }
+  .cal-day.red .cal-names { color: #F47A5F; }
+  .cal-day.yellow .cal-names { color: #D97706; }
   .cal-day .cal-dots { position: absolute; bottom: 2px; display: flex; gap: 1px; }
   .cal-dot { width: 3px; height: 3px; border-radius: 50%; }
+  .cal-nav-btn { padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: inherit; }
+  .cal-nav-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
+  html:not(.dark) .cal-nav-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
+  html:not(.dark) .cal-nav-btn:hover { background: rgba(0,0,0,0.08); }
+  .cal-toggle { cursor: pointer; transition: transform 0.2s; }
+  .cal-toggle.collapsed { transform: rotate(-90deg); }
   .cal-legend { display: flex; gap: 1rem; flex-wrap: wrap; }
   .cal-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; color: rgba(200,194,184,0.6); }
   html:not(.dark) .cal-legend-item { color: #6b7280; }
@@ -401,16 +410,24 @@
   <!-- Calendar Availability -->
   <div class="mt-8 mb-10 animate-in stagger-3" id="calendar-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleCalendar()">
         <div class="flex items-center gap-2">
+          <svg id="cal-chevron" class="w-4 h-4 cal-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           <span class="text-sm font-display">Group Availability</span>
+          <span id="cal-summary" class="text-xs text-crab-sand-dim opacity-60 ml-1"></span>
         </div>
       </div>
-      <div class="p-4 md:p-5">
-        <div class="cal-legend mb-4">
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Wide open</div>
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Some conflicts</div>
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
+      <div id="cal-body" class="p-4 md:p-5" style="display:none;">
+        <div class="flex items-center justify-between mb-4">
+          <div class="cal-legend">
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Wide open</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Some conflicts</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
+          </div>
+          <div class="flex gap-1.5">
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(-1);">&larr;</button>
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(1);">&rarr;</button>
+          </div>
         </div>
         <div id="cal-months" class="space-y-6"></div>
         <div id="cal-hover-info" class="text-xs text-crab-sand-dim mt-3 min-h-[1.25rem]"></div>
@@ -1350,6 +1367,30 @@ if (_destinations.length > 0) {
 
 // ── Calendar Availability ──
 var _calData = {{ calendar_json|safe }};
+var _calOffset = 0; // month offset from today for navigation
+var _calMonthsToShow = 3;
+
+function getFirstName(name) {
+  return (name || '').split(' ')[0];
+}
+
+function toggleCalendar() {
+  var body = document.getElementById('cal-body');
+  var chev = document.getElementById('cal-chevron');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    chev.classList.remove('collapsed');
+  } else {
+    body.style.display = 'none';
+    chev.classList.add('collapsed');
+  }
+}
+
+function calNav(dir) {
+  _calOffset += dir;
+  if (_calOffset < 0) _calOffset = 0;
+  renderCalendar();
+}
 
 function renderCalendar() {
   var container = document.getElementById('cal-months');
@@ -1359,9 +1400,20 @@ function renderCalendar() {
   today.setHours(0,0,0,0);
   var todayStr = today.toISOString().split('T')[0];
 
-  // Build date→info map: who's blocked, who's available
-  var dateMap = {}; // dateStr → {blocked: [names], available: [names]}
+  // Determine how many months to show based on data span
+  var allDates = [];
+  (_calData.blackouts || []).forEach(function(b) { allDates.push(b.start, b.end); });
+  (_calData.tentative || []).forEach(function(t) { allDates.push(t.start, t.end); });
+  allDates.sort();
 
+  var dataSpanMonths = 3;
+  if (allDates.length) {
+    var latest = new Date(allDates[allDates.length - 1] + 'T00:00:00');
+    dataSpanMonths = Math.max(3, (latest.getFullYear() - today.getFullYear()) * 12 + latest.getMonth() - today.getMonth() + 1);
+  }
+
+  // Build date→info map
+  var dateMap = {};
   (_calData.blackouts || []).forEach(function(b) {
     var d = new Date(b.start + 'T00:00:00');
     var end = new Date(b.end + 'T00:00:00');
@@ -1372,7 +1424,6 @@ function renderCalendar() {
       d.setDate(d.getDate() + 1);
     }
   });
-
   (_calData.tentative || []).forEach(function(t) {
     var d = new Date(t.start + 'T00:00:00');
     var end = new Date(t.end + 'T00:00:00');
@@ -1387,13 +1438,21 @@ function renderCalendar() {
   var totalMembers = (_calData.members || []).length;
   var flexMembers = (_calData.members || []).filter(function(m) { return m.is_flexible; }).map(function(m) { return m.name; });
 
-  // Render 3 months starting from current month
+  // Update collapsed summary
+  var summary = document.getElementById('cal-summary');
+  if (summary) {
+    var blockedMembers = [];
+    (_calData.blackouts || []).forEach(function(b) { if (blockedMembers.indexOf(b.name) === -1) blockedMembers.push(b.name); });
+    summary.textContent = totalMembers + ' member' + (totalMembers !== 1 ? 's' : '') + (blockedMembers.length ? ', ' + blockedMembers.length + ' with conflicts' : '');
+  }
+
+  // Render 3 months at a time with navigation
   var html = '';
   var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var dayNames = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
-  for (var mo = 0; mo < 3; mo++) {
-    var monthDate = new Date(today.getFullYear(), today.getMonth() + mo, 1);
+  for (var mo = 0; mo < _calMonthsToShow; mo++) {
+    var monthDate = new Date(today.getFullYear(), today.getMonth() + _calOffset + mo, 1);
     var year = monthDate.getFullYear();
     var month = monthDate.getMonth();
     var daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1404,7 +1463,6 @@ function renderCalendar() {
     html += '<div class="cal-grid">';
     dayNames.forEach(function(d) { html += '<div class="cal-header">' + d + '</div>'; });
 
-    // Empty cells for days before month starts
     for (var e = 0; e < firstDay; e++) {
       html += '<div class="cal-day empty"></div>';
     }
@@ -1414,8 +1472,6 @@ function renderCalendar() {
       var isPast = ds < todayStr;
       var info = dateMap[ds] || {blocked: [], available: []};
       var blockedCount = info.blocked.length;
-      var availCount = info.available.length + flexMembers.length;
-      // Don't double-count flex members who also have explicit entries
       var uniqueAvail = info.available.slice();
       flexMembers.forEach(function(fn) { if (uniqueAvail.indexOf(fn) === -1) uniqueAvail.push(fn); });
 
@@ -1430,8 +1486,20 @@ function renderCalendar() {
       if (info.blocked.length) title += ' | Blocked: ' + info.blocked.join(', ');
       if (uniqueAvail.length) title += ' | Available: ' + uniqueAvail.join(', ');
 
+      // Build name labels for blocked dates
+      var namesHtml = '';
+      if (!isPast && info.blocked.length > 0) {
+        var shortNames = info.blocked.map(getFirstName);
+        if (shortNames.length <= 2) {
+          namesHtml = '<div class="cal-names">' + shortNames.join(', ') + '</div>';
+        } else {
+          namesHtml = '<div class="cal-names">' + shortNames[0] + ' +' + (shortNames.length - 1) + '</div>';
+        }
+      }
+
       html += '<div class="cal-day ' + (isPast ? 'past' : '') + ' ' + colorClass + '" title="' + title + '" data-date="' + ds + '" onmouseenter="showCalInfo(this)">';
       html += '<span>' + day + '</span>';
+      html += namesHtml;
       html += '</div>';
     }
     html += '</div></div>';
