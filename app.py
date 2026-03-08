@@ -150,6 +150,14 @@ def _research_destination(plan_id, suggestion_id, destination_name, plan):
     threading.Thread(target=_do_research, daemon=True).start()
 
 
+# ── Refresh admin flag (once per session, or if missing) ─────
+@app.before_request
+def refresh_admin_flag():
+    user = session.get('user')
+    if user and 'id' in user and 'user_is_admin' not in session:
+        from utilities.admin_utils import is_admin as check_admin
+        session['user_is_admin'] = check_admin(user['id'])
+
 # ── Public routes ────────────────────────────────────────────
 
 @app.route('/')
