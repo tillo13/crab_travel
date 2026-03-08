@@ -85,6 +85,106 @@
     .stagger-4 { animation-delay: 0.4s; }
     .stagger-5 { animation-delay: 0.5s; }
 
+    /* ── Crab Animations ── */
+    @keyframes crabBob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2.5px); }
+    }
+    @keyframes crabWiggle {
+      0%, 100% { transform: rotate(0deg); }
+      15% { transform: rotate(-12deg); }
+      30% { transform: rotate(10deg); }
+      45% { transform: rotate(-8deg); }
+      60% { transform: rotate(6deg); }
+      75% { transform: rotate(-3deg); }
+    }
+    @keyframes crabSnap {
+      0% { transform: scale(1); }
+      20% { transform: scale(0.82, 1.1); }
+      40% { transform: scale(1.12, 0.9); }
+      60% { transform: scale(0.95, 1.03); }
+      80% { transform: scale(1.03, 0.98); }
+      100% { transform: scale(1); }
+    }
+    @keyframes crabCrawl {
+      0% { left: -60px; }
+      100% { left: calc(100% + 60px); }
+    }
+    @keyframes crabLegWiggle {
+      0%, 100% { transform: rotate(-4deg); }
+      50% { transform: rotate(4deg); }
+    }
+    @keyframes crabPeekUp {
+      0% { transform: translateY(100%); }
+      18% { transform: translateY(25%) rotate(-5deg); }
+      28% { transform: translateY(20%) rotate(3deg); }
+      40% { transform: translateY(25%) rotate(0deg); }
+      70% { transform: translateY(25%); }
+      85% { transform: translateY(25%) rotate(-3deg); }
+      100% { transform: translateY(100%); }
+    }
+    @keyframes crabGlow {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(232,89,58,0)); }
+      50% { transform: scale(1.04); filter: drop-shadow(0 0 12px rgba(232,89,58,0.35)); }
+    }
+    @keyframes crabTipsy {
+      0% { transform: translateX(0) rotate(0deg); }
+      10% { transform: translateX(8px) rotate(5deg); }
+      20% { transform: translateX(4px) rotate(-3deg); }
+      30% { transform: translateX(14px) rotate(7deg); }
+      40% { transform: translateX(10px) rotate(-5deg); }
+      50% { transform: translateX(20px) rotate(4deg); }
+      60% { transform: translateX(14px) rotate(-6deg); }
+      70% { transform: translateX(24px) rotate(3deg); }
+      80% { transform: translateX(18px) rotate(-4deg); }
+      90% { transform: translateX(8px) rotate(2deg); }
+      100% { transform: translateX(0) rotate(0deg); }
+    }
+    @keyframes crabSpin {
+      0% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(90deg) scale(1.1); }
+      50% { transform: rotate(180deg) scale(1); }
+      75% { transform: rotate(270deg) scale(1.1); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    .nav-crab {
+      animation: crabBob 3s ease-in-out infinite;
+      transition: filter 0.2s;
+    }
+    .nav-crab:hover {
+      animation: crabWiggle 0.5s ease-in-out;
+      filter: drop-shadow(0 0 8px rgba(232,89,58,0.3));
+    }
+    .nav-crab.snapping { animation: crabSnap 0.35s ease-out; }
+    .crab-glow { animation: crabGlow 3s ease-in-out infinite; }
+    #crab-crawl-el {
+      position: fixed;
+      bottom: 12px;
+      z-index: 48;
+      pointer-events: none;
+      display: none;
+    }
+    #crab-crawl-el.crawling {
+      display: block;
+      animation: crabCrawl 10s linear forwards;
+    }
+    #crab-crawl-el img {
+      width: 40px; height: 40px; border-radius: 6px;
+      animation: crabLegWiggle 0.25s ease-in-out infinite;
+    }
+    #crab-peek-el {
+      position: fixed;
+      bottom: 0; left: 50%;
+      margin-left: -28px;
+      z-index: 48;
+      pointer-events: none;
+      transform: translateY(100%);
+    }
+    #crab-peek-el.peeking {
+      animation: crabPeekUp 4s ease-in-out forwards;
+    }
+    #crab-peek-el img { width: 56px; height: 56px; border-radius: 8px; }
+
     /* Glass nav */
     .glass-nav {
       background: rgba(11, 7, 53, 0.7);
@@ -185,9 +285,9 @@
   <nav class="glass-nav px-4 md:px-6 py-3 sticky top-0 z-50">
     <div class="max-w-5xl mx-auto flex items-center justify-between">
       <div class="flex items-center gap-8">
-        <a href="/" class="flex items-center gap-2 group">
-          <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg hidden dark:block" alt="crab.travel">
-          <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-8 h-8 block dark:hidden" alt="crab.travel">
+        <a href="/" class="flex items-center gap-2 group" onclick="crabNavSnap(event)">
+          <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-8 h-8 rounded-lg hidden dark:block nav-crab" id="nav-crab-dark" alt="crab.travel">
+          <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-8 h-8 block dark:hidden nav-crab" id="nav-crab-light" alt="crab.travel">
           <span class="text-lg font-display tracking-tight text-gray-900 dark:text-crab-sand group-hover:text-crab-coral transition-colors">crab.travel</span>
         </a>
         {% if session.user %}
@@ -245,7 +345,52 @@
     </div>
   </footer>
 
+  <!-- Crab easter egg elements -->
+  <div id="crab-crawl-el"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" alt=""></div>
+  <div id="crab-peek-el"><img src="{{ url_for('static', filename='images/crab_logo.png') }}" alt=""></div>
+
   <script>
+    // ── Crab nav click snap ──
+    function crabNavSnap(e) {
+      var imgs = document.querySelectorAll('.nav-crab');
+      imgs.forEach(function(img) {
+        img.classList.remove('snapping');
+        void img.offsetWidth;
+        img.classList.add('snapping');
+        img.addEventListener('animationend', function() { img.classList.remove('snapping'); }, {once: true});
+      });
+    }
+
+    // ── Crab idle crawl easter egg (once per session, after 45s) ──
+    (function() {
+      if (sessionStorage.getItem('crab-crawled')) return;
+      setTimeout(function() {
+        var el = document.getElementById('crab-crawl-el');
+        if (!el) return;
+        sessionStorage.setItem('crab-crawled', '1');
+        el.classList.add('crawling');
+        el.addEventListener('animationend', function() { el.remove(); });
+      }, 45000);
+    })();
+
+    // ── Crab peek-a-boo at footer ──
+    (function() {
+      var peeked = false;
+      var peekEl = document.getElementById('crab-peek-el');
+      if (!peekEl) return;
+      function checkScroll() {
+        if (peeked) return;
+        var scrollBottom = window.innerHeight + window.scrollY;
+        var docHeight = document.documentElement.scrollHeight;
+        if (scrollBottom >= docHeight - 20) {
+          peeked = true;
+          peekEl.classList.add('peeking');
+          peekEl.addEventListener('animationend', function() { peekEl.remove(); });
+        }
+      }
+      window.addEventListener('scroll', checkScroll, {passive: true});
+    })();
+
     function toggleTheme() {
       var html = document.documentElement;
       var isDark = html.classList.toggle('dark');

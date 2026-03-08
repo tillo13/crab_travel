@@ -893,6 +893,13 @@ function celebrateVote(btn) {
   btn.classList.add('vote-flash');
   setTimeout(function() { btn.classList.remove('vote-flash'); }, 400);
 
+  // Spin the nav crab
+  var navCrab = document.querySelector('.nav-crab');
+  if (navCrab) {
+    navCrab.style.animation = 'crabSpin 0.5s ease-in-out';
+    navCrab.addEventListener('animationend', function() { navCrab.style.animation = 'crabBob 3s ease-in-out infinite'; }, {once: true});
+  }
+
   // Mini confetti burst
   var overlay = document.createElement('div');
   overlay.className = 'vote-celebrate';
@@ -1239,7 +1246,7 @@ function renderChat() {
   var countEl = document.getElementById('chat-count');
   if (!container) return;
   if (_chatMessages.length === 0) {
-    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">No messages yet. Start the conversation!</p>';
+    container.innerHTML = '<div class="text-center py-8"><img src="/static/images/crab_logo.png" class="w-12 h-12 rounded-lg mx-auto mb-3 crab-glow" alt=""><p class="text-sm text-crab-sand-dim opacity-50">No messages yet. Start the conversation!</p></div>';
     if (countEl) countEl.textContent = '';
     return;
   }

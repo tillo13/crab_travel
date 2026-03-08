@@ -54,8 +54,9 @@
   <section class="hero-gradient px-4 md:px-6 py-20 md:py-32 relative overflow-hidden">
     <div class="max-w-3xl mx-auto text-center relative z-10">
       <div class="animate-in">
-        <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl shadow-crab-coral/15 hidden dark:block" alt="">
-        <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl block dark:hidden" alt="">
+        <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl shadow-crab-coral/15 hidden dark:block" alt="" style="animation: crabHello 0.8s cubic-bezier(0.34,1.56,0.64,1) both, crabGlow 3s ease-in-out 0.8s infinite;">
+        <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl block dark:hidden" alt="" style="animation: crabHello 0.8s cubic-bezier(0.34,1.56,0.64,1) both;">
+        <style>@keyframes crabHello { 0% { transform:scale(0.3) rotate(-20deg); opacity:0; } 40% { transform:scale(1.15) rotate(8deg); opacity:1; } 60% { transform:scale(0.95) rotate(-3deg); } 80% { transform:scale(1.03) rotate(1deg); } 100% { transform:scale(1) rotate(0deg); opacity:1; } }</style>
         <h1 class="text-4xl md:text-6xl font-display leading-tight mb-6">
           Your group trip shouldn't live<br class="hidden md:block"> in a spreadsheet.
         </h1>

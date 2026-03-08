@@ -158,6 +158,10 @@ def refresh_admin_flag():
         from utilities.admin_utils import is_admin as check_admin
         session['user_is_admin'] = check_admin(user['id'])
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html', active_page=None), 404
+
 # ── Public routes ────────────────────────────────────────────
 
 @app.route('/')
