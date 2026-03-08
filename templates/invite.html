@@ -467,9 +467,10 @@
       </p>
 
       <div class="mb-5">
-        <label class="block text-sm font-medium mb-1.5">Home airport</label>
-        <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. ORD, SFO, JFK" value="{{ member_airport or '' }}" maxlength="5" oninput="this.value=this.value.toUpperCase()">
-        <p class="text-xs text-crab-sand-dim mt-1 opacity-60">The airport you'd fly out of</p>
+        <label class="block text-sm font-medium mb-1.5">Where are you based?</label>
+        <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. Seattle, Phoenix, JFK, 90210" value="{{ member_airport or '' }}">
+        <p id="airport-resolved" class="text-xs mt-1 opacity-60 text-crab-teal hidden"></p>
+        <p id="airport-hint" class="text-xs text-crab-sand-dim mt-1 opacity-60">City, airport code, or zip — we'll find your nearest airport</p>
       </div>
 
       <div class="mb-5">
@@ -563,6 +564,35 @@ const PLAN_ID = '{{ plan.plan_id }}';
 const NEEDS_LOGIN = {{ 'true' if needs_login else 'false' }};
 var _isMember = {{ 'true' if is_member else 'false' }};
 const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
+
+// ── Airport resolver ──
+var _airportTimer = null;
+document.getElementById('home-airport')?.addEventListener('input', function() {
+  var val = this.value.trim();
+  var resolved = document.getElementById('airport-resolved');
+  var hint = document.getElementById('airport-hint');
+  clearTimeout(_airportTimer);
+  if (!val || val.length < 2) {
+    resolved.classList.add('hidden');
+    hint.classList.remove('hidden');
+    return;
+  }
+  _airportTimer = setTimeout(function() {
+    fetch('/api/airport/resolve?q=' + encodeURIComponent(val))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.result) {
+          resolved.textContent = '✈ ' + data.result.code + ' — ' + data.result.name;
+          resolved.classList.remove('hidden');
+          hint.classList.add('hidden');
+        } else {
+          resolved.classList.add('hidden');
+          hint.textContent = "We'll figure out your airport — just tell us your city or area";
+          hint.classList.remove('hidden');
+        }
+      });
+  }, 400);
+});
 
 function vibeScore(item) {
   if (!GROUP_VIBES) return 0;
@@ -1091,7 +1121,8 @@ function submitJoin() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      var airport = payload.home_airport || 'your city';
+      var resolvedText = document.getElementById('airport-resolved').textContent;
+      var airport = resolvedText || payload.home_airport || 'your city';
       document.getElementById('confirm-msg').textContent = "You're in! We'll track flights from " + airport + " and keep you updated.";
       document.getElementById('confirmation').classList.remove('hidden');
       btn.textContent = 'Saved!';

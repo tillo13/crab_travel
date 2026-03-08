@@ -38,13 +38,14 @@
 
 <form id="profile-form" class="space-y-5">
 
-  <!-- Home airport / city -->
+  <!-- Home location -->
   <div>
     <label class="block font-semibold font-display mb-1 text-sm">Where are you based?</label>
-    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Airport code or city — e.g. PHX, JFK, "Scottsdale, AZ". We'll use this for flight tracking.</p>
-    <input type="text" name="home_airport" placeholder="e.g. PHX or Scottsdale, AZ"
-      value="{{ profile.home_airport or profile.home_location or '' }}"
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">City, neighborhood, zip code, or airport code — we'll find your nearest airport.</p>
+    <input type="text" name="home_airport" id="home-airport" placeholder="e.g. Scottsdale, Brooklyn, 98101, SEA"
+      value="{{ profile.home_location or profile.home_airport or '' }}"
       class="input-field">
+    <p id="airport-resolved" class="text-xs mt-1.5 text-crab-teal hidden"></p>
   </div>
 
   <!-- Interests — free text -->
@@ -188,6 +189,31 @@
 </div>
 
 <script>
+// Airport live-resolve
+var _airportTimer = null;
+var airportInput = document.getElementById('home-airport');
+function resolveAirport(val) {
+  var resolved = document.getElementById('airport-resolved');
+  if (!val || val.length < 2) { resolved.classList.add('hidden'); return; }
+  fetch('/api/airport/resolve?q=' + encodeURIComponent(val))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.result) {
+        resolved.textContent = '✈ ' + data.result.code + ' — ' + data.result.name;
+        resolved.classList.remove('hidden');
+      } else {
+        resolved.classList.add('hidden');
+      }
+    });
+}
+airportInput.addEventListener('input', function() {
+  clearTimeout(_airportTimer);
+  var val = this.value.trim();
+  _airportTimer = setTimeout(function() { resolveAirport(val); }, 400);
+});
+// Resolve on page load if value exists
+if (airportInput.value.trim()) resolveAirport(airportInput.value.trim());
+
 document.getElementById('profile-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;

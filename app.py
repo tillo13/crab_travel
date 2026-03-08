@@ -335,11 +335,34 @@ def api_update_profile():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
+    # Auto-resolve airport from freeform location
+    from utilities.airport_utils import resolve_airport
+    location = data.get('home_airport') or data.get('home_location') or ''
+    if location:
+        result = resolve_airport(location)
+        if result:
+            data['home_airport'] = result['code']
+            data['home_location'] = location
+        else:
+            data['home_location'] = location
+            data['home_airport'] = None
     success = update_user_profile(user['id'], data)
     if success:
         logger.info(f"💬 Profile updated: {user['email']}")
-        return jsonify({'success': True})
+        airport_info = resolve_airport(location) if location else None
+        return jsonify({'success': True, 'resolved_airport': airport_info})
     return jsonify({'error': 'Update failed'}), 500
+
+
+@app.route('/api/airport/resolve')
+def api_resolve_airport():
+    """Live-resolve freeform text to nearest airport."""
+    from utilities.airport_utils import resolve_airport
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'result': None})
+    result = resolve_airport(q)
+    return jsonify({'result': result})
 
 
 # ── Plan routes ─────────────────────────────────────────────
@@ -500,17 +523,21 @@ def api_join_full(plan_id):
             return jsonify({'error': 'Failed to join'}), 500
         logger.info(f"👋 Joined plan: {user['name']} → plan {plan_id}")
 
-    # Update airport + flexible
-    home_airport = data.get('home_airport', '').strip()
+    # Update airport + flexible — resolve freeform location to IATA code
+    from utilities.airport_utils import resolve_airport
+    location_input = data.get('home_airport', '').strip()
     is_flexible = data.get('is_flexible', False)
-    update_member_details(member['pk_id'], home_airport=home_airport or None, is_flexible=is_flexible)
+    resolved = resolve_airport(location_input) if location_input else None
+    airport_code = resolved['code'] if resolved else (location_input.upper() if len(location_input) == 3 else None)
+    update_member_details(member['pk_id'], home_airport=airport_code or location_input or None, is_flexible=is_flexible)
 
-    # Also save airport to user profile so it carries across plans
-    if home_airport:
+    # Also save to user profile so it carries across plans
+    if location_input:
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("UPDATE crab.users SET home_airport = %s WHERE pk_id = %s AND (home_airport IS NULL OR home_airport = '')", (home_airport, user['id']))
+            cur.execute("UPDATE crab.users SET home_airport = %s, home_location = %s WHERE pk_id = %s AND (home_airport IS NULL OR home_airport = '')",
+                        (airport_code, location_input, user['id']))
             conn.commit()
             cur.close()
             conn.close()

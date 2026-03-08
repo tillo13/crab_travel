@@ -528,9 +528,9 @@ def update_user_profile(user_id, data):
         if data.get('home_location'):
             update_parts.append("home_location = %s")
             update_vals.append(data['home_location'])
-        if data.get('home_airport'):
+        if 'home_airport' in data:
             update_parts.append("home_airport = %s")
-            update_vals.append(data['home_airport'].upper().strip())
+            update_vals.append(data['home_airport'].upper().strip() if data['home_airport'] else None)
         if 'phone_number' in data:
             update_parts.append("phone_number = %s")
             update_vals.append(data['phone_number'])
