@@ -33,7 +33,7 @@ def get_admin_dashboard_data():
     cur.execute("SELECT COUNT(*) as count FROM crab.plans")
     total_plans = cur.fetchone()['count']
 
-    cur.execute("SELECT COUNT(*) as count FROM crab.chat_messages")
+    cur.execute("SELECT COUNT(*) as count FROM crab.messages")
     total_messages = cur.fetchone()['count']
 
     cur.execute("SELECT COUNT(*) as count FROM crab.plan_members")
@@ -58,7 +58,7 @@ def get_admin_dashboard_data():
                u.phone_number, u.notify_chat, u.notify_updates, u.notify_channel,
                u.is_admin, u.created_at, u.updated_at,
                (SELECT COUNT(*) FROM crab.plan_members m WHERE m.user_id = u.pk_id) as plan_count,
-               (SELECT COUNT(*) FROM crab.chat_messages c WHERE c.user_id = u.pk_id) as message_count
+               (SELECT COUNT(*) FROM crab.messages c WHERE c.user_id = u.pk_id) as message_count
         FROM crab.users u ORDER BY u.pk_id
     """)
     users = cur.fetchall()
@@ -70,7 +70,7 @@ def get_admin_dashboard_data():
                u.full_name as organizer_name,
                (SELECT COUNT(*) FROM crab.plan_members m WHERE m.plan_id = p.plan_id) as member_count,
                (SELECT COUNT(*) FROM crab.destination_suggestions d WHERE d.plan_id = p.plan_id) as dest_count,
-               (SELECT COUNT(*) FROM crab.chat_messages c WHERE c.plan_id = p.plan_id) as msg_count,
+               (SELECT COUNT(*) FROM crab.messages c WHERE c.plan_id = p.plan_id) as msg_count,
                (SELECT COUNT(*) FROM crab.votes v WHERE v.plan_id = p.plan_id) as vote_count
         FROM crab.plans p
         LEFT JOIN crab.users u ON u.pk_id = p.organizer_id
@@ -81,7 +81,7 @@ def get_admin_dashboard_data():
     # --- Recent messages ---
     cur.execute("""
         SELECT c.content, c.created_at, u.full_name, p.title as plan_title
-        FROM crab.chat_messages c
+        FROM crab.messages c
         JOIN crab.users u ON u.pk_id = c.user_id
         JOIN crab.plans p ON p.plan_id = c.plan_id
         ORDER BY c.created_at DESC LIMIT 20
@@ -90,7 +90,7 @@ def get_admin_dashboard_data():
 
     # --- Recent activity (last 24h) ---
     cur.execute("""
-        SELECT COUNT(*) as count FROM crab.chat_messages
+        SELECT COUNT(*) as count FROM crab.messages
         WHERE created_at > NOW() - INTERVAL '24 hours'
     """)
     messages_24h = cur.fetchone()['count']
