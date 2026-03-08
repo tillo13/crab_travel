@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}Admin — crab.travel{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto animate-in">
+
+<!-- Header -->
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-3xl font-display">Admin Panel</h1>
+    <p class="text-sm text-crab-sand-dim">crab.travel operations dashboard</p>
+  </div>
+  {% if mimic_active %}
+  <form method="POST" action="/admin/mimic" class="inline">
+    <input type="hidden" name="action" value="stop">
+    <button class="px-4 py-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-500/30 transition-colors">
+      Mimicking {{ session.user.name }} — Stop
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Stat Cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
+    <div class="text-2xl font-display text-crab-coral">{{ total_users }}</div>
+    <div class="text-xs text-crab-sand-dim mt-1">Users</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
+    <div class="text-2xl font-display text-crab-teal">{{ total_plans }}</div>
+    <div class="text-xs text-crab-sand-dim mt-1">Plans</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
+    <div class="text-2xl font-display text-crab-coral-light">{{ total_messages }}</div>
+    <div class="text-xs text-crab-sand-dim mt-1">Messages</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
+    <div class="text-2xl font-display text-crab-teal-light">{{ total_votes }}</div>
+    <div class="text-xs text-crab-sand-dim mt-1">Votes</div>
+  </div>
+</div>
+
+<!-- 24h Activity -->
+<div class="grid grid-cols-3 gap-3 mb-8">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
+    <div class="text-lg font-display">{{ messages_24h }}</div>
+    <div class="text-xs text-crab-sand-dim">Messages (24h)</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
+    <div class="text-lg font-display">{{ votes_24h }}</div>
+    <div class="text-xs text-crab-sand-dim">Votes (24h)</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
+    <div class="text-lg font-display">{{ joins_24h }}</div>
+    <div class="text-xs text-crab-sand-dim">Joins (24h)</div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+  <a href="/admin/mimic" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/30 transition-colors group text-center">
+    <div class="text-lg mb-1">👤</div>
+    <div class="text-sm font-medium group-hover:text-crab-coral transition-colors">Mimic User</div>
+  </a>
+  <button onclick="sendTestEmail()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
+    <div class="text-lg mb-1">📧</div>
+    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test Email</div>
+  </button>
+  <button onclick="sendTestSMS()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
+    <div class="text-lg mb-1">📱</div>
+    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test SMS</div>
+  </button>
+  <button onclick="runSmokeTest()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-amber-500/30 transition-colors group text-center">
+    <div class="text-lg mb-1">🔥</div>
+    <div class="text-sm font-medium group-hover:text-amber-400 transition-colors">Smoke Test</div>
+  </button>
+</div>
+
+<div id="action-status" class="hidden text-sm rounded-lg p-3 mb-6"></div>
+
+<!-- Plans by Stage -->
+<div class="mb-8">
+  <h2 class="text-xl font-display mb-3">Plans by Stage</h2>
+  <div class="flex gap-2 flex-wrap">
+    {% for stage, count in plans_by_stage.items() %}
+    <span class="px-3 py-1.5 rounded-full text-sm font-medium
+      {% if stage == 'voting' %}badge-pending
+      {% elif stage == 'planning' %}badge-success
+      {% elif stage == 'booked' %}bg-crab-coral/15 text-crab-coral
+      {% else %}badge-neutral{% endif %}">
+      {{ stage|capitalize }}: {{ count }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Users Table -->
+<div class="mb-8">
+  <h2 class="text-xl font-display mb-3">Users ({{ total_users }})</h2>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
+            <th class="px-4 py-3">ID</th>
+            <th class="px-4 py-3">Name</th>
+            <th class="px-4 py-3">Email</th>
+            <th class="px-4 py-3">Airport</th>
+            <th class="px-4 py-3">Phone</th>
+            <th class="px-4 py-3">Notify</th>
+            <th class="px-4 py-3">Plans</th>
+            <th class="px-4 py-3">Msgs</th>
+            <th class="px-4 py-3">Admin</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="border-b border-white/4 hover:bg-white/3 transition-colors">
+            <td class="px-4 py-2.5 text-crab-sand-dim">{{ u.pk_id }}</td>
+            <td class="px-4 py-2.5 font-medium">{{ u.full_name }}</td>
+            <td class="px-4 py-2.5 text-crab-sand-dim text-xs">{{ u.email }}</td>
+            <td class="px-4 py-2.5">
+              {% if u.home_airport %}<span class="text-crab-teal">{{ u.home_airport }}</span>{% endif %}
+              {% if u.home_location %}<span class="text-xs text-crab-sand-dim"> {{ u.home_location }}</span>{% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-xs">{{ u.phone_number or '—' }}</td>
+            <td class="px-4 py-2.5 text-xs">
+              <span class="{% if u.notify_chat == 'realtime' %}text-crab-teal{% elif u.notify_chat == 'off' %}text-crab-sand-dim opacity-40{% else %}text-crab-sand-dim{% endif %}">
+                {{ u.notify_chat }}/{{ u.notify_channel }}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-center">{{ u.plan_count }}</td>
+            <td class="px-4 py-2.5 text-center">{{ u.message_count }}</td>
+            <td class="px-4 py-2.5 text-center">{% if u.is_admin %}✓{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Plans Table -->
+<div class="mb-8">
+  <h2 class="text-xl font-display mb-3">Plans ({{ total_plans }})</h2>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
+            <th class="px-4 py-3">Title</th>
+            <th class="px-4 py-3">Organizer</th>
+            <th class="px-4 py-3">Stage</th>
+            <th class="px-4 py-3">Members</th>
+            <th class="px-4 py-3">Dests</th>
+            <th class="px-4 py-3">Msgs</th>
+            <th class="px-4 py-3">Votes</th>
+            <th class="px-4 py-3">Invite Link</th>
+            <th class="px-4 py-3">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in plans %}
+          <tr class="border-b border-white/4 hover:bg-white/3 transition-colors">
+            <td class="px-4 py-2.5 font-medium">
+              <a href="/plan/{{ p.plan_id }}" class="hover:text-crab-coral transition-colors">{{ p.title }}</a>
+            </td>
+            <td class="px-4 py-2.5 text-crab-sand-dim">{{ p.organizer_name or '—' }}</td>
+            <td class="px-4 py-2.5">
+              <span class="px-2 py-0.5 rounded-full text-xs
+                {% if p.status == 'voting' %}badge-pending
+                {% elif p.status == 'planning' %}badge-success
+                {% elif p.status == 'booked' %}bg-crab-coral/15 text-crab-coral
+                {% else %}badge-neutral{% endif %}">
+                {{ (p.status or 'voting')|capitalize }}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-center">{{ p.member_count }}</td>
+            <td class="px-4 py-2.5 text-center">{{ p.dest_count }}</td>
+            <td class="px-4 py-2.5 text-center">{{ p.msg_count }}</td>
+            <td class="px-4 py-2.5 text-center">{{ p.vote_count }}</td>
+            <td class="px-4 py-2.5 text-xs">
+              <a href="/to/{{ p.invite_token }}" class="text-crab-coral hover:underline">/to/{{ p.invite_token }}</a>
+            </td>
+            <td class="px-4 py-2.5 text-xs text-crab-sand-dim">{{ p.created_at.strftime('%b %d') if p.created_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Invite Conversion -->
+<div class="mb-8">
+  <h2 class="text-xl font-display mb-3">Invite Conversion</h2>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
+            <th class="px-4 py-3">Plan</th>
+            <th class="px-4 py-3">Link</th>
+            <th class="px-4 py-3">Views</th>
+            <th class="px-4 py-3">Joins</th>
+            <th class="px-4 py-3">Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invite_stats %}
+          <tr class="border-b border-white/4">
+            <td class="px-4 py-2.5 font-medium">{{ inv.title }}</td>
+            <td class="px-4 py-2.5 text-xs text-crab-coral">/to/{{ inv.invite_token }}</td>
+            <td class="px-4 py-2.5">{{ inv.views }}</td>
+            <td class="px-4 py-2.5">{{ inv.joins }}</td>
+            <td class="px-4 py-2.5">
+              {% if inv.views > 0 %}
+              <span class="{% if (inv.joins / inv.views * 100) > 30 %}text-crab-teal{% elif (inv.joins / inv.views * 100) > 10 %}text-amber-400{% else %}text-crab-coral{% endif %}">
+                {{ (inv.joins / inv.views * 100)|round(1) }}%
+              </span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Messages -->
+<div class="mb-8">
+  <h2 class="text-xl font-display mb-3">Recent Messages</h2>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-3">
+    {% for msg in recent_messages %}
+    <div class="flex items-start gap-3 text-sm">
+      <div class="shrink-0 text-xs text-crab-sand-dim opacity-60 w-24">{{ msg.created_at.strftime('%b %d %H:%M') if msg.created_at else '' }}</div>
+      <div>
+        <span class="font-medium text-crab-coral">{{ msg.full_name }}</span>
+        <span class="text-crab-sand-dim opacity-60">in {{ msg.plan_title }}:</span>
+        <span class="text-crab-sand-dim">{{ msg.content[:120] }}{% if msg.content|length > 120 %}...{% endif %}</span>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not recent_messages %}
+    <p class="text-sm text-crab-sand-dim opacity-40">No messages yet</p>
+    {% endif %}
+  </div>
+</div>
+
+</div>
+
+<script>
+function showStatus(msg, isError) {
+  var el = document.getElementById('action-status');
+  el.className = 'text-sm rounded-lg p-3 mb-6 ' + (isError
+    ? 'bg-crab-coral/10 border border-crab-coral/20 text-crab-coral'
+    : 'bg-crab-teal/10 border border-crab-teal/20 text-crab-teal');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function sendTestEmail() {
+  showStatus('Sending test email...');
+  try {
+    var resp = await fetch('/api/admin/test-email', {method: 'POST'});
+    var data = await resp.json();
+    if (data.success) showStatus('Test email sent to ' + data.to);
+    else showStatus('Failed: ' + data.error, true);
+  } catch(e) { showStatus('Error: ' + e.message, true); }
+}
+
+async function sendTestSMS() {
+  showStatus('Sending test SMS...');
+  try {
+    var resp = await fetch('/api/admin/test-sms', {method: 'POST'});
+    var data = await resp.json();
+    if (data.success) showStatus('Test SMS sent to ' + data.to);
+    else showStatus(data.error || 'SMS failed', true);
+  } catch(e) { showStatus('Error: ' + e.message, true); }
+}
+
+async function runSmokeTest() {
+  showStatus('Running smoke test... (this takes ~15s)');
+  try {
+    var resp = await fetch('/api/admin/smoke-test', {method: 'POST'});
+    var data = await resp.json();
+    if (data.success) {
+      showStatus('Smoke test: ' + data.passed + '/' + data.total + ' passed (' + data.time + 's) — ' + (data.failed > 0 ? data.failed + ' FAILED' : 'all clear'));
+    } else {
+      showStatus('Smoke test failed: ' + (data.error || 'unknown'), true);
+    }
+  } catch(e) { showStatus('Error: ' + e.message, true); }
+}
+</script>
+{% endblock %}

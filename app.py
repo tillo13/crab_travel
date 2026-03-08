@@ -12,7 +12,9 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from utilities.google_auth_utils import get_secret
+import psycopg2.extras
 from utilities.postgres_utils import (
+    get_db_connection,
     init_database, upsert_user, get_user_profile, update_user_profile,
     get_user_tokens, update_user_tokens, set_user_calendar_synced,
     create_plan, get_plans_for_user, get_plan_by_id, get_plan_by_invite_token,
@@ -218,6 +220,116 @@ Sent from crab.travel/contact
         return jsonify({'error': str(e)}), 500
 
 
+# ── Admin routes ─────────────────────────────────────────────
+
+@app.route('/admin')
+@login_required
+def admin_panel():
+    from utilities.admin_utils import is_admin, get_admin_dashboard_data
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    data = get_admin_dashboard_data()
+    data['mimic_active'] = '_real_uid' in session
+    return render_template('admin.html', active_page='admin', **data)
+
+
+@app.route('/admin/mimic', methods=['GET', 'POST'])
+@login_required
+def admin_mimic():
+    from utilities.admin_utils import is_admin, handle_mimic_action
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    if request.method == 'POST':
+        action = request.form.get('action')
+        target = request.form.get('target_user_id')
+        handle_mimic_action(session, action, target, real_uid)
+        return redirect('/admin/mimic')
+    # GET — show user list
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT u.pk_id, u.email, u.full_name,
+               (SELECT COUNT(*) FROM crab.plan_members m WHERE m.user_id = u.pk_id) as plan_count
+        FROM crab.users u ORDER BY u.pk_id
+    """)
+    users = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('admin_mimic.html', users=users,
+                           mimic_active='_real_uid' in session)
+
+
+@app.route('/api/admin/test-email', methods=['POST'])
+@api_auth_required
+def api_admin_test_email():
+    from utilities.admin_utils import is_admin
+    from utilities.gmail_utils import send_simple_email
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    email = session['user']['email']
+    sent = send_simple_email(
+        subject="[crab.travel] Admin test email",
+        body="This is a test email from the crab.travel admin panel.\n\nIf you received this, the email pipeline is working.",
+        to_email=email,
+    )
+    if sent:
+        return jsonify({'success': True, 'to': email})
+    return jsonify({'success': False, 'error': 'Email send failed'}), 500
+
+
+@app.route('/api/admin/test-sms', methods=['POST'])
+@api_auth_required
+def api_admin_test_sms():
+    from utilities.admin_utils import is_admin
+    from utilities.sms_utils import send_sms
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT phone_number FROM crab.users WHERE pk_id = %s", (real_uid,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    phone = row[0] if row else None
+    if not phone:
+        return jsonify({'success': False, 'error': 'No phone number on your admin account'})
+    result = send_sms(phone, "[crab.travel] Admin test SMS — pipeline working")
+    if result:
+        return jsonify({'success': True, 'to': phone})
+    return jsonify({'success': False, 'error': 'SMS send failed (A2P may be pending)'})
+
+
+@app.route('/api/admin/smoke-test', methods=['POST'])
+@api_auth_required
+def api_admin_smoke_test():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    import subprocess, time
+    start = time.time()
+    try:
+        result = subprocess.run(
+            ['python3', 'dev/smoke_test.py', '--quick'],
+            capture_output=True, text=True, timeout=30, cwd='/app' if os.path.exists('/app') else '.'
+        )
+        elapsed = round(time.time() - start, 1)
+        output = result.stdout + result.stderr
+        # Parse results from output
+        passed = output.count('✅')
+        failed = output.count('❌')
+        return jsonify({
+            'success': True, 'passed': passed, 'failed': failed,
+            'total': passed + failed, 'time': elapsed, 'output': output[-500:]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
 # ── Auth routes ──────────────────────────────────────────────
 
 @app.route('/login')
@@ -261,6 +373,7 @@ def auth_callback():
                         'picture': db_user['picture_url'],
                         'home_airport': db_user.get('home_airport'),
                     }
+                    session['user_is_admin'] = db_user.get('is_admin', False)
                     logger.info(f"🔑 Session set for: {db_user['email']}")
                     # Redirect to pending join if there was one
                     pending_join = session.pop('pending_join', None)

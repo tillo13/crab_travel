@@ -123,6 +123,7 @@ def init_database():
             ('notify_chat', 'VARCHAR(10)', "'off'"),
             ('notify_updates', 'VARCHAR(10)', "'off'"),
             ('notify_channel', 'VARCHAR(10)', "'email'"),
+            ('is_admin', 'BOOLEAN', 'FALSE'),
         ]:
             try:
                 default_clause = f" DEFAULT {default}" if default else ""
@@ -435,7 +436,7 @@ def upsert_user(google_userinfo, access_token=None, refresh_token=None):
                 full_name = EXCLUDED.full_name,
                 picture_url = EXCLUDED.picture_url,
                 updated_at = NOW()
-            RETURNING pk_id, google_id, email, full_name, picture_url, home_airport
+            RETURNING pk_id, google_id, email, full_name, picture_url, home_airport, is_admin
         """, (
             google_userinfo.get('sub'),
             google_userinfo.get('email'),

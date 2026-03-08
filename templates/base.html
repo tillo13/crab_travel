@@ -218,6 +218,7 @@
             </div>
             <div class="py-1">
               <a href="/profile" class="menu-item">Profile</a>
+              {% if session.user_is_admin %}<a href="/admin" class="menu-item">Admin Panel</a>{% endif %}
               <a href="/logout" class="menu-item menu-danger">Sign out</a>
             </div>
           </div>
