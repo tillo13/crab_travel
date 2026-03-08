@@ -630,8 +630,8 @@ def create_plan(organizer_id, data, invite_token):
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
             INSERT INTO crab.plans (organizer_id, title, description, timeframe, invite_token,
-                travel_window_start, travel_window_end, group_vibes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                travel_window_start, travel_window_end, group_vibes, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'voting')
             RETURNING *
         """, (
             organizer_id,
@@ -1858,6 +1858,53 @@ def get_member_tentative_dates(plan_id, user_id):
         return [{'start': r['date_start'].isoformat(), 'end': r['date_end'].isoformat()} for r in cursor.fetchall()]
     except Exception as e:
         logger.error(f"Get tentative dates failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_plan_stage(plan_id, stage):
+    """Update plan status/stage (voting, planning, locked)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE crab.plans SET status = %s, updated_at = NOW() WHERE plan_id = %s", (stage, plan_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Update plan stage failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_plan_tentative_dates(plan_id):
+    """Get all tentative dates for all members in a plan."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT t.*, u.full_name
+            FROM crab.member_tentative_dates t
+            JOIN crab.users u ON u.pk_id = t.user_id
+            WHERE t.plan_id = %s
+            ORDER BY t.date_start
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get plan tentative dates failed: {e}")
         return []
     finally:
         if cursor:

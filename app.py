@@ -29,6 +29,7 @@ from utilities.postgres_utils import (
     update_member_details,
     delete_plan, delete_destination_suggestion,
     create_message, get_plan_messages, delete_message,
+    update_plan_stage, get_plan_blackouts, get_plan_tentative_dates,
 )
 from utilities.invite_utils import generate_token
 from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
@@ -380,6 +381,15 @@ def invite_page(invite_token):
         return str(o)
     destinations_json = json.dumps(destinations, default=_default_ser)
 
+    # Calendar data — all members' blackouts + tentative dates
+    all_blackouts = get_plan_blackouts(plan['plan_id']) if not (user is None) else []
+    all_tentative = get_plan_tentative_dates(plan['plan_id']) if not (user is None) else []
+    calendar_json = json.dumps({
+        'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat()} for t in all_tentative],
+        'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
+    }, default=_default_ser)
+
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
         vote_tallies=vote_tallies, my_votes=my_votes,
@@ -390,6 +400,7 @@ def invite_page(invite_token):
         needs_login=(user is None),
         profile_completed=profile_completed,
         destinations_json=destinations_json,
+        calendar_json=calendar_json if not (user is None) else '{}',
     )
 
 
@@ -871,6 +882,21 @@ def api_get_votes(plan_id):
     tallies = get_vote_tallies(plan_id)
     my_votes = get_user_votes(plan_id, user['id'])
     return jsonify({'success': True, 'data': {'tallies': tallies, 'my_votes': my_votes}})
+
+
+@app.route('/api/plan/<plan_id>/stage', methods=['POST'])
+@api_auth_required
+def api_update_stage(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can change the stage'}), 403
+    data = request.get_json() or {}
+    stage = data.get('stage')
+    if stage not in ('voting', 'planning', 'locked'):
+        return jsonify({'error': 'Invalid stage'}), 400
+    update_plan_stage(plan_id, stage)
+    return jsonify({'success': True, 'stage': stage})
 
 
 @app.route('/api/plan/<plan_id>/lock', methods=['POST'])

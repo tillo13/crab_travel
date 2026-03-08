@@ -55,14 +55,16 @@
       class="input-field">{{ profile.interests|join(', ') if profile and profile.interests else '' }}</textarea>
   </div>
 
-  <!-- Travel Style -->
+  <!-- Travel Style (multi-select) -->
   <div>
     <label class="block font-semibold font-display mb-1 text-sm">Travel style</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Pick all that apply.</p>
     <div class="flex flex-wrap gap-2 mt-1.5">
+      {% set saved_styles = (profile.travel_style.split(',') if profile and profile.travel_style else []) %}
       {% for style in ['Adventure', 'Relaxation', 'Cultural', 'Foodie', 'Party', 'Outdoors'] %}
       <label class="cursor-pointer">
-        <input type="radio" name="travel_style" value="{{ style|lower }}" class="peer hidden"
-          {% if profile and profile.travel_style == style|lower %}checked{% endif %}>
+        <input type="checkbox" name="travel_style" value="{{ style|lower }}" class="peer hidden"
+          {% if style|lower in saved_styles %}checked{% endif %}>
         <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ style }}</span>
       </label>
       {% endfor %}
@@ -136,9 +138,10 @@ document.getElementById('profile-form').addEventListener('submit', async functio
   // Parse interests from textarea — split on commas
   var interestsRaw = form.interests_text.value.trim();
   var interests = interestsRaw ? interestsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var travelStyles = Array.from(form.querySelectorAll('input[name="travel_style"]:checked')).map(function(cb) { return cb.value; });
   var data = {
     interests: interests,
-    travel_style: form.travel_style?.value || null,
+    travel_style: travelStyles.length ? travelStyles.join(',') : null,
     accommodation_preference: form.accommodation_preference?.value || null,
     budget_comfort: form.budget_comfort?.value || null,
     dietary_needs: form.dietary_needs.value || null,
