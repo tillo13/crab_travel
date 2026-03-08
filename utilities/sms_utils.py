@@ -62,12 +62,12 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
             SELECT DISTINCT u.pk_id, u.full_name, u.phone_number
             FROM crab.plan_members m
             JOIN crab.users u ON u.pk_id = m.user_id
-            WHERE m.plan_id = %s
+            WHERE m.plan_id = %s::uuid
               AND u.phone_number IS NOT NULL
               AND u.phone_number != ''
               AND u.notify_chat = 'realtime'
               AND u.notify_channel IN ('sms', 'both')
-        """, (plan_id,))
+        """, (str(plan_id),))
         members = cursor.fetchall()
 
         sent = 0
@@ -110,14 +110,14 @@ def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_i
             SELECT DISTINCT u.pk_id, u.full_name, u.email
             FROM crab.plan_members m
             JOIN crab.users u ON u.pk_id = m.user_id
-            WHERE m.plan_id = %s
+            WHERE m.plan_id = %s::uuid
               AND u.notify_chat = 'realtime'
               AND u.notify_channel IN ('email', 'both')
-        """, (plan_id,))
+        """, (str(plan_id),))
         members = cursor.fetchall()
 
         # Get plan name for context
-        cursor.execute("SELECT title FROM crab.plans WHERE pk_id = %s", (plan_id,))
+        cursor.execute("SELECT title FROM crab.plans WHERE plan_id = %s::uuid", (str(plan_id),))
         plan_row = cursor.fetchone()
         plan_name = plan_row['title'] if plan_row else 'your trip'
 
