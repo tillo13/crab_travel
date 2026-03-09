@@ -130,12 +130,13 @@
   }
   .cal-day.empty { opacity: 0; }
   .cal-day.past { opacity: 0.25; }
-  .cal-day.green { background: rgba(20,184,166,0.15); border-color: rgba(20,184,166,0.25); color: #14B8A6; }
   .cal-day.green-ideal { background: rgba(16,185,129,0.22); border-color: rgba(16,185,129,0.4); color: #10B981; }
-  .cal-day.green-maybe { background: rgba(20,184,166,0.08); border-color: rgba(20,184,166,0.12); color: rgba(20,184,166,0.6); }
-  .cal-day.yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.2); color: #F59E0B; }
+  .cal-day.green-maybe { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.3); color: #F59E0B; }
+  .cal-day.yellow { background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.25); color: #FBBF24; }
   .cal-day.red { background: rgba(232,89,58,0.12); border-color: rgba(232,89,58,0.2); color: #E8593A; }
   .cal-day .cal-names { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font-size: 0.6rem; line-height: 1.2; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+  .cal-day.green-ideal .cal-names { color: #10B981; }
+  .cal-day.green-maybe .cal-names { color: #D97706; }
   .cal-day.red .cal-names { color: #F47A5F; }
   .cal-day.yellow .cal-names { color: #D97706; }
   .cal-day .cal-dots { position: absolute; bottom: 2px; display: flex; gap: 1px; }
@@ -144,6 +145,22 @@
   .cal-nav-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
   html:not(.dark) .cal-nav-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
   html:not(.dark) .cal-nav-btn:hover { background: rgba(0,0,0,0.08); }
+  /* Range picker */
+  .rp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .rp-header { text-align: center; font-size: 0.65rem; font-weight: 600; color: rgba(200,194,184,0.4); padding: 0.25rem; text-transform: uppercase; }
+  html:not(.dark) .rp-header { color: #9ca3af; }
+  .rp-day {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;
+    border: 1px solid transparent; transition: all 0.15s;
+  }
+  .rp-day:hover:not(.rp-past):not(.rp-empty) { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
+  html:not(.dark) .rp-day:hover:not(.rp-past):not(.rp-empty) { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.15); }
+  .rp-day.rp-empty { cursor: default; }
+  .rp-day.rp-past { opacity: 0.25; cursor: default; }
+  .rp-day.rp-start, .rp-day.rp-end { background: rgba(232,89,58,0.25); border-color: #E8593A; color: #E8593A; font-weight: 700; }
+  .rp-day.rp-in-range { background: rgba(232,89,58,0.1); border-color: rgba(232,89,58,0.15); color: #F47A5F; }
+  .rp-month-label { font-size: 0.8rem; font-weight: 600; text-align: center; }
   .cal-toggle, .chat-toggle { cursor: pointer; transition: transform 0.2s; }
   .cal-toggle.collapsed, .chat-toggle.collapsed { transform: rotate(-90deg); }
   .cal-legend { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -327,8 +344,8 @@
       <div class="text-xs text-crab-sand-dim mt-0.5">destinations</div>
     </div>
     <div class="stat-card">
-      <div class="text-2xl font-display" id="stat-votes">{{ vote_tallies|length if vote_tallies else 0 }}</div>
-      <div class="text-xs text-crab-sand-dim mt-0.5">votes cast</div>
+      <div class="text-2xl font-display" id="stat-votes">{{ vote_tallies|sum(attribute='total_votes') if vote_tallies else 0 }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">rankings</div>
     </div>
     <div class="stat-card">
       {% if plan.travel_window_start and plan.travel_window_end %}
@@ -403,9 +420,8 @@
         <div class="flex items-center justify-between mb-4">
           <div class="cal-legend">
             <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#10B981;"></div> Ideal</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Works</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(20,184,166,0.4);"></div> If needed</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Conflicts</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> If needed</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#FBBF24;"></div> Conflicts</div>
             <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
           </div>
           <div class="flex gap-1.5">
@@ -444,35 +460,35 @@
         <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
           <div class="mb-6">
             <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
-            <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges and rank your preference</p>
+            <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges — mark as Ideal or If Needed</p>
             <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
               {% for t in tentative_dates %}
-              {% set pref = t.preference or 'works' %}
-              {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' if pref == 'if_needed' else 'rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6' %}
+              {% set pref = 'ideal' if (t.preference or 'works') in ['ideal', 'works'] else 'if_needed' %}
+              {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' %}
               <div class="blackout-chip" style="background:{{ pcolor }};" data-start="{{ t.start }}" data-end="{{ t.end }}" data-preference="{{ pref }}">
-                {% if pref == 'ideal' %}★{% elif pref == 'if_needed' %}~{% endif %} {{ t.start }} to {{ t.end }}
+                {% if pref == 'ideal' %}★{% else %}~{% endif %} {{ t.start }} to {{ t.end }}
                 <button onclick="removeChip(this.parentElement)">&times;</button>
               </div>
               {% endfor %}
             </div>
-            <div class="flex items-end gap-2 flex-wrap">
-              <div>
-                <label class="text-xs text-crab-sand-dim">From</label>
-                <input type="date" id="tentative-start" class="input-field text-sm">
+            <div class="bg-crab-card/30 border border-white/6 rounded-xl p-3 mb-2">
+              <div class="flex items-center justify-between mb-2">
+                <button class="cal-nav-btn" onclick="rpNav('tentative', -1)">&larr;</button>
+                <span id="rp-tentative-label" class="rp-month-label"></span>
+                <button class="cal-nav-btn" onclick="rpNav('tentative', 1)">&rarr;</button>
               </div>
-              <div>
-                <label class="text-xs text-crab-sand-dim">To</label>
-                <input type="date" id="tentative-end" class="input-field text-sm">
-              </div>
+              <div id="rp-tentative-grid" class="rp-grid"></div>
+              <div id="rp-tentative-selection" class="text-xs text-crab-sand-dim mt-2 min-h-[1.25rem]">Click a start date, then an end date</div>
+            </div>
+            <div class="flex items-end gap-2">
               <div>
                 <label class="text-xs text-crab-sand-dim">Preference</label>
                 <select id="tentative-pref" class="input-field text-sm" style="min-width:100px;">
-                  <option value="ideal">Ideal</option>
-                  <option value="works" selected>Works</option>
+                  <option value="ideal" selected>Ideal</option>
                   <option value="if_needed">If needed</option>
                 </select>
               </div>
-              <button onclick="addTentative()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+              <button onclick="addTentative()" id="tentative-add-btn" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap opacity-40 pointer-events-none">+ Add dates</button>
             </div>
           </div>
           <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
@@ -485,17 +501,16 @@
             </div>
             {% endfor %}
           </div>
-          <div class="flex items-end gap-2">
-            <div>
-              <label class="text-xs text-crab-sand-dim">From</label>
-              <input type="date" id="blackout-start" class="input-field text-sm">
+          <div class="bg-crab-card/30 border border-white/6 rounded-xl p-3 mb-2">
+            <div class="flex items-center justify-between mb-2">
+              <button class="cal-nav-btn" onclick="rpNav('blackout', -1)">&larr;</button>
+              <span id="rp-blackout-label" class="rp-month-label"></span>
+              <button class="cal-nav-btn" onclick="rpNav('blackout', 1)">&rarr;</button>
             </div>
-            <div>
-              <label class="text-xs text-crab-sand-dim">To</label>
-              <input type="date" id="blackout-end" class="input-field text-sm">
-            </div>
-            <button onclick="addBlackout()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+            <div id="rp-blackout-grid" class="rp-grid"></div>
+            <div id="rp-blackout-selection" class="text-xs text-crab-sand-dim mt-2 min-h-[1.25rem]">Click a start date, then an end date</div>
           </div>
+          <button onclick="addBlackout()" id="blackout-add-btn" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap opacity-40 pointer-events-none">+ Add dates</button>
         </div>
         <div class="mt-8">
           <button onclick="submitJoin()" id="submit-btn"
@@ -699,13 +714,13 @@ function pinCard(item, type, destName) {
 }
 
 var _activeDest = 0;
-var _userVotes = {}; // {suggestion_id: true}
+var _userVotes = {}; // {suggestion_id: rank}
 
 // Initialize user's own votes from server
 {% if my_votes %}
 {% for key, val in my_votes.items() %}
-{% if val == 1 %}
-(function() { var k = '{{ key }}'; var sid = k.replace('destination:', ''); _userVotes[sid] = true; })();
+{% if val > 0 %}
+(function() { var k = '{{ key }}'; var sid = k.replace('destination:', ''); _userVotes[sid] = {{ val }}; })();
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -720,18 +735,19 @@ function renderCards() {
 
   // Render tab bar
   var tabHtml = '';
+  var numDests = ready.length;
   ready.forEach(function(dest, i) {
     var sid = dest.suggestion_id;
-    var tally = _voteTallies[sid] || {up: 0, down: 0};
-    var isVoted = _userVotes[sid] || false;
+    var tally = _voteTallies[sid] || {ranks: {}, total_votes: 0};
+    var myRank = _userVotes[sid] || 0;
     var isActive = i === _activeDest;
-    var classes = 'dest-tab' + (isActive ? ' active' : '') + (isVoted ? ' voted' : '');
+    var classes = 'dest-tab' + (isActive ? ' active' : '') + (myRank ? ' voted' : '');
     tabHtml += '<button class="' + classes + '" onclick="switchDest(' + i + ')">';
     tabHtml += '<span class="dest-tab-name">' + dest.destination_name + '</span>';
-    if (isVoted) {
-      tabHtml += '<span class="dest-tab-check">✓ I\'d go</span>';
-    } else if (tally.up > 0) {
-      tabHtml += '<span class="dest-tab-votes">' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + '</span>';
+    if (myRank) {
+      tabHtml += '<span class="dest-tab-check">Your #' + myRank + '</span>';
+    } else if (tally.total_votes > 0) {
+      tabHtml += '<span class="dest-tab-votes">' + tally.total_votes + ' ranked</span>';
     }
     tabHtml += '</button>';
   });
@@ -772,20 +788,37 @@ function renderDestContent(dest) {
   if (!card) return '';
   var sid = dest.suggestion_id;
   var dn = dest.destination_name;
-  var tally = _voteTallies[sid] || {up: 0, down: 0};
-  var isVoted = _userVotes[sid] || false;
+  var tally = _voteTallies[sid] || {ranks: {}, total_votes: 0};
+  var myRank = _userVotes[sid] || 0;
   var customMedia = dest.destination_data?.custom_media || [];
+  var numDests = _destinations.filter(function(d) { return d.status !== 'researching' && d.status !== 'error'; }).length;
   var html = '';
 
-  // Summary section with vote bar at top
+  // Summary section with rank voting at top
   html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
 
-  // Vote bar — the primary CTA, always first
-  if (!NEEDS_LOGIN) {
-    html += '<button class="vote-bar' + (isVoted ? ' voted' : '') + '" onclick="toggleVote(\'' + sid + '\')" id="vbtn-' + sid + '">';
-    html += isVoted ? '✓ I\'d go to ' + dn : 'I\'d go to ' + dn;
-    if (tally.up > 0) html += ' <span style="opacity:0.6;font-weight:400;font-size:0.85rem;">(' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + ')</span>';
-    html += '</button>';
+  // Rank bar — the primary CTA
+  if (!NEEDS_LOGIN && numDests > 1) {
+    html += '<div class="px-4 py-3 border-b border-white/6" id="rank-bar-' + sid + '">';
+    html += '<div class="text-xs font-semibold text-crab-sand-dim mb-2">Rank ' + dn + ':</div>';
+    html += '<div class="flex gap-2 flex-wrap">';
+    for (var r = 1; r <= numDests; r++) {
+      var isMyRank = myRank === r;
+      var rankCount = tally.ranks[r] || tally.ranks[String(r)] || 0;
+      var btnCls = isMyRank
+        ? 'px-3 py-1.5 rounded-lg text-sm font-bold transition-all cursor-pointer border-2 border-crab-teal bg-crab-teal/15 text-crab-teal'
+        : 'px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer border border-white/10 hover:border-white/25 text-crab-sand-dim';
+      html += '<button class="' + btnCls + '" onclick="setRank(\'' + sid + '\',' + r + ')">';
+      html += '#' + r;
+      if (rankCount > 0) html += ' <span style="opacity:0.5;font-size:0.7rem;">(' + rankCount + ')</span>';
+      html += '</button>';
+    }
+    if (myRank) {
+      html += '<button class="px-2 py-1 text-xs text-crab-sand-dim opacity-50 hover:opacity-100 transition-opacity" onclick="setRank(\'' + sid + '\',0)">clear</button>';
+    }
+    html += '</div></div>';
+  } else if (!NEEDS_LOGIN && numDests === 1) {
+    html += '<div class="vote-bar voted" style="cursor:default;">🏖️ ' + dn + '</div>';
   }
 
   html += '<div class="p-5 md:p-6">';
@@ -908,30 +941,43 @@ function celebrateVote(btn) {
   setTimeout(function() { overlay.remove(); }, 1800);
 }
 
-function toggleVote(sid) {
+function setRank(sid, rank) {
   if (NEEDS_LOGIN) return;
-  var isVoted = _userVotes[sid];
-  var newVote = isVoted ? 0 : 1;
-  var btn = document.getElementById('vbtn-' + sid);
+  var currentRank = _userVotes[sid] || 0;
+  // If clicking the same rank, toggle it off
+  var newRank = (currentRank === rank) ? 0 : rank;
 
   ensureMember().then(function(ok) {
     if (!ok) return;
     fetch('/api/plan/' + PLAN_ID + '/vote', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({target_type: 'destination', target_id: sid, vote: newVote}),
+      body: JSON.stringify({target_type: 'destination', target_id: sid, vote: newRank}),
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.success && data.data.tallies) {
-        data.data.tallies.forEach(function(t) {
-          _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
-        });
-        if (newVote === 1) {
-          _userVotes[sid] = true;
-          if (btn) celebrateVote(btn);
-        } else {
-          delete _userVotes[sid];
+      if (data.success) {
+        // Update tallies
+        if (data.data.tallies) {
+          _voteTallies = {};
+          data.data.tallies.forEach(function(t) {
+            _voteTallies[t.target_id] = {ranks: t.ranks || {}, total_votes: t.total_votes || 0};
+          });
+        }
+        // Update user votes from server response
+        if (data.data.my_votes) {
+          _userVotes = {};
+          Object.keys(data.data.my_votes).forEach(function(key) {
+            var val = data.data.my_votes[key];
+            if (val > 0) {
+              var voteSid = key.replace('destination:', '');
+              _userVotes[voteSid] = val;
+            }
+          });
+        }
+        if (newRank > 0) {
+          var bar = document.getElementById('rank-bar-' + sid);
+          if (bar) celebrateVote(bar);
         }
         renderCards();
       }
@@ -990,11 +1036,11 @@ function loadInviteYouTube(suggestionId, destName) {
 }
 
 
-// ── Voting ──
-var _voteTallies = {};
+// ── Voting (rank-order) ──
+var _voteTallies = {}; // {suggestion_id: {ranks: {1: count, 2: count}, total_votes: N}}
 {% if vote_tallies %}
 {% for t in vote_tallies %}
-_voteTallies['{{ t.target_id }}'] = {up: {{ t.upvotes|int }}, down: {{ t.downvotes|int }}};
+_voteTallies['{{ t.target_id }}'] = {ranks: {{ t.ranks|tojson }}, total_votes: {{ t.total_votes|int }}};
 {% endfor %}
 {% endif %}
 
@@ -1063,22 +1109,97 @@ function checkOverlapWith(start, end, listId) {
   return false;
 }
 
+// ── Range Picker ──
+var _rpState = {
+  tentative: {month: new Date().getMonth(), year: new Date().getFullYear(), start: null, end: null},
+  blackout: {month: new Date().getMonth(), year: new Date().getFullYear(), start: null, end: null}
+};
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function rpNav(id, dir) {
+  var s = _rpState[id];
+  s.month += dir;
+  if (s.month > 11) { s.month = 0; s.year++; }
+  if (s.month < 0) { s.month = 11; s.year--; }
+  rpRender(id);
+}
+
+function rpRender(id) {
+  var s = _rpState[id];
+  var label = document.getElementById('rp-' + id + '-label');
+  var grid = document.getElementById('rp-' + id + '-grid');
+  label.textContent = MONTH_NAMES[s.month] + ' ' + s.year;
+  var today = todayStr();
+  var firstDay = new Date(s.year, s.month, 1).getDay();
+  var daysInMonth = new Date(s.year, s.month + 1, 0).getDate();
+  var html = '';
+  DAY_NAMES.forEach(function(d) { html += '<div class="rp-header">' + d + '</div>'; });
+  for (var i = 0; i < firstDay; i++) html += '<div class="rp-day rp-empty"></div>';
+  for (var d = 1; d <= daysInMonth; d++) {
+    var ds = s.year + '-' + String(s.month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    var isPast = ds < today;
+    var cls = 'rp-day';
+    if (isPast) cls += ' rp-past';
+    if (s.start && ds === s.start) cls += ' rp-start';
+    if (s.end && ds === s.end) cls += ' rp-end';
+    if (s.start && s.end && ds > s.start && ds < s.end) cls += ' rp-in-range';
+    html += '<div class="' + cls + '" data-ds="' + ds + '" onclick="rpClick(\'' + id + '\',\'' + ds + '\',' + isPast + ')">' + d + '</div>';
+  }
+  grid.innerHTML = html;
+}
+
+function rpClick(id, ds, isPast) {
+  if (isPast) return;
+  var s = _rpState[id];
+  if (!s.start || s.end) {
+    // Starting a new selection
+    s.start = ds; s.end = null;
+    rpUpdateSelection(id);
+  } else {
+    // Setting end date
+    if (ds < s.start) { s.end = s.start; s.start = ds; }
+    else if (ds === s.start) { s.end = ds; }
+    else { s.end = ds; }
+    rpUpdateSelection(id);
+  }
+  rpRender(id);
+}
+
+function rpUpdateSelection(id) {
+  var s = _rpState[id];
+  var sel = document.getElementById('rp-' + id + '-selection');
+  var btn = document.getElementById(id + '-add-btn');
+  if (s.start && s.end) {
+    sel.innerHTML = '<span style="color:#E8593A;font-weight:600;">' + s.start + '</span> to <span style="color:#E8593A;font-weight:600;">' + s.end + '</span>';
+    btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+  } else if (s.start) {
+    sel.innerHTML = 'Start: <span style="color:#E8593A;font-weight:600;">' + s.start + '</span> — now click an end date';
+    btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+  } else {
+    sel.textContent = 'Click a start date, then an end date';
+    btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+  }
+}
+
+function rpReset(id) {
+  _rpState[id].start = null; _rpState[id].end = null;
+  rpUpdateSelection(id); rpRender(id);
+}
+
 function addBlackout() {
-  var start = document.getElementById('blackout-start').value;
-  var end = document.getElementById('blackout-end').value;
-  if (!start || !end || start > end) return;
-  if (start < todayStr()) { alert('Cannot add past dates.'); return; }
-  if (checkOverlapWith(start, end, 'tentative-list')) { alert('This conflicts with your available dates. Remove the overlap first.'); return; }
-  if (checkOverlapWith(start, end, 'blackout-list')) { alert('This overlaps with an existing blackout.'); return; }
+  var s = _rpState.blackout;
+  if (!s.start || !s.end) return;
+  if (checkOverlapWith(s.start, s.end, 'tentative-list')) { alert('This conflicts with your available dates. Remove the overlap first.'); return; }
+  if (checkOverlapWith(s.start, s.end, 'blackout-list')) { alert('This overlaps with an existing blackout.'); return; }
   var list = document.getElementById('blackout-list');
   var chip = document.createElement('div');
   chip.className = 'blackout-chip';
-  chip.dataset.start = start;
-  chip.dataset.end = end;
-  chip.innerHTML = start + ' to ' + end + ' <button onclick="removeBlackout(this.parentElement)">&times;</button>';
+  chip.dataset.start = s.start;
+  chip.dataset.end = s.end;
+  chip.innerHTML = s.start + ' to ' + s.end + ' <button onclick="removeBlackout(this.parentElement)">&times;</button>';
   list.appendChild(chip);
-  document.getElementById('blackout-start').value = '';
-  document.getElementById('blackout-end').value = '';
+  rpReset('blackout');
 }
 
 function removeChip(chip) { chip.remove(); }
@@ -1086,37 +1207,36 @@ function removeBlackout(chip) { chip.remove(); }
 
 var PREF_STYLES = {
   ideal: {bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', color:'#10B981', icon:'★ '},
-  works: {bg:'rgba(20,184,166,0.1)', border:'rgba(20,184,166,0.2)', color:'#14B8A6', icon:''},
   if_needed: {bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.25)', color:'#F59E0B', icon:'~ '}
 };
 
 function addTentative() {
-  var start = document.getElementById('tentative-start').value;
-  var end = document.getElementById('tentative-end').value;
+  var s = _rpState.tentative;
+  if (!s.start || !s.end) return;
   var pref = document.getElementById('tentative-pref').value;
-  if (!start || !end || start > end) return;
-  if (start < todayStr()) { alert('Cannot add past dates.'); return; }
-  if (checkOverlapWith(start, end, 'blackout-list')) { alert('This conflicts with your blackout dates. Remove the overlap first.'); return; }
-  if (checkOverlapWith(start, end, 'tentative-list')) { alert('This overlaps with an existing date range.'); return; }
-  var ps = PREF_STYLES[pref] || PREF_STYLES.works;
+  if (checkOverlapWith(s.start, s.end, 'blackout-list')) { alert('This conflicts with your blackout dates. Remove the overlap first.'); return; }
+  if (checkOverlapWith(s.start, s.end, 'tentative-list')) { alert('This overlaps with an existing date range.'); return; }
+  var ps = PREF_STYLES[pref] || PREF_STYLES.ideal;
   var list = document.getElementById('tentative-list');
   var chip = document.createElement('div');
   chip.className = 'blackout-chip';
   chip.style.background = ps.bg;
   chip.style.borderColor = ps.border;
   chip.style.color = ps.color;
-  chip.dataset.start = start;
+  chip.dataset.start = s.start;
   chip.dataset.preference = pref;
-  chip.dataset.end = end;
-  chip.innerHTML = ps.icon + start + ' to ' + end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
+  chip.dataset.end = s.end;
+  chip.innerHTML = ps.icon + s.start + ' to ' + s.end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
   list.appendChild(chip);
-  document.getElementById('tentative-start').value = '';
-  document.getElementById('tentative-end').value = '';
+  rpReset('tentative');
 }
+
+// Initialize range pickers
+rpRender('tentative'); rpRender('blackout');
 
 function getTentativeDates() {
   var chips = document.querySelectorAll('#tentative-list .blackout-chip');
-  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end, preference: c.dataset.preference || 'works'}; });
+  return Array.from(chips).map(function(c) { var p = c.dataset.preference; return {start: c.dataset.start, end: c.dataset.end, preference: (p === 'if_needed') ? 'if_needed' : 'ideal'}; });
 }
 
 function getBlackouts() {
@@ -1455,7 +1575,7 @@ function renderCalendar() {
 
   // Build date→info map with preference tracking
   var dateMap = {};
-  var PREF_ORDER = {ideal: 0, works: 1, if_needed: 2};
+  var PREF_ORDER = {ideal: 0, if_needed: 1};
   (_calData.blackouts || []).forEach(function(b) {
     var d = new Date(b.start + 'T00:00:00');
     var end = new Date(b.end + 'T00:00:00');
@@ -1469,7 +1589,7 @@ function renderCalendar() {
   (_calData.tentative || []).forEach(function(t) {
     var d = new Date(t.start + 'T00:00:00');
     var end = new Date(t.end + 'T00:00:00');
-    var pref = t.preference || 'works';
+    var pref = (t.preference === 'if_needed') ? 'if_needed' : 'ideal';
     while (d <= end) {
       var ds = d.toISOString().split('T')[0];
       if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: [], prefs: {}};
@@ -1524,20 +1644,18 @@ function renderCalendar() {
 
       // Determine best preference level for this date
       var prefs = info.prefs || {};
-      var idealCount = 0, worksCount = 0, ifNeededCount = 0;
+      var idealCount = 0, ifNeededCount = 0;
       Object.keys(prefs).forEach(function(n) {
-        if (prefs[n] === 'ideal') idealCount++;
-        else if (prefs[n] === 'if_needed') ifNeededCount++;
-        else worksCount++;
+        if (prefs[n] === 'if_needed') ifNeededCount++;
+        else idealCount++; // 'ideal' and legacy 'works' both count as ideal
       });
 
       var colorClass = '';
       if (!isPast && totalMembers > 0) {
         if (blockedCount === 0 && uniqueAvail.length > 0) {
-          // Shade green by preference: bright green if mostly ideal, standard teal if works, muted if if_needed
-          if (idealCount > 0 && idealCount >= worksCount && idealCount >= ifNeededCount) colorClass = 'green-ideal';
-          else if (ifNeededCount > idealCount && ifNeededCount > worksCount) colorClass = 'green-maybe';
-          else colorClass = 'green';
+          // Green if mostly ideal, amber if mostly if-needed
+          if (idealCount >= ifNeededCount) colorClass = 'green-ideal';
+          else colorClass = 'green-maybe';
         }
         else if (blockedCount > 0 && blockedCount < totalMembers) colorClass = 'yellow';
         else if (blockedCount >= totalMembers) colorClass = 'red';
@@ -1548,19 +1666,26 @@ function renderCalendar() {
       if (uniqueAvail.length) {
         var availParts = uniqueAvail.map(function(n) {
           var p = prefs[n];
-          return n + (p === 'ideal' ? ' (ideal)' : p === 'if_needed' ? ' (if needed)' : '');
+          return n + (p === 'if_needed' ? ' (if needed)' : ' (ideal)');
         });
         title += ' | Available: ' + availParts.join(', ');
       }
 
-      // Build name labels for blocked or available dates
+      // Build name labels for any dates with people marked
       var namesHtml = '';
-      if (!isPast && info.blocked.length > 0) {
-        var shortNames = info.blocked.map(getFirstName);
-        if (shortNames.length <= 2) {
-          namesHtml = '<div class="cal-names">' + shortNames.join(', ') + '</div>';
-        } else {
-          namesHtml = '<div class="cal-names">' + shortNames[0] + ' +' + (shortNames.length - 1) + '</div>';
+      if (!isPast) {
+        var shortNames = [];
+        if (info.blocked.length > 0) {
+          shortNames = info.blocked.map(getFirstName);
+        } else if (uniqueAvail.length > 0) {
+          shortNames = uniqueAvail.map(getFirstName);
+        }
+        if (shortNames.length > 0) {
+          if (shortNames.length <= 2) {
+            namesHtml = '<div class="cal-names">' + shortNames.join(', ') + '</div>';
+          } else {
+            namesHtml = '<div class="cal-names">' + shortNames[0] + ' +' + (shortNames.length - 1) + '</div>';
+          }
         }
       }
 
@@ -1585,7 +1710,7 @@ function showCalInfo(el) {
   if (d.available.length) {
     var availParts = d.available.map(function(n) {
       var p = d.prefs[n];
-      return n + (p === 'ideal' ? ' ★' : p === 'if_needed' ? ' ~' : '');
+      return n + (p === 'if_needed' ? ' ~' : ' ★');
     });
     parts.push('Available: ' + availParts.join(', '));
   }
@@ -1601,8 +1726,8 @@ function dateMap_lookup(ds) {
   (_calData.tentative || []).forEach(function(t) {
     if (ds >= t.start && ds <= t.end) {
       if (info.available.indexOf(t.name) === -1) info.available.push(t.name);
-      var pref = t.preference || 'works';
-      if (!info.prefs[t.name] || ({'ideal':0,'works':1,'if_needed':2})[pref] < ({'ideal':0,'works':1,'if_needed':2})[info.prefs[t.name]]) {
+      var pref = (t.preference === 'if_needed') ? 'if_needed' : 'ideal';
+      if (!info.prefs[t.name] || ({'ideal':0,'if_needed':1})[pref] < ({'ideal':0,'if_needed':1})[info.prefs[t.name]]) {
         info.prefs[t.name] = pref;
       }
     }

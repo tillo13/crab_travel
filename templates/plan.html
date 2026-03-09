@@ -301,12 +301,12 @@
     {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
     {% if is_organizer and member_votes and member_votes.voted_user_ids %}
       {% if m.user_id in member_votes.voted_user_ids %}
-        <span class="text-xs text-crab-teal ml-auto font-medium">✓ voted</span>
+        <span class="text-xs text-crab-teal ml-auto font-medium">✓ ranked</span>
       {% else %}
-        <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">no vote yet</span>
+        <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">not ranked yet</span>
       {% endif %}
     {% elif is_organizer %}
-      <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">no vote yet</span>
+      <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">not ranked yet</span>
     {% endif %}
   </div>
   {% endfor %}
@@ -387,7 +387,7 @@ const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
 const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
 let _destinations = [];
 let _activeDestIdx = 0;
-var _voteTallies = {}; // {suggestion_id: {up, down}}
+var _voteTallies = {}; // {suggestion_id: {ranks: {1: N, 2: N}, total_votes: N}}
 
 function vibeScore(item) {
   if (!GROUP_VIBES) return 0;
@@ -563,10 +563,16 @@ function renderBoard(dest) {
   html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
   if (dest.suggested_by_name) html += '<p class="text-xs text-crab-sand-dim mt-0.5 opacity-60">Suggested by ' + dest.suggested_by_name + '</p>';
   html += '</div>';
-  if (destTally && destTally.up > 0) {
+  if (destTally && destTally.total_votes > 0) {
+    var firstPlace = destTally.ranks['1'] || destTally.ranks[1] || 0;
     html += '<div class="shrink-0 text-center bg-crab-teal/10 border border-crab-teal/20 rounded-xl px-3 py-1.5">';
-    html += '<div class="text-lg font-display text-crab-teal">' + destTally.up + '</div>';
-    html += '<div class="text-xs text-crab-sand-dim">vote' + (destTally.up === 1 ? '' : 's') + '</div>';
+    if (firstPlace > 0) {
+      html += '<div class="text-lg font-display text-crab-teal">' + firstPlace + '</div>';
+      html += '<div class="text-xs text-crab-sand-dim">#1 pick' + (firstPlace === 1 ? '' : 's') + '</div>';
+    } else {
+      html += '<div class="text-lg font-display text-crab-teal">' + destTally.total_votes + '</div>';
+      html += '<div class="text-xs text-crab-sand-dim">ranked</div>';
+    }
     html += '</div>';
   }
   html += '</div>';
@@ -770,7 +776,8 @@ function renderTabs() {
     var active = i === _activeDestIdx ? 'active' : '';
     var emoji = d.status === 'researching' ? '⏳ ' : '';
     var tally = _voteTallies[d.suggestion_id];
-    var voteLabel = tally && tally.up > 0 ? ' <span class="text-xs opacity-60">(' + tally.up + ' vote' + (tally.up === 1 ? '' : 's') + ')</span>' : '';
+    var firstPlace = tally ? (tally.ranks['1'] || tally.ranks[1] || 0) : 0;
+    var voteLabel = firstPlace > 0 ? ' <span class="text-xs opacity-60">(' + firstPlace + ' #1)</span>' : (tally && tally.total_votes > 0 ? ' <span class="text-xs opacity-60">(' + tally.total_votes + ' ranked)</span>' : '');
     html += '<span class="relative inline-flex items-center">';
     html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + voteLabel + '</button>';
     if (IS_ORGANIZER) {
@@ -1028,10 +1035,13 @@ async function vote(targetType, targetId, voteVal) {
 function updateVoteScores(tallies) {
   tallies.forEach(function(t) {
     if (t.target_type === 'destination') {
-      _voteTallies[t.target_id] = {up: t.upvotes || 0, down: t.downvotes || 0};
+      _voteTallies[t.target_id] = {ranks: t.ranks || {}, total_votes: t.total_votes || 0};
     }
     var el = document.getElementById('score-' + t.target_type + '-' + t.target_id);
-    if (el) el.textContent = t.score > 0 ? '+' + t.score : t.score;
+    if (el) {
+      var firstPlace = (t.ranks && t.ranks['1']) || 0;
+      el.textContent = firstPlace > 0 ? firstPlace + ' #1' : '';
+    }
   });
   renderTabs();
 }

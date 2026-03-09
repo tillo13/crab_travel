@@ -23,7 +23,7 @@ from utilities.postgres_utils import (
     save_member_availability, get_plan_availability, get_availability_overlap,
     create_destination_suggestion, update_destination_suggestion, update_destination_data,
     get_destination_suggestions, get_destination_suggestion_by_id,
-    upsert_vote, delete_vote, get_vote_tallies, get_user_votes, lock_plan,
+    upsert_vote, delete_vote, get_vote_tallies, get_user_votes, clear_rank_from_others, lock_plan,
     save_recommendations, get_recommendations, update_recommendation_status,
     delete_recommendations_for_plan,
     save_member_blackouts, get_member_blackouts,
@@ -1257,22 +1257,25 @@ def api_vote(plan_id):
 
     target_type = data.get('target_type')  # 'destination', 'date_window'
     target_id = data.get('target_id')
-    vote_val = data.get('vote')  # 1, -1, or 0 (unvote)
+    vote_val = data.get('vote')  # positive int = rank (1=1st, 2=2nd...), 0 = unvote
 
     if target_type not in ('destination', 'date_window'):
         return jsonify({'error': 'Invalid target_type'}), 400
-    if vote_val not in (1, -1, 0):
-        return jsonify({'error': 'Vote must be 1, -1, or 0'}), 400
+    if not isinstance(vote_val, int) or vote_val < 0:
+        return jsonify({'error': 'Vote must be 0 or a positive integer'}), 400
     if not target_id:
         return jsonify({'error': 'target_id required'}), 400
 
     if vote_val == 0:
         success = delete_vote(plan_id, user['id'], target_type, target_id)
     else:
+        # Clear this rank from other destinations for this user, then set it
+        clear_rank_from_others(plan_id, user['id'], target_type, target_id, vote_val)
         success = upsert_vote(plan_id, user['id'], target_type, target_id, vote_val)
     if success:
         tallies = get_vote_tallies(plan_id, target_type)
-        return jsonify({'success': True, 'data': {'tallies': tallies}})
+        my_votes = get_user_votes(plan_id, user['id'])
+        return jsonify({'success': True, 'data': {'tallies': tallies, 'my_votes': my_votes}})
     return jsonify({'error': 'Vote failed'}), 500
 
 

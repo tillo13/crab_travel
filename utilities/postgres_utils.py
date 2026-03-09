@@ -1301,6 +1301,32 @@ def delete_vote(plan_id, user_id, target_type, target_id):
             conn.close()
 
 
+def clear_rank_from_others(plan_id, user_id, target_type, target_id, rank):
+    """When a user assigns rank N to a destination, remove rank N from their other destinations."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM crab.votes
+            WHERE plan_id = %s AND user_id = %s AND target_type = %s
+              AND target_id != %s AND vote = %s
+        """, (plan_id, user_id, target_type, target_id, rank))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ Clear rank from others failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_vote_tallies(plan_id, target_type=None):
     conn = None
     cursor = None
@@ -1308,20 +1334,26 @@ def get_vote_tallies(plan_id, target_type=None):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         sql = """
-            SELECT target_type, target_id,
-                   SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) as upvotes,
-                   SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) as downvotes,
-                   SUM(vote) as score
+            SELECT target_type, target_id, vote as rank, COUNT(*) as count
             FROM crab.votes
-            WHERE plan_id = %s
+            WHERE plan_id = %s AND vote > 0
         """
         params = [plan_id]
         if target_type:
             sql += " AND target_type = %s"
             params.append(target_type)
-        sql += " GROUP BY target_type, target_id ORDER BY score DESC"
+        sql += " GROUP BY target_type, target_id, vote ORDER BY target_id, vote"
         cursor.execute(sql, params)
-        return [dict(r) for r in cursor.fetchall()]
+        rows = cursor.fetchall()
+        # Group by target_id and build rank distribution
+        tallies = {}
+        for r in rows:
+            tid = r['target_id']
+            if tid not in tallies:
+                tallies[tid] = {'target_type': r['target_type'], 'target_id': tid, 'ranks': {}, 'total_votes': 0}
+            tallies[tid]['ranks'][int(r['rank'])] = int(r['count'])
+            tallies[tid]['total_votes'] += int(r['count'])
+        return list(tallies.values())
     except Exception as e:
         logger.error(f"❌ Get vote tallies failed: {e}")
         return []
