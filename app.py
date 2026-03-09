@@ -391,9 +391,28 @@ def api_admin_speed_test():
         plans = get_plans_for_user(user_id)
         if plans:
             plan_id = plans[0]['plan_id']
-            from utilities.postgres_utils import get_plan_blackouts, get_plan_tentative_dates
+            from utilities.postgres_utils import (
+                get_plan_blackouts, get_plan_tentative_dates,
+                get_vote_tallies as _gvt, get_user_votes as _guv,
+                upsert_vote as _uv, delete_vote as _dv, clear_rank_from_others as _crfo,
+                get_destination_suggestions as _gds,
+            )
             tests.append(('Plan page', 'get_plan_by_id', lambda: get_plan_by_id(str(plan_id))))
             tests.append(('Blackouts', 'get_plan_blackouts', lambda: get_plan_blackouts(plan_id)))
+            tests.append(('Tentative dates', 'get_plan_tentative_dates', lambda: get_plan_tentative_dates(plan_id)))
+            tests.append(('Vote tallies', 'get_vote_tallies', lambda: _gvt(plan_id, 'destination')))
+            tests.append(('My votes', 'get_user_votes', lambda: _guv(plan_id, user_id)))
+            tests.append(('Destinations', 'get_destination_suggestions', lambda: _gds(plan_id)))
+
+            # Round-trip rank vote: write, read, clean up
+            def _rank_roundtrip():
+                test_dest = '__smoke_test_dest__'
+                _uv(plan_id, user_id, 'destination', test_dest, 1)
+                v = _guv(plan_id, user_id)
+                assert v.get(f'destination:{test_dest}') == 1
+                _dv(plan_id, user_id, 'destination', test_dest)
+                return True
+            tests.append(('Rank vote roundtrip', 'upsert+read+delete', _rank_roundtrip))
     except Exception:
         pass
 

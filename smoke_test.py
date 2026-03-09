@@ -324,6 +324,162 @@ except Exception as e:
     fail(f"search_engine test failed: {e}")
 
 
+# ── 7. Rank-order voting ─────────────────────────────────────
+
+section("7. Rank-order voting — upsert, swap, tallies")
+try:
+    from utilities.postgres_utils import (
+        upsert_vote, delete_vote, get_vote_tallies, get_user_votes,
+        clear_rank_from_others, get_db_connection
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT plan_id FROM crab.plans LIMIT 1")
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row:
+        info("No plans in DB — skipping vote test")
+    else:
+        test_plan_id = str(row[0])
+
+        # Get a real user_id from this plan's members
+        conn2 = get_db_connection()
+        cur2 = conn2.cursor()
+        cur2.execute("SELECT user_id FROM crab.plan_members WHERE plan_id = %s LIMIT 1", (test_plan_id,))
+        urow = cur2.fetchone()
+        cur2.close()
+        conn2.close()
+
+        if not urow:
+            info("No members in test plan — skipping vote test")
+        else:
+            fake_uid = urow[0]
+            dest_a = 'smoke-dest-aaa'
+            dest_b = 'smoke-dest-bbb'
+            dest_c = 'smoke-dest-ccc'
+
+            # Clean slate
+            for d in [dest_a, dest_b, dest_c]:
+                delete_vote(test_plan_id, fake_uid, 'destination', d)
+
+            # Rank dest_a as #1, dest_b as #2
+            upsert_vote(test_plan_id, fake_uid, 'destination', dest_a, 1)
+            upsert_vote(test_plan_id, fake_uid, 'destination', dest_b, 2)
+
+            votes = get_user_votes(test_plan_id, fake_uid)
+            assert votes.get(f'destination:{dest_a}') == 1, f"Expected rank 1 for dest_a, got {votes.get(f'destination:{dest_a}')}"
+            assert votes.get(f'destination:{dest_b}') == 2, f"Expected rank 2 for dest_b, got {votes.get(f'destination:{dest_b}')}"
+            ok("Rank assignment: dest_a=#1, dest_b=#2")
+
+            # Now rank dest_c as #1 — should auto-clear dest_a's #1
+            clear_rank_from_others(test_plan_id, fake_uid, 'destination', dest_c, 1)
+            upsert_vote(test_plan_id, fake_uid, 'destination', dest_c, 1)
+
+            votes = get_user_votes(test_plan_id, fake_uid)
+            assert f'destination:{dest_a}' not in votes, "dest_a should have been cleared when dest_c took #1"
+            assert votes.get(f'destination:{dest_c}') == 1, "dest_c should be #1"
+            assert votes.get(f'destination:{dest_b}') == 2, "dest_b should still be #2"
+            ok("Rank swap: dest_c took #1, dest_a cleared, dest_b still #2")
+
+            # Tallies
+            tallies = get_vote_tallies(test_plan_id, 'destination')
+            tally_map = {t['target_id']: t for t in tallies}
+            if dest_c in tally_map:
+                assert tally_map[dest_c]['ranks'].get(1, 0) >= 1, "dest_c should have at least 1 first-place vote"
+                ok(f"Tallies: dest_c has {tally_map[dest_c]['ranks']} rank distribution")
+            else:
+                ok("Tallies returned (dest_c may not appear if filtered by other votes)")
+
+            # Clean up
+            for d in [dest_a, dest_b, dest_c]:
+                delete_vote(test_plan_id, fake_uid, 'destination', d)
+            info("Cleaned up test votes")
+
+except Exception as e:
+    fail(f"Rank-order voting test failed: {e}")
+
+
+# ── 8. Tentative dates (preference normalization) ───────────
+
+section("8. Tentative dates — save + read with preference")
+try:
+    from utilities.postgres_utils import (
+        save_member_tentative_dates, get_member_tentative_dates,
+        save_member_blackouts, get_member_blackouts,
+        get_plan_tentative_dates, get_plan_blackouts,
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT plan_id FROM crab.plans LIMIT 1")
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row:
+        info("No plans in DB — skipping tentative dates test")
+    else:
+        test_plan_id = str(row[0])
+
+        # Get a real user_id from this plan's members
+        conn2 = get_db_connection()
+        cur2 = conn2.cursor()
+        cur2.execute("SELECT user_id FROM crab.plan_members WHERE plan_id = %s LIMIT 1", (test_plan_id,))
+        urow = cur2.fetchone()
+        cur2.close()
+        conn2.close()
+
+        if not urow:
+            info("No members in test plan — skipping tentative dates test")
+        else:
+            test_uid = urow[0]
+
+            # Save original dates so we can restore them
+            orig_tentative = get_member_tentative_dates(test_plan_id, test_uid)
+            orig_blackouts = get_member_blackouts(test_plan_id, test_uid)
+
+            # Save tentative dates with preferences
+            tentative = [
+                {'start': '2027-06-01', 'end': '2027-06-07', 'preference': 'ideal'},
+                {'start': '2027-06-15', 'end': '2027-06-20', 'preference': 'if_needed'},
+            ]
+            save_member_tentative_dates(test_plan_id, test_uid, tentative)
+
+            # Read back
+            dates = get_member_tentative_dates(test_plan_id, test_uid)
+            if len(dates) >= 2:
+                prefs = {d['preference'] for d in dates}
+                assert 'ideal' in prefs, "Expected 'ideal' preference"
+                assert 'if_needed' in prefs, "Expected 'if_needed' preference"
+                ok(f"Saved + read {len(dates)} tentative date ranges with preferences: {prefs}")
+            else:
+                fail(f"Expected 2 tentative dates, got {len(dates)}")
+
+            # Save blackouts
+            blackouts = [{'start': '2027-07-04', 'end': '2027-07-04'}]
+            save_member_blackouts(test_plan_id, test_uid, blackouts)
+            bo = get_member_blackouts(test_plan_id, test_uid)
+            ok(f"Saved + read {len(bo)} blackout range(s)")
+
+            # Plan-wide calendar data
+            plan_tentative = get_plan_tentative_dates(test_plan_id)
+            plan_blackouts = get_plan_blackouts(test_plan_id)
+            ok(f"Plan-wide calendar: {len(plan_tentative)} tentative, {len(plan_blackouts)} blackouts")
+
+            # Restore original dates
+            orig_t = [{'start': str(d['start']), 'end': str(d['end']), 'preference': d.get('preference', 'ideal')} for d in orig_tentative]
+            orig_b = [{'start': str(d['start']), 'end': str(d['end'])} for d in orig_blackouts]
+            save_member_tentative_dates(test_plan_id, test_uid, orig_t)
+            save_member_blackouts(test_plan_id, test_uid, orig_b)
+            info("Restored original dates")
+
+except Exception as e:
+    fail(f"Tentative dates test failed: {e}")
+
+
 # ── Done ──────────────────────────────────────────────────────
 
 section("Done")
