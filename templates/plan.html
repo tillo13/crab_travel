@@ -312,6 +312,17 @@
   {% endfor %}
 </div>
 
+<!-- Pending suggestions from group members -->
+<div id="pending-suggestions" class="mb-4 hidden">
+  <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-sm font-semibold text-amber-400">Suggested by your crew</span>
+      <span class="text-xs text-crab-sand-dim" id="pending-count"></span>
+    </div>
+    <div id="pending-list" class="space-y-2"></div>
+  </div>
+</div>
+
 <!-- Destination tabs + add input -->
 <div class="flex items-center gap-2 mb-4 flex-wrap">
   <div id="dest-tabs" class="flex items-center gap-1 flex-wrap">
@@ -782,12 +793,15 @@ async function loadDestinations() {
     var res = await fetch('/api/plan/' + PLAN_ID + '/destinations');
     var result = await res.json();
     if (result.success) {
-      _destinations = result.data.destinations;
+      var allDests = result.data.destinations;
+      // Separate pending suggestions from active destinations
+      var pending = allDests.filter(function(d) { return d.status === 'pending'; });
+      _destinations = allDests.filter(function(d) { return d.status !== 'pending'; });
+      renderPendingSuggestions(pending);
       if (_destinations.length > 0) {
         if (_activeDestIdx >= _destinations.length) _activeDestIdx = 0;
         renderTabs();
         renderBoard(_destinations[_activeDestIdx]);
-        // Auto-poll if researching
         if (_destinations.some(function(d) { return d.status === 'researching'; })) {
           pollDestinations();
         }
@@ -799,6 +813,52 @@ async function loadDestinations() {
   } catch (e) {
     document.getElementById('dest-board').innerHTML = '<p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Could not load destinations.</p>';
   }
+}
+
+function renderPendingSuggestions(pending) {
+  var container = document.getElementById('pending-suggestions');
+  var list = document.getElementById('pending-list');
+  var count = document.getElementById('pending-count');
+  if (!container || !list) return;
+  if (pending.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  count.textContent = pending.length + ' pending';
+  var html = '';
+  pending.forEach(function(d) {
+    html += '<div class="flex items-center justify-between bg-crab-card/40 rounded-lg px-4 py-2.5" id="pending-' + d.suggestion_id + '">';
+    html += '<div>';
+    html += '<span class="text-sm font-medium">' + d.destination_name + '</span>';
+    html += '<span class="text-xs text-crab-sand-dim ml-2">suggested by a member</span>';
+    html += '</div>';
+    html += '<div class="flex gap-2">';
+    html += '<button onclick="approveSuggestion(\'' + d.suggestion_id + '\', \'approve\')" class="px-3 py-1 bg-crab-teal/20 text-crab-teal-light rounded-lg text-xs font-semibold hover:bg-crab-teal/30 transition-colors">Approve</button>';
+    html += '<button onclick="approveSuggestion(\'' + d.suggestion_id + '\', \'reject\')" class="px-3 py-1 bg-crab-coral/20 text-crab-coral rounded-lg text-xs font-semibold hover:bg-crab-coral/30 transition-colors">Reject</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function approveSuggestion(suggestionId, action) {
+  var row = document.getElementById('pending-' + suggestionId);
+  if (row) row.style.opacity = '0.5';
+  fetch('/api/plan/' + PLAN_ID + '/approve-suggestion', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({suggestion_id: suggestionId, action: action}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      if (row) row.remove();
+      // Refresh destinations
+      loadDestinations();
+    }
+  })
+  .catch(function() { if (row) row.style.opacity = '1'; });
 }
 
 async function addDestination() {

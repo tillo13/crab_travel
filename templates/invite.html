@@ -566,6 +566,7 @@
 const PLAN_ID = '{{ plan.plan_id }}';
 const NEEDS_LOGIN = {{ 'true' if needs_login else 'false' }};
 var _isMember = {{ 'true' if is_member else 'false' }};
+const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
 const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
 
 // ── Airport resolver ──
@@ -1015,19 +1016,32 @@ function suggestDestination() {
   .then(function(data) {
     input.disabled = false;
     if (data.success) {
-      // Add to local destinations array as "researching" and re-render immediately
-      _destinations.push({
-        suggestion_id: data.data.suggestion_id,
-        destination_name: name,
-        status: 'researching',
-        destination_data: null,
-      });
-      renderCards();
-      // Start polling for research completion
-      pollDestinations();
+      if (data.data.status === 'pending') {
+        // Non-organizer: show toast, don't add to local list
+        showToast('Nice pick! We\'ll let the coordinator know about ' + name + '.');
+      } else {
+        // Organizer: add to local destinations array as "researching" and re-render
+        _destinations.push({
+          suggestion_id: data.data.suggestion_id,
+          destination_name: name,
+          status: 'researching',
+          destination_data: null,
+        });
+        renderCards();
+        pollDestinations();
+      }
     }
   })
   .catch(function() { input.disabled = false; });
+}
+
+function showToast(msg) {
+  var toast = document.createElement('div');
+  toast.textContent = msg;
+  toast.style.cssText = 'position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#0D9488;color:white;padding:0.75rem 1.5rem;border-radius:0.75rem;font-size:0.875rem;font-weight:500;z-index:9999;box-shadow:0 8px 25px rgba(0,0,0,0.3);animation:fadeInUp 0.3s ease;';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; }, 2500);
+  setTimeout(function() { toast.remove(); }, 3000);
 }
 
 // ── Your Details (join form) ──

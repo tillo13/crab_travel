@@ -700,6 +700,8 @@ def invite_page(invite_token):
         'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
     }, default=_default_ser)
 
+    is_organizer = user is not None and user['id'] == plan['organizer_id']
+
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
         vote_tallies=vote_tallies, my_votes=my_votes,
@@ -708,6 +710,7 @@ def invite_page(invite_token):
         member_airport=member_airport,
         member_flexible=member_flexible,
         needs_login=(user is None),
+        is_organizer=is_organizer,
         profile_completed=profile_completed,
         destinations_json=destinations_json,
         calendar_json=calendar_json if not (user is None) else '{}',
@@ -978,7 +981,10 @@ def api_suggest_destination(plan_id):
     if not destination_name:
         return jsonify({'error': 'Destination name required'}), 400
 
-    # Create the suggestion in 'researching' status
+    plan = get_plan_by_id(plan_id)
+    is_organizer = user['id'] == plan['organizer_id']
+
+    # Create the suggestion — organizer auto-approves, others go pending
     suggestion = create_destination_suggestion(plan_id, user['id'], destination_name)
     if not suggestion:
         return jsonify({'error': 'Failed to create suggestion'}), 500
@@ -986,17 +992,72 @@ def api_suggest_destination(plan_id):
     # Auto-vote yes for whoever suggests a destination
     upsert_vote(plan_id, user['id'], 'destination', suggestion['suggestion_id'], 1)
 
-    plan = get_plan_by_id(plan_id)
-    _research_destination(plan_id, suggestion['suggestion_id'], destination_name, plan)
+    if is_organizer:
+        # Organizer: immediately start researching
+        _research_destination(plan_id, suggestion['suggestion_id'], destination_name, plan)
+        return jsonify({
+            'success': True,
+            'data': {
+                'suggestion_id': str(suggestion['suggestion_id']),
+                'status': 'researching',
+            }
+        })
+    else:
+        # Non-organizer: mark as pending for coordinator approval
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE crab.destination_suggestions SET status = 'pending' WHERE suggestion_id = %s",
+                        (suggestion['suggestion_id'],))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({
+            'success': True,
+            'data': {
+                'suggestion_id': str(suggestion['suggestion_id']),
+                'status': 'pending',
+            }
+        })
 
-    # Return immediately — card shows as "researching"
-    return jsonify({
-        'success': True,
-        'data': {
-            'suggestion_id': str(suggestion['suggestion_id']),
-            'status': 'researching',
-        }
-    })
+
+@app.route('/api/plan/<plan_id>/approve-suggestion', methods=['POST'])
+@api_auth_required
+def api_approve_suggestion(plan_id):
+    """Organizer approves a pending destination suggestion — triggers research."""
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can approve suggestions'}), 403
+    data = request.get_json() or {}
+    suggestion_id = data.get('suggestion_id')
+    action = data.get('action', 'approve')
+    if not suggestion_id:
+        return jsonify({'error': 'suggestion_id required'}), 400
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        if action == 'reject':
+            cur.execute("DELETE FROM crab.destination_suggestions WHERE suggestion_id = %s AND plan_id = %s",
+                        (suggestion_id, plan_id))
+        else:
+            cur.execute("UPDATE crab.destination_suggestions SET status = 'researching' WHERE suggestion_id = %s AND plan_id = %s",
+                        (suggestion_id, plan_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Approve suggestion failed: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    if action == 'approve':
+        # Get the destination name and kick off research
+        suggestions = get_destination_suggestions(plan_id)
+        dest = next((s for s in suggestions if str(s['suggestion_id']) == str(suggestion_id)), None)
+        if dest:
+            _research_destination(plan_id, suggestion_id, dest['destination_name'], plan)
+    return jsonify({'success': True, 'action': action})
 
 
 @app.route('/api/plan/<plan_id>/suggest-anywhere', methods=['POST'])
