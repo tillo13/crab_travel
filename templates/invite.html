@@ -131,6 +131,8 @@
   .cal-day.empty { opacity: 0; }
   .cal-day.past { opacity: 0.25; }
   .cal-day.green { background: rgba(20,184,166,0.15); border-color: rgba(20,184,166,0.25); color: #14B8A6; }
+  .cal-day.green-ideal { background: rgba(16,185,129,0.22); border-color: rgba(16,185,129,0.4); color: #10B981; }
+  .cal-day.green-maybe { background: rgba(20,184,166,0.08); border-color: rgba(20,184,166,0.12); color: rgba(20,184,166,0.6); }
   .cal-day.yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.2); color: #F59E0B; }
   .cal-day.red { background: rgba(232,89,58,0.12); border-color: rgba(232,89,58,0.2); color: #E8593A; }
   .cal-day .cal-names { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font-size: 0.6rem; line-height: 1.2; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
@@ -420,8 +422,10 @@
       <div id="cal-body" class="p-4 md:p-5" style="display:none;">
         <div class="flex items-center justify-between mb-4">
           <div class="cal-legend">
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Wide open</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Some conflicts</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#10B981;"></div> Ideal</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Works</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(20,184,166,0.4);"></div> If needed</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Conflicts</div>
             <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
           </div>
           <div class="flex gap-1.5">
@@ -501,16 +505,18 @@
         <!-- Tentative / preferred dates -->
         <div class="mb-6">
           <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
-          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're available or prefer to go</p>
+          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges and rank your preference</p>
           <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
             {% for t in tentative_dates %}
-            <div class="blackout-chip" style="background:rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6;" data-start="{{ t.start }}" data-end="{{ t.end }}">
-              {{ t.start }} to {{ t.end }}
+            {% set pref = t.preference or 'works' %}
+            {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' if pref == 'if_needed' else 'rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6' %}
+            <div class="blackout-chip" style="background:{{ pcolor }};" data-start="{{ t.start }}" data-end="{{ t.end }}" data-preference="{{ pref }}">
+              {% if pref == 'ideal' %}★{% elif pref == 'if_needed' %}~{% endif %} {{ t.start }} to {{ t.end }}
               <button onclick="removeChip(this.parentElement)">&times;</button>
             </div>
             {% endfor %}
           </div>
-          <div class="flex items-end gap-2">
+          <div class="flex items-end gap-2 flex-wrap">
             <div>
               <label class="text-xs text-crab-sand-dim">From</label>
               <input type="date" id="tentative-start" class="input-field text-sm">
@@ -518,6 +524,14 @@
             <div>
               <label class="text-xs text-crab-sand-dim">To</label>
               <input type="date" id="tentative-end" class="input-field text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-crab-sand-dim">Preference</label>
+              <select id="tentative-pref" class="input-field text-sm" style="min-width:100px;">
+                <option value="ideal">Ideal</option>
+                <option value="works" selected>Works</option>
+                <option value="if_needed">If needed</option>
+              </select>
             </div>
             <button onclick="addTentative()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
           </div>
@@ -1084,22 +1098,31 @@ function addBlackout() {
 function removeChip(chip) { chip.remove(); }
 function removeBlackout(chip) { chip.remove(); }
 
+var PREF_STYLES = {
+  ideal: {bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', color:'#10B981', icon:'★ '},
+  works: {bg:'rgba(20,184,166,0.1)', border:'rgba(20,184,166,0.2)', color:'#14B8A6', icon:''},
+  if_needed: {bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.25)', color:'#F59E0B', icon:'~ '}
+};
+
 function addTentative() {
   var start = document.getElementById('tentative-start').value;
   var end = document.getElementById('tentative-end').value;
+  var pref = document.getElementById('tentative-pref').value;
   if (!start || !end || start > end) return;
   if (start < todayStr()) { alert('Cannot add past dates.'); return; }
   if (checkOverlapWith(start, end, 'blackout-list')) { alert('This conflicts with your blackout dates. Remove the overlap first.'); return; }
   if (checkOverlapWith(start, end, 'tentative-list')) { alert('This overlaps with an existing date range.'); return; }
+  var ps = PREF_STYLES[pref] || PREF_STYLES.works;
   var list = document.getElementById('tentative-list');
   var chip = document.createElement('div');
   chip.className = 'blackout-chip';
-  chip.style.background = 'rgba(20,184,166,0.1)';
-  chip.style.borderColor = 'rgba(20,184,166,0.2)';
-  chip.style.color = '#14B8A6';
+  chip.style.background = ps.bg;
+  chip.style.borderColor = ps.border;
+  chip.style.color = ps.color;
   chip.dataset.start = start;
+  chip.dataset.preference = pref;
   chip.dataset.end = end;
-  chip.innerHTML = start + ' to ' + end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
+  chip.innerHTML = ps.icon + start + ' to ' + end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
   list.appendChild(chip);
   document.getElementById('tentative-start').value = '';
   document.getElementById('tentative-end').value = '';
@@ -1107,7 +1130,7 @@ function addTentative() {
 
 function getTentativeDates() {
   var chips = document.querySelectorAll('#tentative-list .blackout-chip');
-  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end}; });
+  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end, preference: c.dataset.preference || 'works'}; });
 }
 
 function getBlackouts() {
@@ -1419,14 +1442,15 @@ function renderCalendar() {
     dataSpanMonths = Math.max(3, (latest.getFullYear() - today.getFullYear()) * 12 + latest.getMonth() - today.getMonth() + 1);
   }
 
-  // Build date→info map
+  // Build date→info map with preference tracking
   var dateMap = {};
+  var PREF_ORDER = {ideal: 0, works: 1, if_needed: 2};
   (_calData.blackouts || []).forEach(function(b) {
     var d = new Date(b.start + 'T00:00:00');
     var end = new Date(b.end + 'T00:00:00');
     while (d <= end) {
       var ds = d.toISOString().split('T')[0];
-      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: []};
+      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: [], prefs: {}};
       if (dateMap[ds].blocked.indexOf(b.name) === -1) dateMap[ds].blocked.push(b.name);
       d.setDate(d.getDate() + 1);
     }
@@ -1434,10 +1458,15 @@ function renderCalendar() {
   (_calData.tentative || []).forEach(function(t) {
     var d = new Date(t.start + 'T00:00:00');
     var end = new Date(t.end + 'T00:00:00');
+    var pref = t.preference || 'works';
     while (d <= end) {
       var ds = d.toISOString().split('T')[0];
-      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: []};
+      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: [], prefs: {}};
       if (dateMap[ds].available.indexOf(t.name) === -1) dateMap[ds].available.push(t.name);
+      // Track best preference per person
+      if (!dateMap[ds].prefs[t.name] || PREF_ORDER[pref] < PREF_ORDER[dateMap[ds].prefs[t.name]]) {
+        dateMap[ds].prefs[t.name] = pref;
+      }
       d.setDate(d.getDate() + 1);
     }
   });
@@ -1477,23 +1506,43 @@ function renderCalendar() {
     for (var day = 1; day <= daysInMonth; day++) {
       var ds = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
       var isPast = ds < todayStr;
-      var info = dateMap[ds] || {blocked: [], available: []};
+      var info = dateMap[ds] || {blocked: [], available: [], prefs: {}};
       var blockedCount = info.blocked.length;
       var uniqueAvail = info.available.slice();
       flexMembers.forEach(function(fn) { if (uniqueAvail.indexOf(fn) === -1) uniqueAvail.push(fn); });
 
+      // Determine best preference level for this date
+      var prefs = info.prefs || {};
+      var idealCount = 0, worksCount = 0, ifNeededCount = 0;
+      Object.keys(prefs).forEach(function(n) {
+        if (prefs[n] === 'ideal') idealCount++;
+        else if (prefs[n] === 'if_needed') ifNeededCount++;
+        else worksCount++;
+      });
+
       var colorClass = '';
       if (!isPast && totalMembers > 0) {
-        if (blockedCount === 0 && uniqueAvail.length > 0) colorClass = 'green';
+        if (blockedCount === 0 && uniqueAvail.length > 0) {
+          // Shade green by preference: bright green if mostly ideal, standard teal if works, muted if if_needed
+          if (idealCount > 0 && idealCount >= worksCount && idealCount >= ifNeededCount) colorClass = 'green-ideal';
+          else if (ifNeededCount > idealCount && ifNeededCount > worksCount) colorClass = 'green-maybe';
+          else colorClass = 'green';
+        }
         else if (blockedCount > 0 && blockedCount < totalMembers) colorClass = 'yellow';
         else if (blockedCount >= totalMembers) colorClass = 'red';
       }
 
       var title = ds;
       if (info.blocked.length) title += ' | Blocked: ' + info.blocked.join(', ');
-      if (uniqueAvail.length) title += ' | Available: ' + uniqueAvail.join(', ');
+      if (uniqueAvail.length) {
+        var availParts = uniqueAvail.map(function(n) {
+          var p = prefs[n];
+          return n + (p === 'ideal' ? ' (ideal)' : p === 'if_needed' ? ' (if needed)' : '');
+        });
+        title += ' | Available: ' + availParts.join(', ');
+      }
 
-      // Build name labels for blocked dates
+      // Build name labels for blocked or available dates
       var namesHtml = '';
       if (!isPast && info.blocked.length > 0) {
         var shortNames = info.blocked.map(getFirstName);
@@ -1522,18 +1571,30 @@ function showCalInfo(el) {
   var d = dateMap_lookup(ds);
   if (!d) { info.textContent = ds; return; }
   var parts = [ds];
-  if (d.available.length) parts.push('Available: ' + d.available.join(', '));
+  if (d.available.length) {
+    var availParts = d.available.map(function(n) {
+      var p = d.prefs[n];
+      return n + (p === 'ideal' ? ' ★' : p === 'if_needed' ? ' ~' : '');
+    });
+    parts.push('Available: ' + availParts.join(', '));
+  }
   if (d.blocked.length) parts.push('Blocked: ' + d.blocked.join(', '));
   info.textContent = parts.join(' · ');
 }
 
 function dateMap_lookup(ds) {
-  var info = {blocked: [], available: []};
+  var info = {blocked: [], available: [], prefs: {}};
   (_calData.blackouts || []).forEach(function(b) {
     if (ds >= b.start && ds <= b.end && info.blocked.indexOf(b.name) === -1) info.blocked.push(b.name);
   });
   (_calData.tentative || []).forEach(function(t) {
-    if (ds >= t.start && ds <= t.end && info.available.indexOf(t.name) === -1) info.available.push(t.name);
+    if (ds >= t.start && ds <= t.end) {
+      if (info.available.indexOf(t.name) === -1) info.available.push(t.name);
+      var pref = t.preference || 'works';
+      if (!info.prefs[t.name] || ({'ideal':0,'works':1,'if_needed':2})[pref] < ({'ideal':0,'works':1,'if_needed':2})[info.prefs[t.name]]) {
+        info.prefs[t.name] = pref;
+      }
+    }
   });
   var flexMembers = (_calData.members || []).filter(function(m) { return m.is_flexible; }).map(function(m) { return m.name; });
   flexMembers.forEach(function(fn) { if (info.available.indexOf(fn) === -1) info.available.push(fn); });

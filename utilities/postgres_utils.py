@@ -358,6 +358,10 @@ def init_database():
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tentative_plan ON crab.member_tentative_dates(plan_id)")
+        try:
+            cursor.execute("ALTER TABLE crab.member_tentative_dates ADD COLUMN IF NOT EXISTS preference VARCHAR(20) DEFAULT 'works'")
+        except Exception:
+            pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS crab.messages (
@@ -1854,9 +1858,9 @@ def save_member_tentative_dates(plan_id, user_id, dates):
         cursor.execute("DELETE FROM crab.member_tentative_dates WHERE plan_id = %s AND user_id = %s", (plan_id, user_id))
         for d in dates:
             cursor.execute("""
-                INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end)
-                VALUES (%s, %s, %s, %s)
-            """, (plan_id, user_id, d['start'], d['end']))
+                INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (plan_id, user_id, d['start'], d['end'], d.get('preference', 'works')))
         conn.commit()
         return True
     except Exception as e:
@@ -1878,12 +1882,12 @@ def get_member_tentative_dates(plan_id, user_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT date_start, date_end
+            SELECT date_start, date_end, COALESCE(preference, 'works') as preference
             FROM crab.member_tentative_dates
             WHERE plan_id = %s AND user_id = %s
             ORDER BY date_start
         """, (plan_id, user_id))
-        return [{'start': r['date_start'].isoformat(), 'end': r['date_end'].isoformat()} for r in cursor.fetchall()]
+        return [{'start': r['date_start'].isoformat(), 'end': r['date_end'].isoformat(), 'preference': r['preference']} for r in cursor.fetchall()]
     except Exception as e:
         logger.error(f"Get tentative dates failed: {e}")
         return []
@@ -1924,7 +1928,7 @@ def get_plan_tentative_dates(plan_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT t.*, u.full_name
+            SELECT t.*, COALESCE(t.preference, 'works') as preference, u.full_name
             FROM crab.member_tentative_dates t
             JOIN crab.users u ON u.pk_id = t.user_id
             WHERE t.plan_id = %s

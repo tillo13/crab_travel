@@ -696,7 +696,7 @@ def invite_page(invite_token):
     all_tentative = get_plan_tentative_dates(plan['plan_id']) if not (user is None) else []
     calendar_json = json.dumps({
         'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
-        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat()} for t in all_tentative],
+        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
         'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
     }, default=_default_ser)
 
