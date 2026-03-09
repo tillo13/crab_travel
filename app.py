@@ -772,6 +772,25 @@ def api_join_full(plan_id):
     return jsonify({'success': True, 'data': {'plan_id': str(plan_id), 'member_id': member['pk_id']}})
 
 
+@app.route('/api/plan/<plan_id>/calendar')
+@api_auth_required
+def api_plan_calendar(plan_id):
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Not found'}), 404
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    members = get_plan_members(plan_id)
+    all_blackouts = get_plan_blackouts(plan_id)
+    all_tentative = get_plan_tentative_dates(plan_id)
+    return jsonify({
+        'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
+        'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
+    })
+
+
 @app.route('/plan/<plan_id>')
 @login_required
 def view_plan(plan_id):

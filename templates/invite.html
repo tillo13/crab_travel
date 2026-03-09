@@ -1155,6 +1155,15 @@ function submitJoin() {
       document.getElementById('confirmation').classList.remove('hidden');
       btn.textContent = 'Saved!';
       btn.className = btn.className.replace('bg-crab-coral', 'bg-crab-teal').replace('hover:bg-crab-coral-light', 'hover:bg-crab-teal-light');
+      // Refresh calendar data
+      fetch('/api/plan/' + PLAN_ID + '/calendar')
+        .then(function(r) { return r.json(); })
+        .then(function(cal) {
+          if (cal.blackouts) {
+            _calData = cal;
+            renderCalendar();
+          }
+        }).catch(function() {});
       setTimeout(function() {
         btn.disabled = false;
         btn.textContent = 'Save changes';
