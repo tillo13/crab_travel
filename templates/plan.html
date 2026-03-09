@@ -828,10 +828,16 @@ function renderPendingSuggestions(pending) {
   count.textContent = pending.length + ' pending';
   var html = '';
   pending.forEach(function(d) {
+    var who = d.suggested_by_name || 'a member';
+    var when = '';
+    if (d.created_at) {
+      var dt = new Date(d.created_at);
+      when = ' · ' + dt.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' ' + dt.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'});
+    }
     html += '<div class="flex items-center justify-between bg-crab-card/40 rounded-lg px-4 py-2.5" id="pending-' + d.suggestion_id + '">';
     html += '<div>';
     html += '<span class="text-sm font-medium">' + d.destination_name + '</span>';
-    html += '<span class="text-xs text-crab-sand-dim ml-2">suggested by a member</span>';
+    html += '<span class="text-xs text-crab-sand-dim ml-2">suggested by ' + who + when + '</span>';
     html += '</div>';
     html += '<div class="flex gap-2">';
     html += '<button onclick="approveSuggestion(\'' + d.suggestion_id + '\', \'approve\')" class="px-3 py-1 bg-crab-teal/20 text-crab-teal-light rounded-lg text-xs font-semibold hover:bg-crab-teal/30 transition-colors">Approve</button>';
