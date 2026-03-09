@@ -144,8 +144,8 @@
   .cal-nav-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
   html:not(.dark) .cal-nav-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
   html:not(.dark) .cal-nav-btn:hover { background: rgba(0,0,0,0.08); }
-  .cal-toggle { cursor: pointer; transition: transform 0.2s; }
-  .cal-toggle.collapsed { transform: rotate(-90deg); }
+  .cal-toggle, .chat-toggle { cursor: pointer; transition: transform 0.2s; }
+  .cal-toggle.collapsed, .chat-toggle.collapsed { transform: rotate(-90deg); }
   .cal-legend { display: flex; gap: 1rem; flex-wrap: wrap; }
   .cal-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; color: rgba(200,194,184,0.6); }
   html:not(.dark) .cal-legend-item { color: #6b7280; }
@@ -342,15 +342,29 @@
     </div>
   </div>
 
-  <!-- Quick links -->
   {% if not needs_login %}
-  <div class="flex justify-center gap-3 mb-4 animate-in stagger-1">
-    <a href="#chat-section" class="inline-flex items-center gap-1.5 text-xs font-medium text-crab-sand-dim hover:text-crab-coral transition-colors bg-crab-card/40 border border-white/6 rounded-full px-3 py-1.5">
-      💬 Chat
-    </a>
-    <a href="#calendar-section" class="inline-flex items-center gap-1.5 text-xs font-medium text-crab-sand-dim hover:text-crab-coral transition-colors bg-crab-card/40 border border-white/6 rounded-full px-3 py-1.5">
-      📅 Availability
-    </a>
+  <!-- Group Chat (top of page) -->
+  <div class="mb-6 animate-in stagger-1" id="chat-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleChat()">
+        <div class="flex items-center gap-2">
+          <svg id="chat-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">💬 Group Chat</span>
+          <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
+        </div>
+      </div>
+      <div id="chat-body">
+        <div class="chat-container p-3" id="chat-messages">
+          <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
+        </div>
+        <div class="px-4 py-3 border-t border-white/6">
+          <div class="chat-input-row">
+            <textarea class="chat-input" id="chat-input-main" placeholder="Message the group..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+            <button class="chat-send-btn" onclick="sendMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   {% endif %}
 
@@ -439,28 +453,6 @@
     </div>
   </div>
   {% endif %}
-
-  {% if not needs_login %}
-  <!-- Group Chat -->
-  <div class="mt-8 mb-10 animate-in stagger-3" id="chat-section">
-    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-display">Chat</span>
-          <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
-        </div>
-      </div>
-      <div class="chat-container p-3" id="chat-messages">
-        <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
-      </div>
-      <div class="px-4 py-3 border-t border-white/6">
-        <div class="chat-input-row">
-          <textarea class="chat-input" id="chat-input-main" placeholder="Message the group..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
-          <button class="chat-send-btn" onclick="sendMessage()">Send</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   {% endif %}
 
@@ -1402,6 +1394,19 @@ var _calMonthsToShow = 3;
 
 function getFirstName(name) {
   return (name || '').split(' ')[0];
+}
+
+function toggleChat() {
+  var body = document.getElementById('chat-body');
+  var chev = document.getElementById('chat-chevron');
+  if (!body || !chev) return;
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    chev.classList.remove('collapsed');
+  } else {
+    body.style.display = 'none';
+    chev.classList.add('collapsed');
+  }
 }
 
 function toggleCalendar() {
