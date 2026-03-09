@@ -347,6 +347,45 @@ def api_admin_smoke_test():
         return jsonify({'success': False, 'error': str(e)})
 
 
+@app.route('/admin/changelog')
+@login_required
+def admin_changelog():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    import requests as req
+    commits = []
+    try:
+        resp = req.get(
+            'https://api.github.com/repos/tillo13/crab_travel/commits',
+            params={'per_page': 50},
+            headers={'Accept': 'application/vnd.github.v3+json'},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            for c in resp.json():
+                msg = c['commit']['message']
+                lines = msg.split('\n')
+                title = lines[0]
+                body = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ''
+                commits.append({
+                    'sha': c['sha'][:7],
+                    'sha_full': c['sha'],
+                    'title': title,
+                    'body': body,
+                    'author': c['commit']['author']['name'],
+                    'date': c['commit']['author']['date'],
+                    'url': c['html_url'],
+                    'avatar': c['author']['avatar_url'] if c.get('author') else None,
+                })
+    except Exception:
+        pass
+    from datetime import datetime, timezone
+    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    return render_template('admin_changelog.html', active_page='admin', commits=commits, now_str=now_str)
+
+
 @app.route('/admin/speed')
 @login_required
 def admin_speed():
