@@ -972,16 +972,27 @@ def api_plan_availability(plan_id):
 @api_auth_required
 def api_suggest_destination(plan_id):
     user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+
     member = get_member_for_plan(plan_id, user['id'])
     if not member:
-        return jsonify({'error': 'Not a member'}), 403
+        # Auto-join the plan when suggesting a destination
+        member_token = generate_token()
+        member = add_plan_member(
+            plan_id, user['name'], member_token,
+            email=user['email'], user_id=user['id'],
+        )
+        if not member:
+            return jsonify({'error': 'Failed to join plan'}), 500
+        logger.info(f"👋 Auto-joined plan via suggestion: {user['name']} → plan {plan_id}")
 
     data = request.get_json()
     destination_name = data.get('destination') if data else None
     if not destination_name:
         return jsonify({'error': 'Destination name required'}), 400
 
-    plan = get_plan_by_id(plan_id)
     is_organizer = user['id'] == plan['organizer_id']
 
     # Create the suggestion — organizer auto-approves, others go pending

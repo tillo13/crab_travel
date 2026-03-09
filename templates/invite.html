@@ -1032,7 +1032,7 @@ function suggestDestination() {
       }
     }
   })
-  .catch(function() { input.disabled = false; });
+  .catch(function() { input.disabled = false; showToast('Something went wrong. Try again.'); });
 }
 
 function showToast(msg) {
