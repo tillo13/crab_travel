@@ -343,17 +343,17 @@
   </div>
 
   {% if not needs_login %}
-  <!-- Group Chat (top of page) -->
-  <div class="mb-6 animate-in stagger-1" id="chat-section">
+  <!-- Group Chat (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-1" id="chat-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleChat()">
         <div class="flex items-center gap-2">
-          <svg id="chat-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <svg id="chat-chevron" class="w-4 h-4 chat-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           <span class="text-sm font-display">💬 Group Chat</span>
           <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
         </div>
       </div>
-      <div id="chat-body">
+      <div id="chat-body" style="display:none;">
         <div class="chat-container p-3" id="chat-messages">
           <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
         </div>
@@ -364,6 +364,141 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Group Availability (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-1" id="calendar-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleCalendar()">
+        <div class="flex items-center gap-2">
+          <svg id="cal-chevron" class="w-4 h-4 cal-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">📅 Group Availability</span>
+          <span id="cal-summary" class="text-xs text-crab-sand-dim opacity-60 ml-1"></span>
+        </div>
+      </div>
+      <div id="cal-body" class="p-4 md:p-5" style="display:none;">
+        <div class="flex items-center justify-between mb-4">
+          <div class="cal-legend">
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#10B981;"></div> Ideal</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Works</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(20,184,166,0.4);"></div> If needed</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Conflicts</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
+          </div>
+          <div class="flex gap-1.5">
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(-1);">&larr;</button>
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(1);">&rarr;</button>
+          </div>
+        </div>
+        <div id="cal-months" class="space-y-6"></div>
+        <div id="cal-hover-info" class="text-xs text-crab-sand-dim mt-3 min-h-[1.25rem]"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Your Details (collapsible, expanded by default) -->
+  <div class="mb-4 animate-in stagger-1" id="details-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDetails()">
+        <div class="flex items-center gap-2">
+          <svg id="details-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">✏️ {% if is_member %}Update Your Info{% else %}Join {{ plan.title }}{% endif %}</span>
+        </div>
+      </div>
+      <div id="details-body" class="p-6 md:p-8">
+        <div class="mb-5">
+          <label class="block text-sm font-medium mb-1.5">Where are you based?</label>
+          <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. Seattle, Phoenix, JFK, 90210" value="{{ member_airport or '' }}">
+          <p id="airport-resolved" class="text-xs mt-1 opacity-60 text-crab-teal hidden"></p>
+          <p id="airport-hint" class="text-xs text-crab-sand-dim mt-1 opacity-60">City, airport code, or zip — we'll find your nearest airport</p>
+        </div>
+        <div class="mb-5">
+          <label class="flex items-center gap-3 cursor-pointer group">
+            <input type="checkbox" id="is-flexible" class="w-4 h-4 rounded border-white/20 accent-crab-teal" {{ 'checked' if member_flexible else '' }} onchange="toggleBlackouts()">
+            <span class="text-sm font-medium group-hover:text-crab-sand transition-colors">I'm flexible — I'll make whatever dates work</span>
+          </label>
+        </div>
+        <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
+          <div class="mb-6">
+            <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
+            <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges and rank your preference</p>
+            <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
+              {% for t in tentative_dates %}
+              {% set pref = t.preference or 'works' %}
+              {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' if pref == 'if_needed' else 'rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6' %}
+              <div class="blackout-chip" style="background:{{ pcolor }};" data-start="{{ t.start }}" data-end="{{ t.end }}" data-preference="{{ pref }}">
+                {% if pref == 'ideal' %}★{% elif pref == 'if_needed' %}~{% endif %} {{ t.start }} to {{ t.end }}
+                <button onclick="removeChip(this.parentElement)">&times;</button>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="flex items-end gap-2 flex-wrap">
+              <div>
+                <label class="text-xs text-crab-sand-dim">From</label>
+                <input type="date" id="tentative-start" class="input-field text-sm">
+              </div>
+              <div>
+                <label class="text-xs text-crab-sand-dim">To</label>
+                <input type="date" id="tentative-end" class="input-field text-sm">
+              </div>
+              <div>
+                <label class="text-xs text-crab-sand-dim">Preference</label>
+                <select id="tentative-pref" class="input-field text-sm" style="min-width:100px;">
+                  <option value="ideal">Ideal</option>
+                  <option value="works" selected>Works</option>
+                  <option value="if_needed">If needed</option>
+                </select>
+              </div>
+              <button onclick="addTentative()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+            </div>
+          </div>
+          <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
+          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're unavailable</p>
+          <div id="blackout-list" class="flex flex-wrap gap-2 mb-3">
+            {% for b in blackouts %}
+            <div class="blackout-chip" data-start="{{ b.start }}" data-end="{{ b.end }}">
+              {{ b.start }} to {{ b.end }}
+              <button onclick="removeChip(this.parentElement)">&times;</button>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="flex items-end gap-2">
+            <div>
+              <label class="text-xs text-crab-sand-dim">From</label>
+              <input type="date" id="blackout-start" class="input-field text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-crab-sand-dim">To</label>
+              <input type="date" id="blackout-end" class="input-field text-sm">
+            </div>
+            <button onclick="addBlackout()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
+          </div>
+        </div>
+        <div class="mt-8">
+          <button onclick="submitJoin()" id="submit-btn"
+            class="w-full sm:w-auto px-8 py-3 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+            {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title }}{% endif %}
+          </button>
+          <p id="submit-status" class="text-sm mt-3 hidden"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmation" class="hidden animate-in mt-8">
+    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl px-6">
+      <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-12 h-12 rounded-xl mx-auto mb-2" alt="">
+      <h2 class="text-xl font-display mb-2">You're in!</h2>
+      <p class="text-sm text-crab-sand-dim mb-4" id="confirm-msg">We'll track flights and email you as things develop.</p>
+      {% if not profile_completed %}
+      <div class="border-t border-crab-teal/20 pt-4 mt-4">
+        <p class="text-sm text-crab-sand-dim mb-3">Complete your profile so CrabAI can personalize recommendations for you across all trips.</p>
+        <a href="/profile" class="inline-flex items-center gap-2 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:shadow-lg">
+          Complete your profile
+        </a>
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -422,38 +557,6 @@
   {% endif %}
 
 
-  {% if not needs_login %}
-  <!-- Calendar Availability -->
-  <div class="mt-8 mb-10 animate-in stagger-3" id="calendar-section">
-    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleCalendar()">
-        <div class="flex items-center gap-2">
-          <svg id="cal-chevron" class="w-4 h-4 cal-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          <span class="text-sm font-display">Group Availability</span>
-          <span id="cal-summary" class="text-xs text-crab-sand-dim opacity-60 ml-1"></span>
-        </div>
-      </div>
-      <div id="cal-body" class="p-4 md:p-5" style="display:none;">
-        <div class="flex items-center justify-between mb-4">
-          <div class="cal-legend">
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#10B981;"></div> Ideal</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#14B8A6;"></div> Works</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(20,184,166,0.4);"></div> If needed</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> Conflicts</div>
-            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
-          </div>
-          <div class="flex gap-1.5">
-            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(-1);">&larr;</button>
-            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(1);">&rarr;</button>
-          </div>
-        </div>
-        <div id="cal-months" class="space-y-6"></div>
-        <div id="cal-hover-info" class="text-xs text-crab-sand-dim mt-3 min-h-[1.25rem]"></div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
   {% if needs_login %}
   <!-- Sign in CTA (bottom) -->
   <div class="text-center py-8 animate-in stagger-3">
@@ -463,118 +566,6 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
       Sign in with Google
     </a>
-  </div>
-  {% endif %}
-
-  {% if not needs_login %}
-  <!-- Your Details -->
-  <div class="animate-in stagger-3">
-    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-6 md:p-8">
-      <h2 class="text-xl font-display mb-1">
-        {% if is_member %}Update your info{% else %}Join {{ plan.title }}{% endif %}
-      </h2>
-      <p class="text-sm text-crab-sand-dim mb-6">
-        {% if is_member %}Change your details anytime.{% else %}Tell us where you're flying from and when you can't go.{% endif %}
-      </p>
-
-      <div class="mb-5">
-        <label class="block text-sm font-medium mb-1.5">Where are you based?</label>
-        <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. Seattle, Phoenix, JFK, 90210" value="{{ member_airport or '' }}">
-        <p id="airport-resolved" class="text-xs mt-1 opacity-60 text-crab-teal hidden"></p>
-        <p id="airport-hint" class="text-xs text-crab-sand-dim mt-1 opacity-60">City, airport code, or zip — we'll find your nearest airport</p>
-      </div>
-
-      <div class="mb-5">
-        <label class="flex items-center gap-3 cursor-pointer group">
-          <input type="checkbox" id="is-flexible" class="w-4 h-4 rounded border-white/20 accent-crab-teal" {{ 'checked' if member_flexible else '' }} onchange="toggleBlackouts()">
-          <span class="text-sm font-medium group-hover:text-crab-sand transition-colors">I'm flexible — I'll make whatever dates work</span>
-        </label>
-      </div>
-
-      <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
-        <!-- Tentative / preferred dates -->
-        <div class="mb-6">
-          <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
-          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges and rank your preference</p>
-          <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
-            {% for t in tentative_dates %}
-            {% set pref = t.preference or 'works' %}
-            {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' if pref == 'if_needed' else 'rgba(20,184,166,0.1);border-color:rgba(20,184,166,0.2);color:#14B8A6' %}
-            <div class="blackout-chip" style="background:{{ pcolor }};" data-start="{{ t.start }}" data-end="{{ t.end }}" data-preference="{{ pref }}">
-              {% if pref == 'ideal' %}★{% elif pref == 'if_needed' %}~{% endif %} {{ t.start }} to {{ t.end }}
-              <button onclick="removeChip(this.parentElement)">&times;</button>
-            </div>
-            {% endfor %}
-          </div>
-          <div class="flex items-end gap-2 flex-wrap">
-            <div>
-              <label class="text-xs text-crab-sand-dim">From</label>
-              <input type="date" id="tentative-start" class="input-field text-sm">
-            </div>
-            <div>
-              <label class="text-xs text-crab-sand-dim">To</label>
-              <input type="date" id="tentative-end" class="input-field text-sm">
-            </div>
-            <div>
-              <label class="text-xs text-crab-sand-dim">Preference</label>
-              <select id="tentative-pref" class="input-field text-sm" style="min-width:100px;">
-                <option value="ideal">Ideal</option>
-                <option value="works" selected>Works</option>
-                <option value="if_needed">If needed</option>
-              </select>
-            </div>
-            <button onclick="addTentative()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
-          </div>
-        </div>
-
-        <!-- Blackout dates -->
-        <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
-        <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're unavailable</p>
-        <div id="blackout-list" class="flex flex-wrap gap-2 mb-3">
-          {% for b in blackouts %}
-          <div class="blackout-chip" data-start="{{ b.start }}" data-end="{{ b.end }}">
-            {{ b.start }} to {{ b.end }}
-            <button onclick="removeChip(this.parentElement)">&times;</button>
-          </div>
-          {% endfor %}
-        </div>
-        <div class="flex items-end gap-2">
-          <div>
-            <label class="text-xs text-crab-sand-dim">From</label>
-            <input type="date" id="blackout-start" class="input-field text-sm">
-          </div>
-          <div>
-            <label class="text-xs text-crab-sand-dim">To</label>
-            <input type="date" id="blackout-end" class="input-field text-sm">
-          </div>
-          <button onclick="addBlackout()" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">+ Add</button>
-        </div>
-      </div>
-
-      <div class="mt-8">
-        <button onclick="submitJoin()" id="submit-btn"
-          class="w-full sm:w-auto px-8 py-3 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
-          {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title }}{% endif %}
-        </button>
-        <p id="submit-status" class="text-sm mt-3 hidden"></p>
-      </div>
-    </div>
-  </div>
-
-  <div id="confirmation" class="hidden animate-in mt-8">
-    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl px-6">
-      <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-12 h-12 rounded-xl mx-auto mb-2" alt="">
-      <h2 class="text-xl font-display mb-2">You're in!</h2>
-      <p class="text-sm text-crab-sand-dim mb-4" id="confirm-msg">We'll track flights and email you as things develop.</p>
-      {% if not profile_completed %}
-      <div class="border-t border-crab-teal/20 pt-4 mt-4">
-        <p class="text-sm text-crab-sand-dim mb-3">Complete your profile so CrabAI can personalize recommendations for you across all trips.</p>
-        <a href="/profile" class="inline-flex items-center gap-2 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:shadow-lg">
-          Complete your profile
-        </a>
-      </div>
-      {% endif %}
-    </div>
   </div>
   {% endif %}
 
@@ -1394,9 +1385,9 @@ function getFirstName(name) {
   return (name || '').split(' ')[0];
 }
 
-function toggleChat() {
-  var body = document.getElementById('chat-body');
-  var chev = document.getElementById('chat-chevron');
+function toggleSection(bodyId, chevId) {
+  var body = document.getElementById(bodyId);
+  var chev = document.getElementById(chevId);
   if (!body || !chev) return;
   if (body.style.display === 'none') {
     body.style.display = '';
@@ -1406,6 +1397,8 @@ function toggleChat() {
     chev.classList.add('collapsed');
   }
 }
+function toggleChat() { toggleSection('chat-body', 'chat-chevron'); }
+function toggleDetails() { toggleSection('details-body', 'details-chevron'); }
 
 function toggleCalendar() {
   var body = document.getElementById('cal-body');
