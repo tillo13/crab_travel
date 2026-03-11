@@ -164,6 +164,22 @@ def page_not_found(e):
 
 # ── Public routes ────────────────────────────────────────────
 
+@app.route('/sitemap.xml')
+def sitemap():
+    xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://crab.travel/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://crab.travel/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://crab.travel/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://crab.travel/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+</urlset>'''
+    return Response(xml, mimetype='application/xml')
+
+@app.route('/robots.txt')
+def robots():
+    content = 'User-agent: *\nAllow: /\nSitemap: https://crab.travel/sitemap.xml\n'
+    return Response(content, mimetype='text/plain')
+
 @app.route('/')
 def index():
     return render_template('index.html', active_page='home')
