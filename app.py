@@ -166,18 +166,27 @@ def page_not_found(e):
 
 @app.route('/sitemap.xml')
 def sitemap():
-    xml = '''<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://crab.travel/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://crab.travel/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://crab.travel/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://crab.travel/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-</urlset>'''
+    host = request.host_url.rstrip('/')
+    skip = {'api', 'admin', 'auth', 'login', 'logout', 'callback', 'health', 'sitemap', 'robots', 'tasks', 'cron', 'debug', 'mimic'}
+    urls = []
+    for rule in app.url_map.iter_rules():
+        if 'GET' not in rule.methods or rule.arguments:
+            continue
+        path = rule.rule
+        parts = path.strip('/').split('/')
+        if any(p in skip for p in parts):
+            continue
+        if path.startswith('/api/') or path.startswith('/admin'):
+            continue
+        priority = '1.0' if path == '/' else '0.6'
+        urls.append(f'  <url><loc>{host}{path}</loc><priority>{priority}</priority></url>')
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + '\n'.join(sorted(urls)) + '\n</urlset>'
     return Response(xml, mimetype='application/xml')
 
 @app.route('/robots.txt')
 def robots():
-    content = 'User-agent: *\nAllow: /\nSitemap: https://crab.travel/sitemap.xml\n'
+    host = request.host_url.rstrip('/')
+    content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\n'
     return Response(content, mimetype='text/plain')
 
 @app.route('/')
