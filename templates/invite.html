@@ -1129,6 +1129,7 @@ function rpRender(id) {
   var s = _rpState[id];
   var label = document.getElementById('rp-' + id + '-label');
   var grid = document.getElementById('rp-' + id + '-grid');
+  if (!label || !grid) return;
   label.textContent = MONTH_NAMES[s.month] + ' ' + s.year;
   var today = todayStr();
   var firstDay = new Date(s.year, s.month, 1).getDay();
@@ -1170,6 +1171,7 @@ function rpUpdateSelection(id) {
   var s = _rpState[id];
   var sel = document.getElementById('rp-' + id + '-selection');
   var btn = document.getElementById(id + '-add-btn');
+  if (!sel || !btn) return;
   if (s.start && s.end) {
     sel.innerHTML = '<span style="color:#E8593A;font-weight:600;">' + s.start + '</span> to <span style="color:#E8593A;font-weight:600;">' + s.end + '</span>';
     btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';

@@ -1,6 +1,6 @@
 # Deployment & Git Rules
 
-- **Always deploy using `./git_push.sh "commit message"`** — never use manual git add/commit/push.
+- **Always deploy using `deploy "commit message"`** (centralized deploy tool, config in deploy.json) — see ~/Desktop/code/master_gcp_deploy/
 - **Never include Co-Authored-By or any AI attribution in commits.** No Claude references, no AI credits.
 
 ---

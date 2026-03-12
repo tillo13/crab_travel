@@ -1,4 +1,16 @@
 #!/bin/bash
+# ============================================================================
+# MIGRATION NOTE (2026-03-12):
+# This script is being replaced by the centralized deploy tool at:
+#   ~/Desktop/code/master_gcp_deploy/deploy.py (symlinked to ~/.local/bin/deploy)
+# Config for this project lives in: deploy.json (in this directory)
+#
+# New usage:  deploy "commit message"
+# Old usage:  ./git_push.sh "commit message"
+#
+# This script still works but will be removed once migration is verified.
+# See: ~/Desktop/code/master_gcp_deploy/ for full documentation.
+# ============================================================================
 
 # CRAB.TRAVEL PROJECT CONFIGURATION
 EXPECTED_PROJECT="crab-travel"
