@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}About — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .about-section {
+    margin-bottom: 3rem;
+  }
+  .about-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .about-section p {
+    font-size: 0.9rem;
+    line-height: 1.75;
+    color: #C8C2B8;
+    margin-bottom: 1rem;
+  }
+  html:not(.dark) .about-section p { color: #555; }
+  .about-section p strong { color: #F0EAE0; }
+  html:not(.dark) .about-section p strong { color: #111; }
+  .comp-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  html:not(.dark) .comp-row { border-bottom-color: #f0f0f0; }
+  .comp-row:first-child { font-weight: 600; border-bottom-color: rgba(255,255,255,0.1); }
+  .comp-label { color: #C8C2B8; }
+  .comp-us { color: #10B981; }
+  .roadmap-banner {
+    background: rgba(232,89,58,0.08);
+    border: 1px solid rgba(232,89,58,0.2);
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto animate-in">
+
+<!-- Roadmap banner at top -->
+<div class="roadmap-banner mb-10">
+  <div>
+    <p class="font-display text-lg mb-0.5" style="color:#F0EAE0;">See what's next</p>
+    <p class="text-sm text-crab-sand-dim">Our full roadmap is public. Read it, leave comments, help us prioritize.</p>
+  </div>
+  <a href="/roadmap" class="bg-crab-coral hover:bg-crab-coral-light text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap">
+    View Roadmap
+  </a>
+</div>
+
+<!-- The Problem -->
+<div class="about-section">
+  <h2 class="font-display">The problem</h2>
+  <p>Fifteen friends want to go somewhere together. Someone suggests it in a group text. Everyone says "yeah, I'm down." Then nothing happens for three months. Eventually one person — the organizer, always the same person — creates a spreadsheet. They start collecting dates, preferences, and budgets via a mix of texts, emails, and phone calls. Half the group never responds. The organizer does all the research, picks a destination, books a hotel, and tells everyone what they owe.</p>
+  <p>We've watched this play out firsthand. One of our early testers organized a 50th birthday trip for <strong>17 people</strong>. He built a PDF tracking every attendee, their room assignment, flight details, and cost breakdown — and emailed it to the entire group. Every time something changed, he rebuilt the PDF and re-sent it. That's the current state of the art for group travel: <strong>a PDF attached to an email thread.</strong></p>
+  <p>It doesn't have to be this hard. The preferences, the dates, the budgets, the voting, the research — all of it is work that software should be doing. The group should just make decisions and show up.</p>
+</div>
+
+<!-- What crab.travel Does -->
+<div class="about-section">
+  <h2 class="font-display">What crab.travel does</h2>
+  <p>crab.travel is a <strong>group trip coordination platform</strong>. One person creates a trip and shares a link. Everyone who opens the link fills out their preferences — budget, interests, travel style, dietary needs, dates that work and dates that don't. No app to download, no account required.</p>
+  <p>Once people start joining, the AI goes to work. For each destination on the table, it generates a researched card — real hotels with prices, real activities with specific names and locations, real restaurants, upcoming events and festivals during your travel window. Each card gets a compatibility score based on how well it matches the group's collective preferences and budget.</p>
+  <p>Members vote on destinations using a rank-order system (#1, #2, #3) so the organizer gets real signal, not just thumbs-up noise. A shared availability calendar shows everyone's dates overlaid with color coding — green for "ideal," amber for "if needed," red for "can't go." The organizer can see at a glance which week works for the most people without asking anyone individually.</p>
+  <p>Behind the scenes, we run real travel searches across multiple providers (Duffel, LiteAPI, Viator, Travelpayouts) for flights, hotels, and activities. Results stream in as they arrive and include deep links to booking partners. We track price history so we can tell you when something gets cheaper.</p>
+</div>
+
+<!-- What Makes This Different -->
+<div class="about-section">
+  <h2 class="font-display">What makes this different</h2>
+  <p>This is not another travel booking site. Expedia, Kayak, and Google Flights are great at finding a flight for one person who already knows where they're going and when. They're useless for 15 people who haven't agreed on anything yet.</p>
+  <p>It's not another group chat app. WhatsApp and iMessage are great for conversations. They're terrible for decisions. Important information gets buried, nobody tracks who said what, and there's no structure to move from "talking about it" to "booked."</p>
+  <p>crab.travel is a <strong>coordination layer</strong> that sits between the conversation and the booking. The AI does the research. The platform handles the voting, the dates, the preferences, and the logistics. People make the final calls. Nobody has to be the spreadsheet person.</p>
+
+  <div class="mt-6 bg-white/[0.02] border border-white/6 rounded-xl p-5">
+    <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-3">The real competition</p>
+    <div class="comp-row">
+      <span class="comp-label">How people plan now</span>
+      <span class="comp-us">What crab.travel does instead</span>
+    </div>
+    <div class="comp-row">
+      <span class="comp-label">Group text for destination ideas</span>
+      <span class="comp-us">AI-researched destination cards with real activities, events, and prices</span>
+    </div>
+    <div class="comp-row">
+      <span class="comp-label">Spreadsheet for dates and budgets</span>
+      <span class="comp-us">Visual availability calendar + preference intake per member</span>
+    </div>
+    <div class="comp-row">
+      <span class="comp-label">"Just pick one" in the group chat</span>
+      <span class="comp-us">Rank-order voting with live tallies and compatibility scores</span>
+    </div>
+    <div class="comp-row">
+      <span class="comp-label">One person Googles everything</span>
+      <span class="comp-us">4 travel search providers queried in parallel, results streamed in real time</span>
+    </div>
+    <div class="comp-row">
+      <span class="comp-label">PDF emailed to everyone</span>
+      <span class="comp-us">Shared trip page — always current, everyone sees the same thing</span>
+    </div>
+    <div class="comp-row" style="border-bottom:none;">
+      <span class="comp-label">"Check your email, I sent the updated costs"</span>
+      <span class="comp-us">Coming soon: per-person cost breakdown with Venmo/Zelle links</span>
+    </div>
+  </div>
+</div>
+
+<!-- How It Works Under the Hood -->
+<div class="about-section">
+  <h2 class="font-display">How it works under the hood</h2>
+  <p>The AI layer uses <strong>Anthropic's Claude</strong> for all the intelligence — destination research, recommendation generation, preference aggregation, and compatibility scoring. It's not a chatbot bolted onto a travel site; the AI is the research engine that powers every destination card and recommendation.</p>
+  <p>Travel data comes from <strong>four real API providers</strong> running in parallel: Duffel for flexible flights, Travelpayouts for global deals, LiteAPI for hotels across multiple sources, and Viator (the world's largest activities marketplace) for tours and experiences. Results are deduplicated, priced, and linked to booking partners. We earn affiliate commission when someone books — that's the core revenue model.</p>
+  <p>The preference engine aggregates everyone's inputs into a group profile: budget overlap (the range that works for everyone), shared interests, combined dietary needs, accessibility requirements. This profile drives the AI's recommendations. A group of foodie hikers on a moderate budget gets different results than a party crew with a luxury budget — because they should.</p>
+  <p>Everything runs on <strong>Google Cloud Platform</strong> (App Engine + Cloud SQL) with a Flask backend. The invite system works without authentication — members participate via a unique token, no account required. Authenticated users get extras like Google Calendar sync and persistent profiles across trips.</p>
+</div>
+
+<!-- Where We Are Now -->
+<div class="about-section">
+  <h2 class="font-display">Where we are right now</h2>
+  <p>crab.travel is live and functional for the core loop: <strong>create a trip, invite people, collect preferences, research destinations, vote, and search for flights and hotels.</strong> That's Stage 1 — the foundation that proves the coordination engine works.</p>
+  <p>What's coming next is the stuff that turns it from a voting tool into the thing that fully replaces the spreadsheet: per-person cost tracking, day-by-day itinerary building, room assignments, flight tracking, price drop alerts, SMS voting for the people who won't open a browser, and email digests for the lurkers who need a weekly nudge to stay engaged.</p>
+  <p>The full breakdown of what's shipped, what's next, and what's on the long-term horizon is on our <a href="/roadmap" class="text-crab-coral hover:underline font-semibold">public roadmap</a>. Every section has a comment thread — we're building this in the open and your feedback directly shapes what gets built next.</p>
+</div>
+
+<!-- The Bigger Picture -->
+<div class="about-section">
+  <h2 class="font-display">The bigger picture</h2>
+  <p>Group trips are the starting point, not the destination. The same engine that coordinates 15 friends going to Nashville — preference matching, calendar aggregation, AI-powered recommendations, group decision-making — can coordinate a lot of other things.</p>
+  <p>The next major use case is a <strong>life concierge for active retirees</strong>: people with time, money, and a desire to stay connected to family and active in life, but who lack the structure or activation energy to make it happen. Same infrastructure, different onboarding, monthly delivery cadence, and family calendar integration on top. If you're a financial advisor serving retirees, this is the non-financial value-add your clients are asking for.</p>
+  <p>But first, we're making group trips work perfectly. Every decision is designed so the architecture serves both use cases without rework. The roadmap has the details.</p>
+</div>
+
+<!-- Why "Crab" -->
+<div class="about-section mb-16">
+  <h2 class="font-display">Why "Crab"?</h2>
+  <p>The name came from a conversation between friends about starting a business involving crabs — honestly, the exact reason is lost to time. But the domain <strong>crab.travel</strong> cost a penny, and if you look closely at the logo, there's an <strong>E</strong> hidden in the right claw and an <strong>X</strong> in the left. Explore. That's the point.</p>
+</div>
+
+</div>
+{% endblock %}

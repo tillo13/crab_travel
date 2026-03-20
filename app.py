@@ -214,9 +214,14 @@ def terms():
     return render_template('terms.html', active_page=None)
 
 
+@app.route('/about')
+def about():
+    return render_template('about.html', active_page='about')
+
+
 @app.route('/roadmap')
 def roadmap():
-    return render_template('roadmap.html', active_page=None)
+    return render_template('roadmap.html', active_page='about')
 
 
 @app.route('/api/roadmap/comments', methods=['GET'])
