@@ -325,6 +325,7 @@
 
 <script>
 window.BRAINSTORM_PAGE_KEY = 'roadmap';
+var _rmLoadedAt = Date.now();
 
 (function() {
     var PAGE_KEY = window.BRAINSTORM_PAGE_KEY;
@@ -345,6 +346,7 @@ window.BRAINSTORM_PAGE_KEY = 'roadmap';
             '<div class="bs-comments-body">' +
                 '<div class="bs-comments-feed"></div>' +
                 '<form class="bs-comments-form">' +
+                    '<input type="text" name="website" class="bs-comments-hp" autocomplete="off" tabindex="-1" style="position:absolute;left:-9999px;opacity:0;height:0;width:0;">' +
                     '<textarea class="bs-comments-input" placeholder="Feedback, ideas, priorities..." rows="2" maxlength="2000"></textarea>' +
                     '<button type="submit" class="bs-comments-submit">Post</button>' +
                 '</form>' +
@@ -365,10 +367,11 @@ window.BRAINSTORM_PAGE_KEY = 'roadmap';
             var btn = el.querySelector('.bs-comments-submit');
             btn.disabled = true;
 
+            var hp = el.querySelector('.bs-comments-hp').value;
             fetch('/api/roadmap/comments', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({section_idx: sectionIdx, text: text})
+                body: JSON.stringify({section_idx: sectionIdx, text: text, honeypot: hp, time_open: Date.now() - _rmLoadedAt})
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {

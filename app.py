@@ -259,6 +259,16 @@ def api_roadmap_comments_post():
     if not data or 'text' not in data:
         return jsonify({'success': False}), 400
 
+    # Anti-bot: honeypot and timing check
+    honeypot = data.get('honeypot', '').strip()
+    time_open = data.get('time_open', 0)
+    if honeypot:
+        logger.warning(f"Roadmap spam blocked: honeypot from {request.remote_addr}")
+        return jsonify({'success': True, 'comment': {'id': 0, 'section_idx': 0, 'author_name': 'Guest', 'author_type': 'anon', 'comment_text': '', 'created_at': ''}}), 200
+    if time_open < 2000:
+        logger.warning(f"Roadmap spam blocked: too fast ({time_open}ms) from {request.remote_addr}")
+        return jsonify({'success': True, 'comment': {'id': 0, 'section_idx': 0, 'author_name': 'Guest', 'author_type': 'anon', 'comment_text': '', 'created_at': ''}}), 200
+
     section_idx = int(data.get('section_idx', 0))
     text = data['text'].strip()[:2000]
     if not text:
