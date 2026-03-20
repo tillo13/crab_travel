@@ -214,6 +214,92 @@ def terms():
     return render_template('terms.html', active_page=None)
 
 
+@app.route('/roadmap')
+def roadmap():
+    return render_template('roadmap.html', active_page=None)
+
+
+@app.route('/api/roadmap/comments', methods=['GET'])
+def api_roadmap_comments_get():
+    """Fetch all comments for the roadmap page."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS crab.roadmap_comments (
+                id SERIAL PRIMARY KEY,
+                section_idx INTEGER NOT NULL,
+                author_name TEXT NOT NULL,
+                author_type TEXT DEFAULT 'anon',
+                comment_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cur.execute("""
+            SELECT id, section_idx, author_name, author_type, comment_text, created_at
+            FROM crab.roadmap_comments ORDER BY section_idx, created_at ASC
+        """)
+        comments = [dict(r) for r in cur.fetchall()]
+        for c in comments:
+            if c.get('created_at'):
+                c['created_at'] = c['created_at'].isoformat()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'comments': comments})
+    except Exception as e:
+        logger.error(f"Roadmap comments GET error: {e}")
+        return jsonify({'success': False, 'comments': []})
+
+
+@app.route('/api/roadmap/comments', methods=['POST'])
+def api_roadmap_comments_post():
+    """Post a comment to a roadmap section. Works for logged-in or anonymous users."""
+    data = request.get_json()
+    if not data or 'text' not in data:
+        return jsonify({'success': False}), 400
+
+    section_idx = int(data.get('section_idx', 0))
+    text = data['text'].strip()[:2000]
+    if not text:
+        return jsonify({'success': False}), 400
+
+    # Determine author
+    if 'user' in session and session['user'].get('name'):
+        author_name = session['user']['name']
+        author_type = 'user'
+    else:
+        anon_id = request.cookies.get('crab_anon')
+        if not anon_id:
+            import random
+            anon_id = f"anon_{random.randint(10000, 99999)}"
+        author_name = f"Guest {anon_id[-5:]}"
+        author_type = 'anon'
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO crab.roadmap_comments (section_idx, author_name, author_type, comment_text)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id, section_idx, author_name, author_type, comment_text, created_at
+        """, (section_idx, author_name, author_type, text))
+        conn.commit()
+        row = dict(cur.fetchone())
+        if row.get('created_at'):
+            row['created_at'] = row['created_at'].isoformat()
+        cur.close()
+        conn.close()
+
+        resp = jsonify({'success': True, 'comment': row})
+        if author_type == 'anon':
+            resp.set_cookie('crab_anon', anon_id, max_age=60*60*24*365, httponly=True, samesite='Lax')
+        return resp
+    except Exception as e:
+        logger.error(f"Roadmap comment POST error: {e}")
+        return jsonify({'success': False}), 500
+
+
 @app.route('/contact')
 def contact():
     return render_template('contact.html', active_page=None)

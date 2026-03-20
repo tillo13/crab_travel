@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Roadmap — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .rm-section {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+  html:not(.dark) .rm-section { background: white; border-color: #e5e7eb; }
+  .rm-section h3 { margin-bottom: 0.5rem; }
+  .rm-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+  }
+  .rm-badge-done { background: rgba(16,185,129,0.15); color: #10B981; }
+  .rm-badge-next { background: rgba(232,89,58,0.15); color: #E8593A; }
+  .rm-badge-future { background: rgba(255,255,255,0.08); color: #C8C2B8; }
+  .rm-item { padding: 0.35rem 0; font-size: 0.875rem; }
+  .rm-item-done { opacity: 0.5; text-decoration: line-through; }
+
+  /* Comment system */
+  .bs-comments { margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem; }
+  .bs-comments-toggle {
+    cursor: pointer; font-size: 0.75rem; color: #C8C2B8; opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  .bs-comments-toggle:hover { opacity: 1; }
+  .bs-comments-body { margin-top: 0.75rem; }
+  .bs-comments-feed { max-height: 300px; overflow-y: auto; }
+  .bs-comment { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.8rem; }
+  .bs-comment-author { font-weight: 600; color: #E8593A; }
+  .bs-comment-anon .bs-comment-author { color: #C8C2B8; font-style: italic; }
+  .bs-comment-time { font-size: 0.65rem; color: rgba(200,194,184,0.4); margin-left: 0.5rem; }
+  .bs-comment-text { margin-top: 0.25rem; color: #F0EAE0; line-height: 1.5; }
+  html:not(.dark) .bs-comment-text { color: #333; }
+  .bs-comments-form { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: flex-end; }
+  .bs-comments-input {
+    flex: 1; padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: inherit; font-size: 0.8rem; resize: none; font-family: inherit;
+  }
+  html:not(.dark) .bs-comments-input { background: #f9fafb; border-color: #e5e7eb; color: #111; }
+  .bs-comments-input:focus { border-color: #E8593A; outline: none; }
+  .bs-comments-submit {
+    padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600;
+    background: #E8593A; color: white; border: none; cursor: pointer;
+    white-space: nowrap;
+  }
+  .bs-comments-submit:hover { background: #F47A5F; }
+  .bs-comments-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto animate-in">
+
+<div class="mb-8">
+  <h1 class="text-3xl font-display mb-2">Roadmap</h1>
+  <p class="text-crab-sand-dim text-sm">Where we are, where we're going, and what matters most. Leave feedback on any section — it helps us prioritize.</p>
+</div>
+
+<!-- ═══ STAGE 1: LIVE NOW ═══ -->
+<div class="mb-10">
+  <h2 class="text-xl font-display text-crab-coral mb-4">Stage 1 — Live Now</h2>
+
+  <div class="rm-section" data-section="0">
+    <h3 class="font-display text-lg">Trip Creation & Invites <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Create a trip, share a link, anyone can join without signing up.</p>
+    <div class="rm-item rm-item-done">Organizer creates trip with destinations, dates, headcount</div>
+    <div class="rm-item rm-item-done">Unique invite link (crab.travel/to/XXXX) — no app download</div>
+    <div class="rm-item rm-item-done">Members join and fill preferences (budget, interests, dietary, mobility)</div>
+    <div class="rm-item rm-item-done">Anonymous or Google-authenticated participation</div>
+  </div>
+
+  <div class="rm-section" data-section="1">
+    <h3 class="font-display text-lg">Voting & Availability <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Group decision-making that actually works.</p>
+    <div class="rm-item rm-item-done">Rank-order destination voting (#1, #2, #3)</div>
+    <div class="rm-item rm-item-done">Date availability calendar with color-coded preferences (ideal / if needed / can't go)</div>
+    <div class="rm-item rm-item-done">Inline date range picker</div>
+    <div class="rm-item rm-item-done">Member-suggested destinations with coordinator approval</div>
+    <div class="rm-item rm-item-done">Trip stages (Voting / Planning / Booked)</div>
+  </div>
+
+  <div class="rm-section" data-section="2">
+    <h3 class="font-display text-lg">AI Destination Research <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Claude researches each destination and builds a Pinterest-style board.</p>
+    <div class="rm-item rm-item-done">AI-generated destination cards (stays, activities, food, events)</div>
+    <div class="rm-item rm-item-done">Compatibility scoring based on group preferences</div>
+    <div class="rm-item rm-item-done">Group vibes override (e.g. "tailgating" filters all recommendations)</div>
+    <div class="rm-item rm-item-done">"Suggest for us" — AI proposes 5 destinations from group profile</div>
+  </div>
+
+  <div class="rm-section" data-section="3">
+    <h3 class="font-display text-lg">Travel Search & Deals <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Real flight, hotel, and activity prices from multiple sources.</p>
+    <div class="rm-item rm-item-done">4 search adapters running in parallel (Duffel, LiteAPI, Viator, Travelpayouts)</div>
+    <div class="rm-item rm-item-done">Streaming results via SSE — prices appear as they come in</div>
+    <div class="rm-item rm-item-done">Global deals dashboard refreshed daily</div>
+    <div class="rm-item rm-item-done">Deep links to booking partners (affiliate revenue)</div>
+  </div>
+
+  <div class="rm-section" data-section="4">
+    <h3 class="font-display text-lg">Chat & Notifications <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Keep the group in the loop without a group text.</p>
+    <div class="rm-item rm-item-done">Trip chat with threaded replies</div>
+    <div class="rm-item rm-item-done">Email notifications (real-time, daily digest, weekly digest)</div>
+    <div class="rm-item">SMS notifications — pending Twilio A2P campaign approval</div>
+    <div class="rm-item rm-item-done">Notification channel preferences per user</div>
+  </div>
+</div>
+
+<!-- ═══ STAGE 2: UP NEXT ═══ -->
+<div class="mb-10">
+  <h2 class="text-xl font-display text-crab-teal mb-4">Stage 2 — Up Next</h2>
+
+  <div class="rm-section" data-section="5">
+    <h3 class="font-display text-lg">Price Drop Alerts <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">We already track price history. Now we just need to tell you when something drops.</p>
+    <div class="rm-item">Monitor flights and hotels for locked-in destinations</div>
+    <div class="rm-item">Email/SMS alert when price drops below threshold or by X%</div>
+    <div class="rm-item">"Best time to book" recommendation based on price trends</div>
+  </div>
+
+  <div class="rm-section" data-section="6">
+    <h3 class="font-display text-lg">Per-Person Cost Breakdown <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">No more spreadsheets tracking who owes what.</p>
+    <div class="rm-item">Running total per person (flight + hotel + activities)</div>
+    <div class="rm-item">Organizer marks shared vs. individual expenses</div>
+    <div class="rm-item">Venmo/Zelle deep links for easy settlement</div>
+    <div class="rm-item">Visual "who's paid / who owes" dashboard</div>
+  </div>
+
+  <div class="rm-section" data-section="7">
+    <h3 class="font-display text-lg">Day-by-Day Itinerary <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Turn the pin board into an actual schedule.</p>
+    <div class="rm-item">Drag activities into day slots from the destination board</div>
+    <div class="rm-item">Shared timeline view — everyone sees the plan</div>
+    <div class="rm-item">AI suggests optimal ordering based on location and hours</div>
+  </div>
+
+  <div class="rm-section" data-section="8">
+    <h3 class="font-display text-lg">Room Assignments & Flight Tracking <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">The stuff group organizers currently track in a PDF.</p>
+    <div class="rm-item">Organizer assigns members to rooms/units</div>
+    <div class="rm-item">Members enter flight confirmation or airline + flight number</div>
+    <div class="rm-item">"Who's arriving when" timeline for pickup coordination</div>
+    <div class="rm-item">Export trip summary as PDF (flights, rooms, costs, itinerary)</div>
+  </div>
+
+  <div class="rm-section" data-section="9">
+    <h3 class="font-display text-lg">SMS Voting & Replies <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Not everyone will log in. Meet them where they are.</p>
+    <div class="rm-item">Reply "1" for Nashville, "2" for Phoenix — vote via text</div>
+    <div class="rm-item">Inbound SMS commands (confirm attendance, vote, RSVP)</div>
+    <div class="rm-item">Chat messages forwarded to SMS, replies flow back into chat</div>
+  </div>
+
+  <div class="rm-section" data-section="10">
+    <h3 class="font-display text-lg">Email Digest for Lurkers <span class="rm-badge rm-badge-next">next</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Weekly recap that keeps everyone engaged without nagging.</p>
+    <div class="rm-item">"3 new votes — Nashville is winning. Flights dropped to $189."</div>
+    <div class="rm-item">One-click actions from email (vote, confirm dates, view itinerary)</div>
+    <div class="rm-item">Smart timing — only send when there's actually news</div>
+  </div>
+</div>
+
+<!-- ═══ STAGE 3: FUTURE VISION ═══ -->
+<div class="mb-10">
+  <h2 class="text-xl font-display text-crab-sand-dim mb-4">Stage 3 — Future Vision</h2>
+
+  <div class="rm-section" data-section="11">
+    <h3 class="font-display text-lg">Shareable Trip Cards <span class="rm-badge rm-badge-future">future</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Make the invite link look amazing when shared.</p>
+    <div class="rm-item">Rich OG image preview (destination photo, dates, member count)</div>
+    <div class="rm-item">iMessage / WhatsApp / social media optimized link previews</div>
+    <div class="rm-item">Embeddable mini-widget for blogs and newsletters</div>
+  </div>
+
+  <div class="rm-section" data-section="12">
+    <h3 class="font-display text-lg">Group Booking & Negotiated Rates <span class="rm-badge rm-badge-future">future</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">15 rooms is leverage. Use it.</p>
+    <div class="rm-item">Bulk hotel booking with group rate negotiation</div>
+    <div class="rm-item">Group flight booking for shared itineraries</div>
+    <div class="rm-item">Activity bundle discounts from Viator/GetYourGuide partners</div>
+  </div>
+
+  <div class="rm-section" data-section="13">
+    <h3 class="font-display text-lg">Retiree Life Concierge <span class="rm-badge rm-badge-future">future</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Same engine, different use case — monthly life planning for active retirees.</p>
+    <div class="rm-item">Onboarding flow tuned for 55+ (interests, family, pace of life)</div>
+    <div class="rm-item">Family calendar integration — never miss a grandkid's event</div>
+    <div class="rm-item">Monthly "Life Plan" with local events, trips, and activities</div>
+    <div class="rm-item">Financial advisor white-label partnership channel</div>
+  </div>
+
+  <div class="rm-section" data-section="14">
+    <h3 class="font-display text-lg">Local Event Marketplace <span class="rm-badge rm-badge-future">future</span></h3>
+    <p class="text-crab-sand-dim text-sm mb-3">Two-sided: venues submit events, AI matches them to the right groups.</p>
+    <div class="rm-item">Submit any URL, email, or flyer — AI normalizes it</div>
+    <div class="rm-item">Auto-tagged by category, physical demand, price, accessibility</div>
+    <div class="rm-item">Featured placement for promoted events (revenue)</div>
+  </div>
+</div>
+
+<div class="text-center text-crab-sand-dim text-xs mb-12 opacity-50">
+  Last updated March 2026
+</div>
+
+</div>
+
+<script>
+window.BRAINSTORM_PAGE_KEY = 'roadmap';
+
+(function() {
+    var PAGE_KEY = window.BRAINSTORM_PAGE_KEY;
+    var sections = document.querySelectorAll('.rm-section');
+    if (!sections.length) return;
+
+    var containers = [];
+
+    sections.forEach(function(section, idx) {
+        var sectionIdx = parseInt(section.dataset.section, 10);
+        var el = document.createElement('div');
+        el.className = 'bs-comments';
+        el.dataset.idx = sectionIdx;
+        el.innerHTML =
+            '<div class="bs-comments-toggle" role="button" tabindex="0">' +
+                '<span class="bs-comments-count">0 notes</span>' +
+            '</div>' +
+            '<div class="bs-comments-body" hidden>' +
+                '<div class="bs-comments-feed"></div>' +
+                '<form class="bs-comments-form">' +
+                    '<textarea class="bs-comments-input" placeholder="Feedback, ideas, priorities..." rows="2" maxlength="2000"></textarea>' +
+                    '<button type="submit" class="bs-comments-submit">Post</button>' +
+                '</form>' +
+            '</div>';
+        section.appendChild(el);
+        containers[sectionIdx] = el;
+
+        el.querySelector('.bs-comments-toggle').addEventListener('click', function() {
+            var body = el.querySelector('.bs-comments-body');
+            body.hidden = !body.hidden;
+        });
+
+        el.querySelector('.bs-comments-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var input = el.querySelector('.bs-comments-input');
+            var text = input.value.trim();
+            if (!text) return;
+            var btn = el.querySelector('.bs-comments-submit');
+            btn.disabled = true;
+
+            fetch('/api/roadmap/comments', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({section_idx: sectionIdx, text: text})
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    input.value = '';
+                    appendComment(el, data.comment);
+                    updateCount(el);
+                }
+            })
+            .finally(function() { btn.disabled = false; });
+        });
+    });
+
+    // Load existing comments
+    fetch('/api/roadmap/comments')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) return;
+            data.comments.forEach(function(c) {
+                var container = containers[c.section_idx];
+                if (container) appendComment(container, c);
+            });
+            containers.forEach(function(c) { if (c) updateCount(c); });
+        });
+
+    function appendComment(container, c) {
+        var feed = container.querySelector('.bs-comments-feed');
+        var div = document.createElement('div');
+        div.className = 'bs-comment' + (c.author_type === 'user' ? ' bs-comment-user' : ' bs-comment-anon');
+        var time = c.created_at ? timeAgo(new Date(c.created_at + 'Z')) : '';
+        div.innerHTML =
+            '<span class="bs-comment-author">' + escapeHtml(c.author_name) + '</span>' +
+            '<span class="bs-comment-time">' + time + '</span>' +
+            '<div class="bs-comment-text">' + escapeHtml(c.comment_text) + '</div>';
+        feed.appendChild(div);
+    }
+
+    function updateCount(container) {
+        var count = container.querySelectorAll('.bs-comment').length;
+        var label = count === 1 ? '1 note' : count + ' notes';
+        container.querySelector('.bs-comments-count').textContent = label;
+    }
+
+    function escapeHtml(text) {
+        var d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function timeAgo(date) {
+        var s = Math.floor((Date.now() - date.getTime()) / 1000);
+        if (s < 60) return 'just now';
+        if (s < 3600) return Math.floor(s / 60) + 'm ago';
+        if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+        return Math.floor(s / 86400) + 'd ago';
+    }
+})();
+</script>
+{% endblock %}
