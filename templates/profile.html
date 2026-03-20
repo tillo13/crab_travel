@@ -130,10 +130,19 @@
 
     <!-- Phone number (optional, enables SMS) -->
     <div class="mb-4">
-      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number <span class="opacity-50">(for SMS)</span></label>
-      <input type="tel" name="phone_number" placeholder="+1 (555) 123-4567"
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <input type="tel" name="phone_number" id="phone-number" placeholder="+1 (555) 123-4567"
         value="{{ user_phone or '' }}"
         class="input-field max-w-xs">
+    </div>
+
+    <!-- SMS consent checkbox — required for Twilio A2P compliance -->
+    <div class="mb-4" id="sms-consent-wrap" style="{% if not user_phone %}display:none{% endif %}">
+      <label class="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" name="sms_consent" id="sms-consent" class="mt-0.5 accent-crab-coral"
+          {% if notify_prefs.notify_channel in ['sms', 'both'] %}checked{% endif %}>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <a href="/terms" class="underline text-crab-coral">Terms</a> &amp; <a href="/privacy" class="underline text-crab-coral">Privacy</a>.</span>
+      </label>
     </div>
 
     <!-- Channel preference -->
@@ -214,6 +223,26 @@ airportInput.addEventListener('input', function() {
 // Resolve on page load if value exists
 if (airportInput.value.trim()) resolveAirport(airportInput.value.trim());
 
+// Show SMS consent checkbox when phone number is entered
+var phoneInput = document.getElementById('phone-number');
+var consentWrap = document.getElementById('sms-consent-wrap');
+var consentBox = document.getElementById('sms-consent');
+phoneInput.addEventListener('input', function() {
+  consentWrap.style.display = this.value.trim() ? '' : 'none';
+});
+
+// Block SMS/Both channel selection without consent
+document.querySelectorAll('input[name="notify_channel"]').forEach(function(radio) {
+  radio.addEventListener('change', function() {
+    if ((this.value === 'sms' || this.value === 'both') && !consentBox.checked) {
+      consentBox.focus();
+      consentWrap.style.display = '';
+      consentWrap.classList.add('ring-1', 'ring-crab-coral', 'rounded-lg', 'p-2');
+      setTimeout(function() { consentWrap.classList.remove('ring-1', 'ring-crab-coral', 'rounded-lg', 'p-2'); }, 2000);
+    }
+  });
+});
+
 document.getElementById('profile-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;
@@ -221,6 +250,12 @@ document.getElementById('profile-form').addEventListener('submit', async functio
   var interestsRaw = form.interests_text.value.trim();
   var interests = interestsRaw ? interestsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
   var travelStyles = Array.from(form.querySelectorAll('input[name="travel_style"]:checked')).map(function(cb) { return cb.value; });
+  var chosenChannel = form.querySelector('input[name="notify_channel"]:checked')?.value || 'email';
+  var hasConsent = form.sms_consent.checked;
+  // If they chose SMS or Both but didn't check consent, fall back to email
+  if ((chosenChannel === 'sms' || chosenChannel === 'both') && !hasConsent) {
+    chosenChannel = 'email';
+  }
   var data = {
     interests: interests,
     travel_style: travelStyles.length ? travelStyles.join(',') : null,
@@ -231,7 +266,8 @@ document.getElementById('profile-form').addEventListener('submit', async functio
     home_airport: form.home_airport.value || null,
     bio: form.bio.value || null,
     phone_number: form.phone_number.value.trim() || null,
-    notify_channel: form.querySelector('input[name="notify_channel"]:checked')?.value || 'email',
+    sms_consent: hasConsent,
+    notify_channel: chosenChannel,
     notify_chat: form.querySelector('input[name="notify_chat"]:checked')?.value || 'off',
     notify_updates: form.querySelector('input[name="notify_updates"]:checked')?.value || 'off',
   };

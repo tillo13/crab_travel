@@ -1,6 +1,18 @@
 # Deployment & Git Rules
 
-- **Always deploy using `deploy "commit message"`** (centralized deploy tool, config in deploy.json) — see ~/Desktop/code/master_gcp_deploy/
+## Deployment
+
+```bash
+# ALWAYS use the centralized deploy tool (git push + GCP deploy in one command)
+deploy "commit message"
+```
+- NEVER use raw `git push`, `gcloud app deploy`, or old `git_push.sh`/`git_push.bat` scripts
+- `deploy` always does BOTH git push and GCP deploy — that is the default and expected behavior
+- See `~/.claude/skills/deploy-to-gcp.md` for flags like `--git-only` or `--gcp-only` (only if explicitly needed)
+- Config: `deploy.json` in project root | Tool: `~/Desktop/code/master_gcp_deploy/deploy.py`
+
+## Git Rules
+
 - **Never include Co-Authored-By or any AI attribution in commits.** No Claude references, no AI credits.
 
 ---

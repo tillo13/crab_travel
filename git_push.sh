@@ -1,16 +1,24 @@
 #!/bin/bash
 # ============================================================================
-# MIGRATION NOTE (2026-03-12):
-# This script is being replaced by the centralized deploy tool at:
-#   ~/Desktop/code/master_gcp_deploy/deploy.py (symlinked to ~/.local/bin/deploy)
-# Config for this project lives in: deploy.json (in this directory)
-#
-# New usage:  deploy "commit message"
-# Old usage:  ./git_push.sh "commit message"
-#
-# This script still works but will be removed once migration is verified.
+# DEPRECATED (2026-03-14): Use the centralized deploy tool instead.
+#   deploy "commit message"
+# This script is kept for reference only. It will not run.
 # See: ~/Desktop/code/master_gcp_deploy/ for full documentation.
 # ============================================================================
+
+# Block execution — redirect to centralized deploy tool
+echo ""
+echo "⛔ This script is deprecated and disabled."
+echo ""
+echo "Use the centralized deploy tool instead:"
+echo "   deploy \"your commit message\""
+echo ""
+echo "The old git_push.sh left orphaned gcloud processes that consumed"
+echo "hundreds of percent CPU. The deploy tool exits cleanly."
+echo ""
+exit 1
+
+# === ORIGINAL SCRIPT BELOW (kept for reference, unreachable) ===
 
 # CRAB.TRAVEL PROJECT CONFIGURATION
 EXPECTED_PROJECT="crab-travel"
