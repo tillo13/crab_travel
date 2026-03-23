@@ -1,23 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Crab Crawlers — crab.travel{% endblock %}
+{% block title %}Live — crab.travel{% endblock %}
 {% block head %}
 <style>
-  .bot-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; padding: 1rem; }
-  html:not(.dark) .bot-card { background: white; border-color: #e5e7eb; }
-  .phase-badge { display: inline-block; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.15rem 0.5rem; border-radius: 9999px; }
+  .trip-card {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.75rem; padding: 1.25rem; transition: all 0.3s;
+  }
+  html:not(.dark) .trip-card { background: white; border-color: #e5e7eb; }
+  .trip-card:hover { border-color: rgba(232,89,58,0.3); }
+  .trip-card.is-running { border-color: rgba(59,130,246,0.3); animation: pulse-border 2s ease-in-out infinite; }
+  @keyframes pulse-border { 0%,100% { border-color: rgba(59,130,246,0.2); } 50% { border-color: rgba(59,130,246,0.5); } }
+  .phase-badge { display: inline-block; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.1rem 0.45rem; border-radius: 9999px; }
   .badge-passed { background: rgba(16,185,129,0.15); color: #10B981; }
   .badge-failed { background: rgba(239,68,68,0.15); color: #EF4444; }
   .badge-warning { background: rgba(245,158,11,0.15); color: #F59E0B; }
   .badge-running { background: rgba(59,130,246,0.15); color: #3B82F6; }
+  .badge-crawl { background: rgba(232,89,58,0.15); color: #E8593A; }
   .badge-idle { background: rgba(255,255,255,0.06); color: #9CA3AF; }
-  .event-row { padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.8rem; }
+  .event-row { padding: 0.35rem 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.78rem; }
   .event-row:last-child { border-bottom: none; }
   .event-ok { color: #10B981; }
   .event-error { color: #EF4444; }
   .event-warning { color: #F59E0B; }
-  #event-log { max-height: 400px; overflow-y: auto; }
+  #activity-feed { max-height: 500px; overflow-y: auto; }
   .btn-bot { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
   .btn-bot:disabled { opacity: 0.4; cursor: not-allowed; }
+  .dest-tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: rgba(232,89,58,0.1); color: #F47A5F; margin-right: 0.25rem; }
+  html:not(.dark) .dest-tag { background: rgba(232,89,58,0.08); }
+  .stat-num { font-family: 'DM Serif Display', Georgia, serif; }
 </style>
 {% endblock %}
 
@@ -25,17 +35,15 @@
 <div class="max-w-5xl mx-auto animate-in">
 
 <!-- Header -->
-<div class="flex items-center justify-between mb-6">
-  <div>
-    {% if is_admin %}
-    <p class="text-xs text-crab-sand-dim mb-2"><a href="/admin" class="hover:text-crab-coral transition-colors">&larr; Admin Panel</a></p>
-    {% endif %}
-    <h1 class="text-3xl font-display">Crab Crawlers</h1>
-    <p class="text-sm text-crab-sand-dim leading-relaxed">Watch our bots plan a trip in real time — 10 AI personas voting on destinations, debating in chat, searching flights, and coordinating a group trip from scratch. We don't hide in our shell.</p>
-  </div>
+<div class="mb-8">
+  {% if is_admin %}
+  <p class="text-xs text-crab-sand-dim mb-2"><a href="/admin" class="hover:text-crab-coral transition-colors">&larr; Admin Panel</a></p>
+  {% endif %}
+  <h1 class="text-3xl font-display mb-2">Crab Crawlers <span class="text-crab-coral">Live</span></h1>
+  <p class="text-sm text-crab-sand-dim leading-relaxed max-w-2xl">AI-powered crabs are always crawling — planning trips to every corner of the planet, voting on destinations, debating in chat, and coordinating group travel from scratch. Watch it happen in real time. We don't hide in our shell.</p>
 </div>
 
-<!-- Admin Controls (only visible to admins) -->
+<!-- Admin Controls -->
 {% if is_admin %}
 <div class="flex gap-3 mb-6">
   <button id="btn-run-quick" onclick="runBots('quick')" class="btn-bot bg-crab-teal text-white hover:bg-crab-teal-light">Run Quick</button>
@@ -45,78 +53,48 @@
 </div>
 {% endif %}
 
-<!-- Current Run Card -->
-<div id="current-run" class="bot-card mb-6" style="display:none;">
-  <div class="flex items-center justify-between mb-3">
-    <div class="flex items-center gap-3">
-      <h3 class="font-display text-lg">Current Run</h3>
-      <span id="run-status-badge" class="phase-badge badge-idle">idle</span>
-    </div>
-    <div class="text-sm text-crab-sand-dim">
-      <span id="run-mode"></span> &middot; <span id="run-duration"></span>
-    </div>
+<!-- Stats Bar -->
+<div class="grid grid-cols-3 gap-3 mb-6">
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-trips" class="text-2xl stat-num text-crab-coral">0</div>
+    <div class="text-xs text-crab-sand-dim">Trips Planned</div>
   </div>
-  <div class="grid grid-cols-3 gap-3 text-center">
-    <div><div id="run-passed" class="text-xl font-display text-emerald-400">0</div><div class="text-xs text-crab-sand-dim">Passed</div></div>
-    <div><div id="run-failed" class="text-xl font-display text-red-400">0</div><div class="text-xs text-crab-sand-dim">Failed</div></div>
-    <div><div id="run-warned" class="text-xl font-display text-amber-400">0</div><div class="text-xs text-crab-sand-dim">Warnings</div></div>
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-destinations" class="text-2xl stat-num text-crab-teal">0</div>
+    <div class="text-xs text-crab-sand-dim">Destinations</div>
+  </div>
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-crabs" class="text-2xl stat-num text-crab-coral-light">0</div>
+    <div class="text-xs text-crab-sand-dim">Crabs Crawling</div>
   </div>
 </div>
 
-<!-- Bot Grid + Phase Timeline -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-  <!-- Bot Personas -->
-  <div>
-    <h3 class="font-display text-lg mb-3">Bot Personas</h3>
-    <div class="grid grid-cols-2 gap-2" id="bot-grid">
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Marcus Chen</div><div class="text-xs text-crab-sand-dim">SEA &middot; Organizer</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Sarah Kim</div><div class="text-xs text-crab-sand-dim">LAX &middot; Beach lover</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">David Okafor</div><div class="text-xs text-crab-sand-dim">ORD &middot; Wheelchair</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Emily Rodriguez</div><div class="text-xs text-crab-sand-dim">DFW &middot; Luxury</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Jake Thompson</div><div class="text-xs text-crab-sand-dim">JFK &middot; Budget</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Priya Patel</div><div class="text-xs text-crab-sand-dim">SFO &middot; Foodie</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Tom Nguyen</div><div class="text-xs text-crab-sand-dim">ATL &middot; Sports</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Lisa Washington</div><div class="text-xs text-crab-sand-dim">DEN &middot; Suggests dest</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Carlos Mendez</div><div class="text-xs text-crab-sand-dim">MIA &middot; Late joiner</div></div>
-      <div class="bot-card text-center py-3 opacity-40"><div class="text-sm font-medium">Amy Foster</div><div class="text-xs text-crab-sand-dim">BOS &middot; Coffee nerd</div></div>
+<!-- Departures Board -->
+<div class="mb-6">
+  <h2 class="font-display text-xl mb-4">Departures Board</h2>
+  <div id="departures" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="trip-card opacity-40 text-center py-8">
+      <div class="text-sm text-crab-sand-dim">No trips yet. The crabs are warming up...</div>
     </div>
-  </div>
-
-  <!-- Phase Timeline -->
-  <div>
-    <h3 class="font-display text-lg mb-3">Phases</h3>
-    <div id="phase-timeline">
-      <div class="text-sm text-crab-sand-dim opacity-40 py-1">No run data yet. Click "Run Quick" or "Run Full" to start.</div>
-    </div>
-  </div>
-
-</div>
-
-<!-- Live Event Log -->
-<div class="bot-card mb-6">
-  <h3 class="font-display text-lg mb-3">Live Event Log</h3>
-  <div id="event-log">
-    <div class="text-sm text-crab-sand-dim opacity-40">Waiting for bot activity...</div>
   </div>
 </div>
 
-<!-- Run History -->
-<div class="bot-card mb-6">
-  <h3 class="font-display text-lg mb-3">Run History</h3>
-  <div id="run-history">
-    <div class="text-sm text-crab-sand-dim opacity-40">No previous runs.</div>
+<!-- Live Activity Feed -->
+<div class="trip-card mb-6">
+  <h2 class="font-display text-xl mb-3">Activity Feed</h2>
+  <div id="activity-feed">
+    <div class="text-sm text-crab-sand-dim opacity-40">Waiting for crab activity...</div>
   </div>
 </div>
 
 </div>
 
 <script>
+const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 let pollInterval = null;
-let isPolling = false;
 
-// ── API Calls ────────────────────────────────────────────────
-
+// ── Admin API Calls ──────────────────────────────────────────
+{% if is_admin %}
 async function runBots(mode) {
   const btn = mode === 'full' ? document.getElementById('btn-run-full') : document.getElementById('btn-run-quick');
   btn.disabled = true;
@@ -127,164 +105,121 @@ async function runBots(mode) {
     });
     const data = await resp.json();
     if (data.error) { alert(data.error); btn.disabled = false; return; }
-    startPolling();
   } catch(e) { alert('Failed: ' + e); btn.disabled = false; }
 }
-
-async function stopBots() {
-  await fetch('/api/admin/bots/stop', {method: 'POST'});
-}
-
+async function stopBots() { await fetch('/api/admin/bots/stop', {method: 'POST'}); }
 async function cleanupBots() {
   if (!confirm('Delete all bot trip data?')) return;
   const resp = await fetch('/api/admin/bots/cleanup', {method: 'POST'});
   const data = await resp.json();
   alert(`Cleaned up ${data.deleted || 0} bot plans`);
-  pollStatus();
 }
+{% endif %}
 
 // ── Polling ──────────────────────────────────────────────────
-
-function startPolling() {
-  if (pollInterval) return;
-  isPolling = true;
-  pollStatus();
-  pollInterval = setInterval(pollStatus, 3000);
-  document.getElementById('btn-stop').disabled = false;
-}
-
-function stopPolling() {
-  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
-  isPolling = false;
-  document.getElementById('btn-stop').disabled = true;
-  document.getElementById('btn-run-quick').disabled = false;
-  document.getElementById('btn-run-full').disabled = false;
-}
-
 async function pollStatus() {
   try {
     const resp = await fetch('/api/live/status');
     const data = await resp.json();
-    if (!data.success) return;
-    renderStatus(data.data);
-  } catch(e) { console.error('Poll failed:', e); }
+    if (data.success) renderBoard(data.data);
+  } catch(e) { console.error('Poll:', e); }
 }
 
 // ── Rendering ────────────────────────────────────────────────
-
-function renderStatus(data) {
+function renderBoard(data) {
   const {runs, events} = data;
-  if (!runs || runs.length === 0) {
-    document.getElementById('current-run').style.display = 'none';
-    stopPolling();
-    return;
-  }
+  if (!runs || runs.length === 0) return;
 
-  const latest = runs[0];
-  const isRunning = latest.status === 'running';
+  // Stats
+  const allDests = new Set();
+  let totalCrabs = 0;
+  runs.forEach(r => {
+    (r.trip_destinations || []).forEach(d => allDests.add(d));
+    totalCrabs += r.trip_group_size || 0;
+  });
+  document.getElementById('stat-trips').textContent = runs.length;
+  document.getElementById('stat-destinations').textContent = allDests.size;
+  document.getElementById('stat-crabs').textContent = totalCrabs;
 
-  // Current run card
-  const card = document.getElementById('current-run');
-  card.style.display = 'block';
+  // Departures board
+  const board = document.getElementById('departures');
+  board.innerHTML = runs.map(r => {
+    const isRunning = r.status === 'running';
+    const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
+    const title = r.trip_title || r.mode || 'Trip';
+    const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
+    const vibe = r.trip_vibe || '';
+    const size = r.trip_group_size || '?';
+    const statusLabel = r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
 
-  const badge = document.getElementById('run-status-badge');
-  badge.textContent = latest.status;
-  badge.className = 'phase-badge badge-' + (latest.status === 'passed' ? 'passed' : latest.status === 'failed' ? 'failed' : latest.status === 'running' ? 'running' : 'idle');
+    // Duration
+    let duration = '';
+    if (r.started_at) {
+      const start = new Date(r.started_at);
+      const end = r.finished_at ? new Date(r.finished_at) : new Date();
+      const secs = Math.round((end - start) / 1000);
+      duration = secs < 60 ? secs + 's' : Math.floor(secs/60) + 'm ' + (secs%60) + 's';
+    }
 
-  document.getElementById('run-mode').textContent = (latest.mode || 'unknown') + ' mode';
-  document.getElementById('run-passed').textContent = latest.phases_passed || 0;
-  document.getElementById('run-failed').textContent = latest.phases_failed || 0;
-  document.getElementById('run-warned').textContent = latest.phases_warned || 0;
+    // Time ago
+    let timeAgo = '';
+    if (r.started_at) {
+      const mins = Math.round((Date.now() - new Date(r.started_at)) / 60000);
+      timeAgo = mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins/60) + 'h ago';
+    }
 
-  // Duration
-  if (latest.started_at) {
-    const start = new Date(latest.started_at);
-    const end = latest.finished_at ? new Date(latest.finished_at) : new Date();
-    const secs = Math.round((end - start) / 1000);
-    document.getElementById('run-duration').textContent = secs < 60 ? secs + 's' : Math.floor(secs/60) + 'm ' + (secs%60) + 's';
-  }
+    return `<div class="trip-card ${isRunning ? 'is-running' : ''}">
+      <div class="flex items-start justify-between mb-2">
+        <div>
+          <div class="font-display text-base">${title}</div>
+          <div class="text-xs text-crab-sand-dim mt-0.5">${vibe}</div>
+        </div>
+        <span class="phase-badge ${badgeClass}">${statusLabel}</span>
+      </div>
+      <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">destinations loading...</span>'}</div>
+      <div class="flex items-center justify-between text-xs text-crab-sand-dim">
+        <span>${size} crabs</span>
+        <span>${duration} &middot; ${timeAgo}</span>
+      </div>
+    </div>`;
+  }).join('');
 
-  // Phase timeline from summary
-  const timeline = document.getElementById('phase-timeline');
-  if (latest.summary && latest.summary.phases) {
-    timeline.innerHTML = latest.summary.phases.map(p => {
-      const badgeClass = p.status === 'passed' ? 'badge-passed' : p.status === 'failed' ? 'badge-failed' : 'badge-warning';
-      return `<div class="flex items-center gap-2 py-1">
-        <span class="phase-badge ${badgeClass}">${p.status}</span>
-        <span class="text-sm font-medium">${p.name}</span>
-        <span class="text-xs text-crab-sand-dim ml-auto">${p.elapsed.toFixed(1)}s</span>
-      </div>`;
-    }).join('');
-  } else if (isRunning) {
-    // Show active phases from events
-    const phases = [...new Set(events.map(e => e.phase))];
-    timeline.innerHTML = phases.map(p =>
-      `<div class="flex items-center gap-2 py-1"><span class="phase-badge badge-running">active</span><span class="text-sm">${p}</span></div>`
-    ).join('') || '<div class="text-sm text-crab-sand-dim">Starting...</div>';
-  }
-
-  // Event log
-  const logEl = document.getElementById('event-log');
+  // Activity feed
+  const feed = document.getElementById('activity-feed');
   if (events && events.length > 0) {
-    logEl.innerHTML = events.map(e => {
+    feed.innerHTML = events.map(e => {
       const statusClass = e.status === 'ok' ? 'event-ok' : e.status === 'error' ? 'event-error' : 'event-warning';
       const icon = e.status === 'ok' ? '&#10003;' : e.status === 'error' ? '&#10007;' : '&#9888;';
       const time = e.created_at ? new Date(e.created_at).toLocaleTimeString() : '';
+      const botName = (e.bot_name || '').replace('[BOT] ', '');
       return `<div class="event-row">
         <span class="${statusClass}">${icon}</span>
         <span class="text-crab-sand-dim text-xs">${time}</span>
         <span class="text-xs font-medium ml-1">[${e.phase}]</span>
-        <span class="text-xs ml-1">${e.bot_name || ''}</span>
-        <span class="text-xs text-crab-sand-dim ml-1">${e.action || ''}</span>
+        <span class="text-xs ml-1 text-crab-coral">${botName}</span>
+        <span class="text-xs text-crab-sand-dim ml-1">${(e.action || '').replace('[BOT] ', '')}</span>
       </div>`;
     }).join('');
   }
 
-  // Bot grid — highlight bots mentioned in recent events
-  const botCards = document.querySelectorAll('#bot-grid .bot-card');
-  const botNames = ['Marcus', 'Sarah', 'David', 'Emily', 'Jake', 'Priya', 'Tom', 'Lisa', 'Carlos', 'Amy'];
-  const activeBots = new Set(events.filter(e => e.bot_name).map(e => {
-    for (const n of botNames) { if (e.bot_name && e.bot_name.includes(n)) return n; }
-    return null;
-  }).filter(Boolean));
-  botCards.forEach((card, i) => {
-    card.style.opacity = activeBots.has(botNames[i]) ? '1' : '0.4';
-    card.style.borderColor = activeBots.has(botNames[i]) ? 'rgba(232,89,58,0.4)' : '';
-  });
-
-  // Run history
-  const histEl = document.getElementById('run-history');
-  if (runs.length > 0) {
-    histEl.innerHTML = `<table class="w-full text-sm">
-      <thead><tr class="text-xs text-crab-sand-dim">
-        <th class="text-left py-1">Date</th><th class="text-left">Mode</th><th class="text-left">Status</th><th class="text-right">Pass/Fail/Warn</th>
-      </tr></thead>
-      <tbody>${runs.map(r => {
-        const d = r.started_at ? new Date(r.started_at).toLocaleString() : '—';
-        const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : 'badge-idle';
-        return `<tr class="border-t border-white/4">
-          <td class="py-1.5">${d}</td>
-          <td>${r.mode || '—'}</td>
-          <td><span class="phase-badge ${badgeClass}">${r.status}</span></td>
-          <td class="text-right">${r.phases_passed||0} / ${r.phases_failed||0} / ${r.phases_warned||0}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
+  // Manage polling — always poll (crabs are always crawling)
+  if (!pollInterval) {
+    pollInterval = setInterval(pollStatus, 4000);
   }
-
-  // Auto-manage polling
-  if (isRunning && !pollInterval) startPolling();
-  if (!isRunning && pollInterval) stopPolling();
+  // Update admin buttons
+  if (IS_ADMIN) {
+    const hasRunning = runs.some(r => r.status === 'running');
+    const stopBtn = document.getElementById('btn-stop');
+    if (stopBtn) stopBtn.disabled = !hasRunning;
+    const qBtn = document.getElementById('btn-run-quick');
+    const fBtn = document.getElementById('btn-run-full');
+    if (qBtn) qBtn.disabled = hasRunning;
+    if (fBtn) fBtn.disabled = hasRunning;
+  }
 }
 
-// Initial poll on page load
+// Start polling on load
 pollStatus();
-// Auto-start polling if there's a running bot
-setTimeout(() => {
-  fetch('/api/live/status').then(r => r.json()).then(data => {
-    if (data.success && data.data.runs && data.data.runs[0] && data.data.runs[0].status === 'running') {
-      startPolling();
-    }
-  });
-}, 500);
+pollInterval = setInterval(pollStatus, 4000);
 </script>
 {% endblock %}

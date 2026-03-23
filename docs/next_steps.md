@@ -32,11 +32,42 @@ Last updated: 2026-03-22
 
 ---
 
-## Dev Infrastructure — Build Now
+## Dev Infrastructure
 
-### Synthetic Trip Bots (full lifecycle smoke test)
+### Crab Crawlers v1 — SHIPPED 2026-03-22
 
-The real trip is ~300 days out and there are no real users yet. We need bots that simulate the entire trip lifecycle end-to-end, continuously, so we catch regressions before anyone real touches the platform.
+Single bot trip with 10 personas, 11 phases, full E2E against prod. Public dashboard at `/live`.
+
+**What's built:**
+- `dev/trip_bots.py` — orchestrator, 10 personas, CLI (--full/--quick/--phase/--cleanup)
+- `/live` — public page anyone can watch (admin controls hidden for non-admins)
+- `/admin/bots` — same page with run/stop/cleanup buttons
+- `/api/bot/login` — secret-gated bot auth (CRAB_BOT_SECRET in GCP)
+- `/api/live/status` — public status endpoint (polls every 3s)
+- `crab.bot_runs` + `crab.bot_events` tables + CRUD helpers
+- 66 assertions across 11 phases, runs in ~30s (quick) or ~60s (full with AI)
+
+**First run results:** 66/66 passed, 26.8s quick, ~60s full. AI research generated 11 real recommendations.
+
+### Crab Crawlers v2 — NEXT: Multi-Trip Randomizer + Live Departures Board
+
+Scale from 1 bot trip to 20-50 concurrent trips running on staggered schedules, visible as a live "departures board" on `/live`. Different group sizes, destinations, date ranges. Always something happening.
+
+**What to build:**
+- Trip config randomizer: random group size (2-20), random destinations from a pool, random date ranges (10 days to 20 months), random persona combos
+- Staggered scheduler: start a new trip every N minutes, max M concurrent
+- `/live` redesign: grid/feed of ALL active trips (like airport departures board), click into any to watch its bots
+- Connection pool tuning for higher concurrency
+- Skip AI research phase on most trips (save cost), run it on 1-in-5
+
+**Bottleneck analysis:**
+- Cloud SQL connections: pool size caps concurrent DB activity. Need to tune for 20-50 trips.
+- AI cost: ~$0.02/trip (Haiku). 50 trips/hour = ~$25/month. Skip AI on most trips to keep it ~$5/month.
+- App Engine: auto-scales but costs ~$0.05/hr per instance. 20 trips/hour won't trigger extra instances.
+- Search adapter sandbox rate limits: 100-500 req/day. Skip search on most trips, run on 1-in-10.
+- Sweet spot: 20 trips/hour, AI on 20%, search on 10% = ~$8/month total.
+
+**Public "departures board" vision:** Visitors see 10-20 trips in various stages — one just started voting, another has 8 people chatting, another is searching flights. Click any trip to see the live detail. Like watching a stock ticker for travel planning. "We don't hide in our shell."
 
 **The idea:** A set of AI-driven bot personas that create trips, join via invite links, fill out preferences, vote, chat, trigger searches, add expenses, settle up — the whole thing, soup to nuts. Not unit tests. Not "is the page up?" checks. Full behavioral simulation of 10-15 fake people planning a fake trip over days/weeks.
 

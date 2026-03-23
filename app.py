@@ -660,8 +660,8 @@ def api_live_status():
     """Public endpoint — bot run status for the /live page."""
     from utilities.postgres_utils import get_bot_runs, get_bot_events
 
-    runs = get_bot_runs(limit=10)
-    # Serialize datetimes
+    runs = get_bot_runs(limit=20)
+    # Serialize datetimes + extract summary info
     for r in runs:
         for k in ('started_at', 'finished_at'):
             if r.get(k):
@@ -670,17 +670,25 @@ def api_live_status():
             r['plan_id'] = str(r['plan_id'])
         if r.get('run_id'):
             r['run_id'] = str(r['run_id'])
+        # Extract trip info from summary for the departures board
+        summary = r.get('summary') or {}
+        r['trip_title'] = summary.get('title', '')
+        r['trip_destinations'] = summary.get('destinations', [])
+        r['trip_group_size'] = summary.get('group_size', 0)
+        r['trip_vibe'] = summary.get('vibe', '')
 
-    # Get events for the most recent running (or latest) run
+    # Get events for ALL recent runs (last 200 events across all runs)
     events = []
     if runs:
-        active = next((r for r in runs if r['status'] == 'running'), runs[0])
-        events = get_bot_events(active['run_id'], limit=100)
-        for e in events:
-            if e.get('created_at'):
-                e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
-            if e.get('run_id'):
-                e['run_id'] = str(e['run_id'])
+        # Get events for the most recent or active run
+        active = next((r for r in runs if r['status'] == 'running'), runs[0] if runs else None)
+        if active:
+            events = get_bot_events(active['run_id'], limit=100)
+            for e in events:
+                if e.get('created_at'):
+                    e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+                if e.get('run_id'):
+                    e['run_id'] = str(e['run_id'])
 
     return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
 
