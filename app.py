@@ -446,6 +446,28 @@ def api_admin_test_sms():
     return jsonify({'success': False, 'error': 'SMS send failed (A2P may be pending)'})
 
 
+# ── Bot Login (secret-gated, no OAuth needed) ────────────────────────────────
+
+@app.route('/api/bot/login', methods=['POST'])
+def api_bot_login():
+    """Authenticate as a bot user. Gated by CRAB_BOT_SECRET."""
+    data = request.get_json(force=True)
+    secret = data.get('secret', '')
+    user_id = data.get('user_id')
+    expected = get_secret('CRAB_BOT_SECRET')
+    if not expected or secret != expected:
+        return jsonify({'error': 'Forbidden'}), 403
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    from utilities.admin_utils import _get_user_session_data
+    user_data = _get_user_session_data(int(user_id))
+    if not user_data:
+        return jsonify({'error': 'User not found'}), 404
+    session.permanent = True
+    session['user'] = user_data
+    return jsonify({'success': True, 'user': user_data})
+
+
 @app.route('/api/admin/smoke-test', methods=['POST'])
 @api_auth_required
 def api_admin_smoke_test():
@@ -608,6 +630,121 @@ def api_admin_speed_test():
     conn.close()
 
     return jsonify({'success': True, 'results': results, 'threshold_s': THRESHOLD, 'all_ok': all_ok})
+
+
+# ── Bot Testing (Crab Crawlers) admin endpoints ─────────────
+
+@app.route('/admin/bots')
+@login_required
+def admin_bots():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    return render_template('admin_bots.html', active_page='admin')
+
+
+@app.route('/api/admin/bots/status')
+@api_auth_required
+def api_admin_bots_status():
+    from utilities.admin_utils import is_admin
+    from utilities.postgres_utils import get_bot_runs, get_bot_events
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    runs = get_bot_runs(limit=10)
+    # Serialize datetimes
+    for r in runs:
+        for k in ('started_at', 'finished_at'):
+            if r.get(k):
+                r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
+        if r.get('plan_id'):
+            r['plan_id'] = str(r['plan_id'])
+        if r.get('run_id'):
+            r['run_id'] = str(r['run_id'])
+
+    # Get events for the most recent running (or latest) run
+    events = []
+    if runs:
+        active = next((r for r in runs if r['status'] == 'running'), runs[0])
+        events = get_bot_events(active['run_id'], limit=100)
+        for e in events:
+            if e.get('created_at'):
+                e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+            if e.get('run_id'):
+                e['run_id'] = str(e['run_id'])
+
+    return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
+
+
+@app.route('/api/admin/bots/run', methods=['POST'])
+@api_auth_required
+def api_admin_bots_run():
+    from utilities.admin_utils import is_admin
+    from utilities.postgres_utils import get_bot_runs
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    # Check no run is already active
+    runs = get_bot_runs(limit=1)
+    if runs and runs[0]['status'] == 'running':
+        return jsonify({'error': 'A bot run is already in progress', 'run_id': str(runs[0]['run_id'])}), 409
+
+    data = request.get_json() or {}
+    mode = data.get('mode', 'quick')
+    if mode not in ('full', 'quick'):
+        mode = 'quick'
+
+    import subprocess
+    cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    flag = '--full' if mode == 'full' else '--quick'
+    subprocess.Popen(
+        ['python3', 'dev/trip_bots.py', flag],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.info(f"🦀 Bot run launched: {mode} mode by {session['user']['email']}")
+    return jsonify({'success': True, 'mode': mode})
+
+
+@app.route('/api/admin/bots/stop', methods=['POST'])
+@api_auth_required
+def api_admin_bots_stop():
+    from utilities.admin_utils import is_admin
+    from utilities.postgres_utils import get_bot_runs, update_bot_run
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    runs = get_bot_runs(limit=1)
+    if not runs or runs[0]['status'] != 'running':
+        return jsonify({'error': 'No active run to stop'}), 400
+
+    update_bot_run(str(runs[0]['run_id']), status='stopped')
+    logger.info(f"🛑 Bot run stopped by {session['user']['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/bots/cleanup', methods=['POST'])
+@api_auth_required
+def api_admin_bots_cleanup():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM crab.plans WHERE title LIKE '[BOT]%%'")
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    logger.info(f"🧹 Bot cleanup: deleted {deleted} bot plans")
+    return jsonify({'success': True, 'deleted': deleted})
 
 
 # ── Auth routes ──────────────────────────────────────────────

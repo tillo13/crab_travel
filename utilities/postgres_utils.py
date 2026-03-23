@@ -403,6 +403,34 @@ def init_database():
             )
         """)
 
+        # ── Bot testing tables ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.bot_runs (
+                run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                started_at TIMESTAMPTZ DEFAULT NOW(),
+                finished_at TIMESTAMPTZ,
+                status TEXT DEFAULT 'running',
+                mode TEXT,
+                plan_id UUID,
+                phases_passed INT DEFAULT 0,
+                phases_failed INT DEFAULT 0,
+                phases_warned INT DEFAULT 0,
+                summary JSONB
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.bot_events (
+                event_id BIGSERIAL PRIMARY KEY,
+                run_id UUID REFERENCES crab.bot_runs(run_id) ON DELETE CASCADE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                phase TEXT,
+                bot_name TEXT,
+                action TEXT,
+                status TEXT,
+                detail JSONB
+            )
+        """)
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),
@@ -2153,6 +2181,147 @@ def get_invite_view_stats(plan_id):
     except Exception as e:
         logger.error(f"❌ Get invite view stats failed: {e}")
         return {'total_views': 0, 'unique_visitors': 0, 'authenticated_views': 0, 'unique_signed_in': 0}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Bot Testing CRUD ─────────────────────────────────────────────────────────
+
+def insert_bot_run(mode='full'):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.bot_runs (mode) VALUES (%s) RETURNING run_id
+        """, (mode,))
+        run_id = str(cursor.fetchone()['run_id'])
+        conn.commit()
+        return run_id
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Insert bot run failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_bot_run(run_id, **kwargs):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        sets = []
+        vals = []
+        for key in ('status', 'plan_id', 'phases_passed', 'phases_failed', 'phases_warned', 'finished_at', 'summary'):
+            if key in kwargs:
+                sets.append(f"{key} = %s")
+                val = kwargs[key]
+                if key == 'summary' and isinstance(val, dict):
+                    import json as _json
+                    val = _json.dumps(val)
+                vals.append(val)
+        if not sets:
+            return
+        vals.append(run_id)
+        cursor.execute(f"UPDATE crab.bot_runs SET {', '.join(sets)} WHERE run_id = %s::uuid", vals)
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Update bot run failed: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def insert_bot_event(run_id, phase, bot_name, action, status='ok', detail=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        import json as _json
+        cursor.execute("""
+            INSERT INTO crab.bot_events (run_id, phase, bot_name, action, status, detail)
+            VALUES (%s::uuid, %s, %s, %s, %s, %s)
+        """, (run_id, phase, bot_name, action, status, _json.dumps(detail) if detail else None))
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Insert bot event failed: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_bot_runs(limit=10):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT %s
+        """, (limit,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get bot runs failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_bot_events(run_id, limit=200):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT * FROM crab.bot_events WHERE run_id = %s::uuid
+            ORDER BY event_id DESC LIMIT %s
+        """, (run_id, limit))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get bot events failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_bot_run_status(run_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("SELECT status FROM crab.bot_runs WHERE run_id = %s::uuid", (run_id,))
+        row = cursor.fetchone()
+        return row['status'] if row else None
+    except Exception as e:
+        logger.error(f"Get bot run status failed: {e}")
+        return None
     finally:
         if cursor:
             cursor.close()
