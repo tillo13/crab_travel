@@ -85,23 +85,24 @@ BACKENDS = [
         'model': 'google/gemma-3n-e2b-it:free',
         'secret': 'KINDNESS_OPENROUTER_API_KEY',
     },
-]
-
-# Paid backends — only used if ALL free ones fail
-PAID_BACKENDS = [
+    # DeepSeek — free/cheap, in the rotation
     {
         'name': 'deepseek',
         'url': 'https://api.deepseek.com/v1/chat/completions',
         'model': 'deepseek-chat',
         'secret': 'KINDNESS_DEEPSEEK_API_KEY',
     },
+]
+
+# Paid backends — ONLY if ALL free ones fail. GPT 2nd-to-last, Haiku dead last.
+PAID_BACKENDS = [
     {
         'name': 'gpt4o-mini',
         'url': 'https://api.openai.com/v1/chat/completions',
         'model': 'gpt-4o-mini',
         'secret': 'KINDNESS_OPENAI_API_KEY',
     },
-    # Haiku is absolute last resort — handled by _try_haiku()
+    # Haiku handled separately by _try_haiku() — absolute last resort
 ]
 
 _key_cache = {}
