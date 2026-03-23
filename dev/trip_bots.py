@@ -1100,21 +1100,30 @@ def generate_random_personas(count):
             'tentative_dates': _random_tentative_dates(),
             'is_flexible': random.random() < 0.1,  # most bots show specific dates
         }
-        # ~80% of personas post chat messages — make it lively
-        if random.random() < 0.8:
-            msgs = [f"Excited for this trip! Love {random.choice(interests)}."]
-            if random.random() < 0.5:
-                msgs.append(random.choice([
-                    "Who's handling the group dinner reservation?",
-                    "I found some amazing spots we need to check out!",
-                    "Can we make sure there's a chill day in the itinerary?",
-                    f"Budget-wise I'm comfortable up to ${budget_base // 100 + budget_range // 100}",
-                    "This is going to be legendary!",
-                    f"Anyone else into {random.choice(interests)}? We should plan something around that.",
-                    "I'll look into flights from my end",
-                    "Hotel vs Airbnb? I'm flexible either way",
-                ]))
-            persona['chat_messages'] = msgs
+        # Everyone chats — make it lively
+        msgs = [random.choice([
+            f"Excited for this trip! Love {random.choice(interests)}.",
+            f"Can't wait! Flying in from {persona['airport']}",
+            f"This is going to be amazing! I'm all about {random.choice(interests)}",
+            "Count me in! When do we start planning the details?",
+            f"Just booked time off work for this! Budget around ${budget_base // 100}-${(budget_base + budget_range) // 100}",
+        ])]
+        if random.random() < 0.6:
+            msgs.append(random.choice([
+                "Who's handling the group dinner reservation?",
+                "I found some amazing spots we need to check out!",
+                "Can we make sure there's a chill day in the itinerary?",
+                "This is going to be legendary!",
+                f"Anyone else into {random.choice(interests)}? We should plan something around that.",
+                "I'll look into flights from my end",
+                "Hotel vs Airbnb? I'm flexible either way",
+                "What's everyone's dietary situation? I'm " + persona['dietary'],
+                "Should we rent a car or just Uber everywhere?",
+                "Who wants to share a room to save money?",
+                "I vote we do at least one group dinner",
+                "Anyone been there before? Tips welcome!",
+            ]))
+        persona['chat_messages'] = msgs
         # ~20% are late joiners (not the organizer)
         if i > 0 and random.random() < 0.2:
             persona['late_joiner'] = True
@@ -1183,7 +1192,7 @@ def build_random_trip(base_url, bot_secret):
     """Generate a fully random trip and run it through the quick pipeline."""
     from utilities.postgres_utils import insert_bot_run
 
-    group_size = random.choice([5, 6, 7, 8, 10, 12, 15, 18, 20, 25])
+    group_size = random.choice([2, 3, 5, 8, 10, 15, 20, 30, 50, 75, 100])
     log.info(f"\n  🎲 Generating random trip for {group_size} people...")
 
     # Ask Haiku to invent the trip
@@ -1267,6 +1276,12 @@ def build_random_trip(base_url, bot_secret):
     phase_preferences(ctx)
     phase_vote(ctx)
     phase_chat(ctx)
+
+    # ── Lock, Search, Watches — test EVERYTHING ──
+    phase_lock_search(ctx)
+    phase_watch_create(ctx)
+    phase_watch_check(ctx)
+    phase_browse(ctx)
 
     # ── Stop ──
     phase_stop(ctx)
