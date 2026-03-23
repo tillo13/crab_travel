@@ -2,10 +2,10 @@
 Free LLM router — tries every free-tier backend before paid fallbacks.
 All secrets are in the shared kumori-404602 GCP Secret Manager.
 
-Order: Groq → Cerebras → Mistral → Together → Gemini → OpenRouter (3 free models) →
+Order: Groq → Cerebras → Mistral → Together → Gemini → Grok → OpenRouter (x3) →
        DeepSeek → GPT-4o-mini → Haiku (absolute last resort)
 
-11 backends deep. Haiku should basically never get hit.
+12 backends deep. Haiku should basically never get hit.
 """
 
 import logging
@@ -41,11 +41,16 @@ BACKENDS = [
         'model': 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
         'secret': 'KINDNESS_TOGETHER_API_KEY',
     },
-    # Gemini slot — handled by _try_gemini(), not OpenAI-compatible
+    # Gemini — uses its own SDK, 1500 req/day free
     {
         'name': 'gemini',
         'type': 'gemini',
         'secret': 'KINDNESS_GEMINI_API_KEY',
+    },
+    # Grok — free, no API key, proxied through kindness Cloud Run worker
+    {
+        'name': 'grok',
+        'type': 'grok',
     },
     {
         'name': 'openrouter-gemma',
@@ -141,6 +146,26 @@ def _try_gemini(prompt, max_tokens=500, temperature=1.0):
     return response.text.strip()
 
 
+def _try_grok(prompt, max_tokens=500, temperature=1.0):
+    """Grok via kindness Cloud Run worker — free, no API key."""
+    WORKER_URL = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
+    resp = requests.post(
+        WORKER_URL,
+        json={
+            'backend': 'grok',
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+        },
+        timeout=60,
+    )
+    if resp.ok:
+        text = resp.json().get('text', '')
+        if text:
+            return text
+    return None
+
+
 def _try_haiku(prompt, max_tokens=500, temperature=1.0):
     """Absolute last resort — Anthropic Haiku (paid)."""
     from utilities.claude_utils import _get_api_key, API_URL
@@ -173,6 +198,8 @@ def generate(prompt, max_tokens=500, temperature=1.0):
         try:
             if backend.get('type') == 'gemini':
                 text = _try_gemini(prompt, max_tokens, temperature)
+            elif backend.get('type') == 'grok':
+                text = _try_grok(prompt, max_tokens, temperature)
             else:
                 text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
             if text:
