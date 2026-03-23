@@ -2,10 +2,10 @@
 Free LLM router — tries every free-tier backend before paid fallbacks.
 All secrets are in the shared kumori-404602 GCP Secret Manager.
 
-Order: Groq → Cerebras → Mistral → Together → OpenRouter (3 free models) →
-       DeepSeek → GPT-4o-mini → Haiku (last resort)
+Order: Groq → Cerebras → Mistral → Together → Gemini → OpenRouter (3 free models) →
+       DeepSeek → GPT-4o-mini → Haiku (absolute last resort)
 
-10 backends deep. Haiku should basically never get hit.
+11 backends deep. Haiku should basically never get hit.
 """
 
 import logging
@@ -14,7 +14,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 # All OpenAI-compatible backends, cheapest/free first.
-# OpenRouter gets 3 entries (one per free model) for max coverage.
+# Gemini and Haiku handled separately (different API formats).
 BACKENDS = [
     # ── Completely free tiers ──
     {
@@ -40,6 +40,12 @@ BACKENDS = [
         'url': 'https://api.together.ai/v1/chat/completions',
         'model': 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
         'secret': 'KINDNESS_TOGETHER_API_KEY',
+    },
+    # Gemini slot — handled by _try_gemini(), not OpenAI-compatible
+    {
+        'name': 'gemini',
+        'type': 'gemini',
+        'secret': 'KINDNESS_GEMINI_API_KEY',
     },
     {
         'name': 'openrouter-gemma',
@@ -72,8 +78,7 @@ BACKENDS = [
         'model': 'gpt-4o-mini',
         'secret': 'KINDNESS_OPENAI_API_KEY',
     },
-    # ── Paid last resort ──
-    # Haiku handled separately (Anthropic API format, not OpenAI-compatible)
+    # Haiku is absolute last resort — handled by _try_haiku()
 ]
 
 _key_cache = {}
@@ -99,7 +104,6 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
         'Authorization': f'Bearer {key}',
         'Content-Type': 'application/json',
     }
-    # OpenRouter wants HTTP-Referer
     if 'openrouter' in backend['name']:
         headers['HTTP-Referer'] = 'https://crab.travel'
 
@@ -116,6 +120,25 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
     )
     resp.raise_for_status()
     return resp.json()['choices'][0]['message']['content'].strip()
+
+
+def _try_gemini(prompt, max_tokens=500, temperature=1.0):
+    """Google Gemini via generativeai SDK — 1,500 req/day free."""
+    key = _get_key('KINDNESS_GEMINI_API_KEY')
+    if not key:
+        return None
+
+    import google.generativeai as genai
+    genai.configure(api_key=key)
+    model = genai.GenerativeModel(
+        'gemini-2.5-flash',
+        generation_config=genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        ),
+    )
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 
 def _try_haiku(prompt, max_tokens=500, temperature=1.0):
@@ -143,12 +166,15 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
 
 def generate(prompt, max_tokens=500, temperature=1.0):
     """
-    Try all free backends first, then cheap paid, then Haiku as absolute last resort.
-    Returns: (text, backend_name)
+    Try ALL free backends first, then cheap paid, then Haiku as absolute last resort.
+    11 backends deep. Returns: (text, backend_name)
     """
     for backend in BACKENDS:
         try:
-            text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
+            if backend.get('type') == 'gemini':
+                text = _try_gemini(prompt, max_tokens, temperature)
+            else:
+                text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
             if text:
                 logger.info(f"🆓 {backend['name']} responded ({len(text)} chars)")
                 return text, backend['name']
