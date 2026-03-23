@@ -29,42 +29,48 @@ def _get_pricing(model):
 
 def log_api_usage(model, usage, feature=None, streaming=False,
                   image_count=0, user_id=None, duration_ms=None):
-    """Log an API call to kumori_api_usage. Never raises."""
-    try:
-        from utilities.postgres_utils import get_db_connection
-        pricing = _get_pricing(model)
+    """Log an API call to kumori_api_usage in a background thread.
+    Never blocks the caller. Never raises."""
+    import threading
 
-        input_tokens = usage.get('input_tokens', 0) if isinstance(usage, dict) else 0
-        output_tokens = usage.get('output_tokens', 0) if isinstance(usage, dict) else 0
-        cache_creation = usage.get('cache_creation_input_tokens', 0) if isinstance(usage, dict) else 0
-        cache_read = usage.get('cache_read_input_tokens', 0) if isinstance(usage, dict) else 0
-
-        cost = (
-            input_tokens * pricing['input']
-            + output_tokens * pricing['output']
-            + cache_creation * pricing['input'] * 1.25
-            + cache_read * pricing['input'] * 0.1
-        )
-
-        conn = get_db_connection()
+    def _do_log():
         try:
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO kumori_api_usage
-                (app_name, feature, model, input_tokens, output_tokens,
-                 cache_creation_tokens, cache_read_tokens, thinking_tokens,
-                 web_search_requests, web_fetch_requests, code_execution_requests,
-                 image_count, estimated_cost_usd, streaming, user_id, duration_ms)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (APP_NAME, feature, model, input_tokens, output_tokens,
-                  cache_creation, cache_read, 0,
-                  0, 0, 0,
-                  image_count, cost, streaming, user_id, duration_ms))
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"Failed to log API usage: {e}")
+            from utilities.postgres_utils import get_db_connection
+            pricing = _get_pricing(model)
+
+            input_tokens = usage.get('input_tokens', 0) if isinstance(usage, dict) else 0
+            output_tokens = usage.get('output_tokens', 0) if isinstance(usage, dict) else 0
+            cache_creation = usage.get('cache_creation_input_tokens', 0) if isinstance(usage, dict) else 0
+            cache_read = usage.get('cache_read_input_tokens', 0) if isinstance(usage, dict) else 0
+
+            cost = (
+                input_tokens * pricing['input']
+                + output_tokens * pricing['output']
+                + cache_creation * pricing['input'] * 1.25
+                + cache_read * pricing['input'] * 0.1
+            )
+
+            conn = get_db_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO kumori_api_usage
+                    (app_name, feature, model, input_tokens, output_tokens,
+                     cache_creation_tokens, cache_read_tokens, thinking_tokens,
+                     web_search_requests, web_fetch_requests, code_execution_requests,
+                     image_count, estimated_cost_usd, streaming, user_id, duration_ms)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (APP_NAME, feature, model, input_tokens, output_tokens,
+                      cache_creation, cache_read, 0,
+                      0, 0, 0,
+                      image_count, cost, streaming, user_id, duration_ms))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to log API usage: {e}")
+
+    threading.Thread(target=_do_log, daemon=True).start()
 
 _api_key = None
 

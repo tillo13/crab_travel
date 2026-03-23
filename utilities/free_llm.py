@@ -1,18 +1,23 @@
 """
-Free LLM router — tries every free-tier backend before paid fallbacks.
+Free LLM router — round-robins across free-tier backends, falls back on failure.
 All secrets are in the shared kumori-404602 GCP Secret Manager.
 
-Order: Groq → Cerebras → Mistral → Together → Gemini → Grok → OpenRouter (x3) →
-       DeepSeek → GPT-4o-mini → Haiku (absolute last resort)
+Strategy: Round-robin across free backends so every backend gets tested and
+we have real latency/reliability data. On failure, try the next one in rotation.
+Paid backends (DeepSeek, GPT-4o-mini, Haiku) only used if ALL free ones fail.
 
-12 backends deep. Haiku should basically never get hit.
+12 backends deep. Portable — drop into any project with the same Secret Manager.
 """
 
 import logging
 import time
 import requests
+import random
 
 logger = logging.getLogger(__name__)
+
+# Round-robin counter — rotates which free backend goes first
+_call_counter = 0
 
 
 def _log(backend, model, prompt_len, response_len, duration_ms, success, error=None, caller=None):
@@ -80,7 +85,10 @@ BACKENDS = [
         'model': 'google/gemma-3n-e2b-it:free',
         'secret': 'KINDNESS_OPENROUTER_API_KEY',
     },
-    # ── Cheap paid (pennies) ──
+]
+
+# Paid backends — only used if ALL free ones fail
+PAID_BACKENDS = [
     {
         'name': 'deepseek',
         'url': 'https://api.deepseek.com/v1/chat/completions',
@@ -199,45 +207,68 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
     return resp.json()['content'][0]['text']
 
 
+def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
+    """Try a single backend, log result. Returns text or raises."""
+    start = time.time()
+    try:
+        if backend.get('type') == 'gemini':
+            text = _try_gemini(prompt, max_tokens, temperature)
+        elif backend.get('type') == 'grok':
+            text = _try_grok(prompt, max_tokens, temperature)
+        else:
+            text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
+
+        ms = int((time.time() - start) * 1000)
+        if text:
+            _log(backend['name'], backend.get('model', ''), prompt_len, len(text), ms, True, caller=caller)
+            logger.info(f"🆓 {backend['name']} responded ({len(text)} chars, {ms}ms)")
+            return text
+        return None
+    except Exception as e:
+        ms = int((time.time() - start) * 1000)
+        _log(backend['name'], backend.get('model', ''), prompt_len, 0, ms, False, str(e)[:200], caller=caller)
+        logger.warning(f"LLM {backend['name']} failed ({ms}ms): {e}")
+        return None
+
+
 def generate(prompt, max_tokens=500, temperature=1.0, caller='crawl'):
     """
-    Try ALL free backends, then cheap paid, then Haiku last resort.
-    12 backends deep. Every attempt logged to crab.llm_calls.
+    Round-robin across free backends so every one gets tested, then paid last resort.
+    On failure, try next in rotation. GPT-4o-mini 2nd to last, Haiku dead last.
+    Every attempt logged to crab.llm_calls.
     Returns: (text, backend_name)
     """
+    global _call_counter
     prompt_len = len(prompt)
 
-    for backend in BACKENDS:
-        start = time.time()
-        try:
-            if backend.get('type') == 'gemini':
-                text = _try_gemini(prompt, max_tokens, temperature)
-            elif backend.get('type') == 'grok':
-                text = _try_grok(prompt, max_tokens, temperature)
-            else:
-                text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
+    # Round-robin: rotate starting position across free backends
+    n = len(BACKENDS)
+    start_idx = _call_counter % n
+    _call_counter += 1
 
-            ms = int((time.time() - start) * 1000)
-            if text:
-                _log(backend['name'], backend.get('model', ''), prompt_len, len(text), ms, True, caller=caller)
-                logger.info(f"🆓 {backend['name']} responded ({len(text)} chars, {ms}ms)")
-                return text, backend['name']
-        except Exception as e:
-            ms = int((time.time() - start) * 1000)
-            _log(backend['name'], backend.get('model', ''), prompt_len, 0, ms, False, str(e)[:200], caller=caller)
-            logger.warning(f"LLM {backend['name']} failed ({ms}ms): {e}")
-            continue
+    # Try all free backends starting from rotated position
+    for i in range(n):
+        backend = BACKENDS[(start_idx + i) % n]
+        text = _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len)
+        if text:
+            return text, backend['name']
 
-    # Absolute last resort — paid Haiku
+    # Paid fallbacks — only if ALL free ones failed
+    for backend in PAID_BACKENDS:
+        text = _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len)
+        if text:
+            return text, backend['name']
+
+    # Absolute last resort — Anthropic Haiku
     start = time.time()
     try:
         text = _try_haiku(prompt, max_tokens, temperature)
         ms = int((time.time() - start) * 1000)
         _log('haiku', 'claude-haiku-4-5-20251001', prompt_len, len(text), ms, True, caller=caller)
-        logger.info(f"💰 Haiku last-resort fallback ({len(text)} chars, {ms}ms)")
+        logger.info(f"💰 Haiku LAST RESORT ({len(text)} chars, {ms}ms)")
         return text, 'haiku'
     except Exception as e:
         ms = int((time.time() - start) * 1000)
         _log('haiku', 'claude-haiku-4-5-20251001', prompt_len, 0, ms, False, str(e)[:200], caller=caller)
-        logger.error(f"ALL {len(BACKENDS) + 1} backends failed: {e}")
+        logger.error(f"ALL {len(BACKENDS) + len(PAID_BACKENDS) + 1} backends failed: {e}")
         return None, None
