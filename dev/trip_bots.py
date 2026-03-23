@@ -1264,24 +1264,37 @@ def build_random_trip(base_url, bot_secret):
         result.fail(f"Create failed: {data}")
         return False
 
+    # Pace the phases so trips stay "active" on /live for minutes, not seconds.
+    # With 1-min cron, multiple trips overlap = always something live.
+    PACE = 5  # seconds between phases
+
     # ── Join ──
     phase_join(ctx)
+    time.sleep(PACE)
 
     # ── Suggest (if anyone has a suggestion) ──
     has_suggester = any(isinstance(p.get('suggests_destination'), str) for p in ctx.personas)
     if has_suggester:
         phase_suggest(ctx)
+        time.sleep(PACE)
 
     # ── Preferences, Vote, Chat ──
     phase_preferences(ctx)
+    time.sleep(PACE)
     phase_vote(ctx)
+    time.sleep(PACE)
     phase_chat(ctx)
+    time.sleep(PACE)
 
     # ── Lock, Search, Watches — test EVERYTHING ──
     phase_lock_search(ctx)
+    time.sleep(PACE)
     phase_watch_create(ctx)
+    time.sleep(PACE)
     phase_watch_check(ctx)
+    time.sleep(PACE)
     phase_browse(ctx)
+    time.sleep(PACE)
 
     # ── Stop ──
     phase_stop(ctx)

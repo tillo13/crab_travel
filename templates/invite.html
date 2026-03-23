@@ -372,7 +372,7 @@
   <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-1 animate-in stagger-1">
     <span class="text-xs font-medium text-crab-sand-dim shrink-0 uppercase tracking-wide">Who's in:</span>
     {% for m in members %}
-    <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1 shrink-0 text-sm">
+    <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1 shrink-0 text-sm cursor-pointer hover:border-crab-coral/40 hover:bg-crab-coral/5 transition-all" onclick="showMemberDetail({{ m.pk_id }})">
       {% if needs_login %}{{ m.display_name.split()[0] }}{% if m.display_name.split()|length > 1 %} {{ m.display_name.split()[1][0] }}.{% endif %}{% else %}{{ m.display_name|replace('[BOT] ', '') }}{% endif %}
       {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
     </div>
@@ -441,6 +441,15 @@
         <div id="cal-months" class="space-y-6"></div>
         <div id="cal-hover-info" class="text-xs text-crab-sand-dim mt-3 min-h-[1.25rem]"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Member Detail Modal -->
+  <div id="member-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeMemberModal()"></div>
+    <div class="relative bg-crab-navy border border-white/10 rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6 shadow-2xl">
+      <button onclick="closeMemberModal()" class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl">&times;</button>
+      <div id="member-modal-content"></div>
     </div>
   </div>
 
@@ -1920,5 +1929,74 @@ function markWatchBooked(watchId) {
 }
 
 renderWatches();
+
+// ── Member Detail Modal ────────────────────────────────────
+var _membersDetail = {{ members_detail_json|safe }};
+
+function showMemberDetail(memberId) {
+  var member = _membersDetail.find(function(m) { return m.member_id === memberId; });
+  if (!member) return;
+
+  var watches = (_watchesData || []).filter(function(w) { return w.member_id === memberId; });
+
+  var html = '<div class="space-y-4">';
+  // Header
+  html += '<div class="flex items-center gap-3 mb-2">';
+  html += '<div class="w-10 h-10 rounded-full bg-crab-coral/20 text-crab-coral flex items-center justify-center font-display text-lg">' + escapeHtml(member.name)[0] + '</div>';
+  html += '<div>';
+  html += '<div class="font-display text-lg text-crab-sand">' + escapeHtml(member.name) + '</div>';
+  html += '<div class="text-xs text-crab-sand-dim">' + (member.role === 'organizer' ? 'Organizer' : 'Member') + (member.airport ? ' · ' + member.airport : '') + '</div>';
+  html += '</div></div>';
+
+  // Preferences
+  if (member.completed) {
+    html += '<div class="bg-white/[0.03] rounded-xl p-4 space-y-2">';
+    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">Preferences</div>';
+    if (member.budget_min || member.budget_max) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Budget</span><span>$' + ((member.budget_min||0)/100).toFixed(0) + ' – $' + ((member.budget_max||0)/100).toFixed(0) + '</span></div>';
+    }
+    if (member.accommodation) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Accommodation</span><span>' + escapeHtml(member.accommodation) + '</span></div>';
+    }
+    if (member.dietary) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Dietary</span><span>' + escapeHtml(member.dietary) + '</span></div>';
+    }
+    if (member.room_pref) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Room</span><span>' + escapeHtml(member.room_pref) + '</span></div>';
+    }
+    if (member.mobility) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Mobility</span><span>' + escapeHtml(member.mobility) + '</span></div>';
+    }
+    if (member.interests && member.interests.length > 0) {
+      html += '<div class="pt-1"><span class="text-xs text-crab-sand-dim">Interests: </span>';
+      member.interests.forEach(function(i) {
+        html += '<span class="inline-block text-xs bg-crab-teal/15 text-crab-teal rounded-full px-2 py-0.5 mr-1 mb-1">' + escapeHtml(i) + '</span>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="text-sm text-crab-sand-dim opacity-50">Profile not yet completed</div>';
+  }
+
+  // Watches
+  if (watches.length > 0) {
+    html += '<div class="bg-white/[0.03] rounded-xl p-4">';
+    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">Price Watches</div>';
+    watches.forEach(function(w) {
+      html += renderWatchRow(w);
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+
+  document.getElementById('member-modal-content').innerHTML = html;
+  document.getElementById('member-modal').style.display = '';
+}
+
+function closeMemberModal() {
+  document.getElementById('member-modal').style.display = 'none';
+}
 </script>
 {% endblock %}

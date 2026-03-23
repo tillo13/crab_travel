@@ -1048,6 +1048,23 @@ def invite_page(invite_token):
         'members': [{'name': _clean(m['display_name']), 'is_flexible': m.get('is_flexible', False)} for m in members],
     }, default=_default_ser)
 
+    # Per-member profile data for clickable member cards
+    all_prefs = get_all_plan_preferences(plan['plan_id'])
+    members_detail_json = json.dumps([{
+        'member_id': p['member_id'],
+        'name': _clean(p['display_name']),
+        'role': p.get('role', 'member'),
+        'airport': p.get('home_airport', ''),
+        'budget_min': p.get('budget_min'),
+        'budget_max': p.get('budget_max'),
+        'accommodation': p.get('accommodation_style', ''),
+        'dietary': p.get('dietary_needs', ''),
+        'interests': p.get('interests', []),
+        'mobility': p.get('mobility_notes', ''),
+        'room_pref': p.get('room_preference', ''),
+        'completed': p.get('completed', False),
+    } for p in all_prefs], default=_default_ser)
+
     # Fetch watch data for locked plans
     watches_json = '[]'
     if plan.get('status') == 'locked' or plan.get('locked_destination'):
@@ -1083,6 +1100,7 @@ def invite_page(invite_token):
         destinations_json=destinations_json,
         calendar_json=calendar_json if not (user is None and not is_bot_trip) else '{}',
         watches_json=watches_json,
+        members_detail_json=members_detail_json,
     )
 
 
