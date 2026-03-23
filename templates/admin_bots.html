@@ -27,19 +27,23 @@
 <!-- Header -->
 <div class="flex items-center justify-between mb-6">
   <div>
+    {% if is_admin %}
     <p class="text-xs text-crab-sand-dim mb-2"><a href="/admin" class="hover:text-crab-coral transition-colors">&larr; Admin Panel</a></p>
+    {% endif %}
     <h1 class="text-3xl font-display">Crab Crawlers</h1>
-    <p class="text-sm text-crab-sand-dim">Synthetic trip bots — full lifecycle testing against prod</p>
+    <p class="text-sm text-crab-sand-dim leading-relaxed">Watch our bots plan a trip in real time — 10 AI personas voting on destinations, debating in chat, searching flights, and coordinating a group trip from scratch. We don't hide in our shell.</p>
   </div>
 </div>
 
-<!-- Controls -->
+<!-- Admin Controls (only visible to admins) -->
+{% if is_admin %}
 <div class="flex gap-3 mb-6">
   <button id="btn-run-quick" onclick="runBots('quick')" class="btn-bot bg-crab-teal text-white hover:bg-crab-teal-light">Run Quick</button>
   <button id="btn-run-full" onclick="runBots('full')" class="btn-bot bg-crab-coral text-white hover:bg-crab-coral-light">Run Full</button>
   <button id="btn-stop" onclick="stopBots()" class="btn-bot bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30" disabled>Stop</button>
   <button id="btn-cleanup" onclick="cleanupBots()" class="btn-bot bg-white/5 text-crab-sand-dim border border-white/10 hover:bg-white/10">Cleanup</button>
 </div>
+{% endif %}
 
 <!-- Current Run Card -->
 <div id="current-run" class="bot-card mb-6" style="display:none;">
@@ -159,7 +163,7 @@ function stopPolling() {
 
 async function pollStatus() {
   try {
-    const resp = await fetch('/api/admin/bots/status');
+    const resp = await fetch('/api/live/status');
     const data = await resp.json();
     if (!data.success) return;
     renderStatus(data.data);
@@ -276,7 +280,7 @@ function renderStatus(data) {
 pollStatus();
 // Auto-start polling if there's a running bot
 setTimeout(() => {
-  fetch('/api/admin/bots/status').then(r => r.json()).then(data => {
+  fetch('/api/live/status').then(r => r.json()).then(data => {
     if (data.success && data.data.runs && data.data.runs[0] && data.data.runs[0].status === 'running') {
       startPolling();
     }

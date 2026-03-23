@@ -232,14 +232,15 @@ class BotSession:
         self.persona = None
 
     def login_as(self, persona):
-        """Authenticate as a specific bot persona."""
+        """Authenticate as a specific bot persona. Fresh session each time."""
         self.persona = persona
+        self.session = http_requests.Session()  # fresh cookies
         resp = self.session.post(f'{self.base_url}/api/bot/login', json={
             'secret': self.bot_secret,
             'user_id': persona['db_id'],
         }, timeout=TIMEOUT)
         if resp.status_code != 200:
-            raise RuntimeError(f"Bot login failed for {persona['name']}: {resp.status_code} {resp.text}")
+            raise RuntimeError(f"Bot login failed for {persona['name']}: {resp.status_code} {resp.text[:200]}")
         self.user_id = persona['db_id']
         return resp.json()
 

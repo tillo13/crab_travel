@@ -632,7 +632,18 @@ def api_admin_speed_test():
     return jsonify({'success': True, 'results': results, 'threshold_s': THRESHOLD, 'all_ok': all_ok})
 
 
-# ── Bot Testing (Crab Crawlers) admin endpoints ─────────────
+# ── Bot Testing (Crab Crawlers) — public + admin endpoints ───
+
+@app.route('/live')
+def live_page():
+    """Public page — anyone can watch the crabs crawl."""
+    is_admin_user = False
+    if 'user' in session:
+        from utilities.admin_utils import is_admin
+        real_uid = session.get('_real_uid') or session['user']['id']
+        is_admin_user = is_admin(real_uid)
+    return render_template('admin_bots.html', active_page='live', is_admin=is_admin_user)
+
 
 @app.route('/admin/bots')
 @login_required
@@ -641,17 +652,13 @@ def admin_bots():
     real_uid = session.get('_real_uid') or session['user']['id']
     if not is_admin(real_uid):
         return redirect('/dashboard')
-    return render_template('admin_bots.html', active_page='admin')
+    return render_template('admin_bots.html', active_page='admin', is_admin=True)
 
 
-@app.route('/api/admin/bots/status')
-@api_auth_required
-def api_admin_bots_status():
-    from utilities.admin_utils import is_admin
+@app.route('/api/live/status')
+def api_live_status():
+    """Public endpoint — bot run status for the /live page."""
     from utilities.postgres_utils import get_bot_runs, get_bot_events
-    real_uid = session.get('_real_uid') or session['user']['id']
-    if not is_admin(real_uid):
-        return jsonify({'error': 'Admin only'}), 403
 
     runs = get_bot_runs(limit=10)
     # Serialize datetimes
