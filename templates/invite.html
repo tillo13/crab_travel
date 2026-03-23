@@ -300,12 +300,21 @@
 {% block content %}
 <div class="max-w-5xl mx-auto">
 
+  {% if is_bot_trip %}
+  <!-- Bot trip banner -->
+  <div class="text-center mb-4 animate-in">
+    <a href="/live" class="inline-flex items-center gap-2 bg-crab-coral/10 border border-crab-coral/20 rounded-full px-4 py-1.5 text-xs font-medium text-crab-coral hover:bg-crab-coral/15 transition-colors">
+      &larr; Back to Live Board &nbsp;&middot;&nbsp; This trip is run by AI bots — watch how crab.travel works!
+    </a>
+  </div>
+  {% endif %}
+
   <!-- Header -->
   <div class="text-center mb-8 animate-in">
-    <p class="text-sm font-medium text-crab-coral mb-3 tracking-wide uppercase">You're invited</p>
-    <h1 class="text-3xl md:text-4xl font-display mb-2">{{ plan.title }}</h1>
+    <p class="text-sm font-medium text-crab-coral mb-3 tracking-wide uppercase">{% if is_bot_trip %}Live Demo — Bot Trip{% else %}You're invited{% endif %}</p>
+    <h1 class="text-3xl md:text-4xl font-display mb-2">{{ plan.title|replace('[BOT] ', '') }}</h1>
     <p class="text-crab-sand-dim">
-      <span class="font-medium text-crab-sand">{% if needs_login %}{{ plan.organizer_name.split()[0] }}{% if plan.organizer_name.split()|length > 1 %} {{ plan.organizer_name.split()[1][0] }}.{% endif %}{% else %}{{ plan.organizer_name }}{% endif %}</span> is putting this together
+      <span class="font-medium text-crab-sand">{% if needs_login %}{{ plan.organizer_name.split()[0] }}{% if plan.organizer_name.split()|length > 1 %} {{ plan.organizer_name.split()[1][0] }}.{% endif %}{% else %}{{ plan.organizer_name|replace('[BOT] ', '') }}{% endif %}</span> is putting this together
     </p>
     {% if plan.description %}
     <p class="text-crab-sand-dim text-sm mt-2 max-w-lg mx-auto">{{ plan.description }}</p>
@@ -364,7 +373,7 @@
     <span class="text-xs font-medium text-crab-sand-dim shrink-0 uppercase tracking-wide">Who's in:</span>
     {% for m in members %}
     <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1 shrink-0 text-sm">
-      {% if needs_login %}{{ m.display_name.split()[0] }}{% if m.display_name.split()|length > 1 %} {{ m.display_name.split()[1][0] }}.{% endif %}{% else %}{{ m.display_name }}{% endif %}
+      {% if needs_login %}{{ m.display_name.split()[0] }}{% if m.display_name.split()|length > 1 %} {{ m.display_name.split()[1][0] }}.{% endif %}{% else %}{{ m.display_name|replace('[BOT] ', '') }}{% endif %}
       {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
     </div>
     {% endfor %}

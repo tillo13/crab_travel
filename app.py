@@ -1038,6 +1038,17 @@ def invite_page(invite_token):
     }, default=_default_ser)
 
     is_organizer = user is not None and user['id'] == plan['organizer_id']
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+
+    # Bot trips are fully open — no login gate, show everything
+    if is_bot_trip and user is None:
+        all_blackouts = get_plan_blackouts(plan['plan_id'])
+        all_tentative = get_plan_tentative_dates(plan['plan_id'])
+        calendar_json = json.dumps({
+            'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+            'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
+            'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
+        }, default=_default_ser)
 
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
@@ -1046,11 +1057,12 @@ def invite_page(invite_token):
         blackouts=blackouts, tentative_dates=tentative_dates,
         member_airport=member_airport,
         member_flexible=member_flexible,
-        needs_login=(user is None),
+        needs_login=(user is None and not is_bot_trip),
         is_organizer=is_organizer,
+        is_bot_trip=is_bot_trip,
         profile_completed=profile_completed,
         destinations_json=destinations_json,
-        calendar_json=calendar_json if not (user is None) else '{}',
+        calendar_json=calendar_json if not (user is None and not is_bot_trip) else '{}',
     )
 
 
