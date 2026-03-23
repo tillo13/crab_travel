@@ -676,6 +676,7 @@ def api_live_status():
         r['trip_destinations'] = summary.get('destinations', [])
         r['trip_group_size'] = summary.get('group_size', 0)
         r['trip_vibe'] = summary.get('vibe', '')
+        r['invite_token'] = summary.get('invite_token', '')
 
     # Get events for ALL recent runs (last 200 events across all runs)
     events = []

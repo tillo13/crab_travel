@@ -651,19 +651,19 @@ def phase_chat(ctx):
                 result.fail(f"{p['name']} message failed: {data}")
                 ctx.log_event('chat', p['name'], 'Message FAILED', 'error')
 
-    # Jake replies to Marcus's first message
-    if first_msg_id:
-        jake = next(p for p in ctx.personas if p['slug'] == 'jake_thompson')
-        ctx.bot.login_as(jake)
+    # Someone replies to the first message (threaded)
+    if first_msg_id and len(ctx.personas) > 1:
+        replier = ctx.personas[1]  # second persona replies
+        ctx.bot.login_as(replier)
         resp = ctx.bot.post(f'/api/plan/{ctx.plan_id}/messages', {
-            'content': f'{BOT_PREFIX} Scottsdale for sure, flights from JFK are cheap.',
+            'content': f'{BOT_PREFIX} Totally agree, this is going to be amazing!',
             'parent_id': first_msg_id,
         })
         if resp.status_code == 200 and resp.json().get('success'):
             result.ok()
-            ctx.log_event('chat', jake['name'], f"Replied to Marcus (thread {first_msg_id[:8]}...)")
+            ctx.log_event('chat', replier['name'], f"Replied to thread ({first_msg_id[:8]}...)")
         else:
-            result.fail(f"Jake reply failed: {resp.text}")
+            result.fail(f"Thread reply failed: {resp.text}")
 
     # Verify messages exist
     ctx.bot.login_as(ctx.personas[0])
@@ -1169,9 +1169,11 @@ def build_random_trip(base_url, bot_secret):
                    finished_at='NOW()',
                    summary={
                        'title': trip_data['title'],
-                       'destinations': trip_data['destinations'],
+                       'destinations': all_dests,
                        'group_size': group_size,
                        'vibe': trip_data['group_vibes'],
+                       'invite_token': ctx.invite_token,
+                       'plan_id': ctx.plan_id,
                    })
 
     log.info(f"  🦀 Trip complete: \"{trip_data['title']}\" — {group_size} crabs, plan {ctx.plan_id}")

@@ -146,11 +146,12 @@ function renderBoard(data) {
   board.innerHTML = runs.map(r => {
     const isRunning = r.status === 'running';
     const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
-    const title = r.trip_title || r.mode || 'Trip';
+    const title = r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip');
     const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
     const vibe = r.trip_vibe || '';
     const size = r.trip_group_size || '?';
     const statusLabel = r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
+    const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
 
     // Duration
     let duration = '';
@@ -168,7 +169,7 @@ function renderBoard(data) {
       timeAgo = mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins/60) + 'h ago';
     }
 
-    return `<div class="trip-card ${isRunning ? 'is-running' : ''}">
+    const cardContent = `
       <div class="flex items-start justify-between mb-2">
         <div>
           <div class="font-display text-base">${title}</div>
@@ -176,12 +177,15 @@ function renderBoard(data) {
         </div>
         <span class="phase-badge ${badgeClass}">${statusLabel}</span>
       </div>
-      <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">destinations loading...</span>'}</div>
+      <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">generating...</span>'}</div>
       <div class="flex items-center justify-between text-xs text-crab-sand-dim">
         <span>${size} crabs</span>
         <span>${duration} &middot; ${timeAgo}</span>
-      </div>
-    </div>`;
+      </div>`;
+    if (linkUrl) {
+      return `<a href="${linkUrl}" class="trip-card block ${isRunning ? 'is-running' : ''} hover:bg-white/5 dark:hover:bg-white/5" style="text-decoration:none;color:inherit;">${cardContent}</a>`;
+    }
+    return `<div class="trip-card ${isRunning ? 'is-running' : ''}">${cardContent}</div>`;
   }).join('');
 
   // Activity feed
