@@ -1,6 +1,6 @@
 import json
 import logging
-from utilities.claude_utils import generate_text
+from utilities.llm_router import generate as free_generate
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +108,15 @@ compatibility_score should be 1-100 based on how well the option matches the GRO
 For activities, consider the top interests. For hotels, consider budget and accommodation style. For restaurants, consider dietary needs.
 Be specific — use real places if you know the destination, otherwise create realistic suggestions."""
 
-    system = "You are a knowledgeable travel advisor. Always respond with valid JSON only. No markdown formatting."
+    # Prepend system instruction into prompt
+    full_prompt = "You are a knowledgeable travel advisor. Always respond with valid JSON only. No markdown formatting.\n\n" + prompt
 
     try:
-        text, tokens_in, tokens_out = generate_text(prompt, system=system, max_tokens=4096, temperature=0.7)
+        text, backend = free_generate(full_prompt, max_tokens=4096, temperature=0.7, caller='recommendations')
+        if not text:
+            return None, "All LLM backends failed."
 
-        # Clean up response — strip markdown fences if Claude adds them
+        # Clean up response — strip markdown fences
         text = text.strip()
         if text.startswith('```'):
             text = text.split('\n', 1)[1]
@@ -123,7 +126,7 @@ Be specific — use real places if you know the destination, otherwise create re
 
         data = json.loads(text)
         recs = data.get('recommendations', [])
-        logger.info(f"🤖 Generated {len(recs)} recommendations ({tokens_in}+{tokens_out} tokens)")
+        logger.info(f"🤖 Generated {len(recs)} recommendations via {backend}")
         return recs, None
     except json.JSONDecodeError as e:
         logger.error(f"❌ Failed to parse AI response: {e}")
@@ -248,15 +251,18 @@ Be specific and real. Use actual venue names, actual event names, actual dates. 
 
 compatibility_score: 1-100 based on how well this destination fits the group.{vibes_instruction}"""
 
-    system = "You are an expert travel researcher and local guide. You know real venues, real events, real dates. Respond with valid JSON only."
+    full_prompt = "You are an expert travel researcher and local guide. You know real venues, real events, real dates. Respond with valid JSON only.\n\n" + prompt
 
     try:
-        text, _, _ = generate_text(prompt, system=system, max_tokens=3000, temperature=0.7)
+        text, backend = free_generate(full_prompt, max_tokens=3000, temperature=0.7, caller='destination_card')
+        if not text:
+            return None
         text = text.strip()
         if text.startswith('```'):
             text = text.split('\n', 1)[1]
         if text.endswith('```'):
             text = text.rsplit('```', 1)[0]
+        logger.info(f"🤖 Destination card via {backend}")
         return json.loads(text.strip())
     except Exception as e:
         logger.error(f"❌ Destination card generation failed: {e}")
@@ -292,16 +298,19 @@ Return ONLY valid JSON:
 
 Be creative but practical. Mix well-known and unexpected destinations. Consider the group's interests and budget."""
 
-    system = "You are a creative travel advisor. Respond with valid JSON only."
+    full_prompt = "You are a creative travel advisor. Respond with valid JSON only.\n\n" + prompt
 
     try:
-        text, _, _ = generate_text(prompt, system=system, max_tokens=1024, temperature=0.8)
+        text, backend = free_generate(full_prompt, max_tokens=1024, temperature=0.8, caller='suggest_destinations')
+        if not text:
+            return []
         text = text.strip()
         if text.startswith('```'):
             text = text.split('\n', 1)[1]
         if text.endswith('```'):
             text = text.rsplit('```', 1)[0]
         data = json.loads(text.strip())
+        logger.info(f"🤖 Destination suggestions via {backend}")
         return data.get('suggestions', [])
     except Exception as e:
         logger.error(f"❌ Destination suggestion failed: {e}")

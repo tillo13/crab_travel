@@ -1136,7 +1136,7 @@ def generate_random_personas(count):
 
 def haiku_pick_trip(group_size):
     """Ask a free LLM to invent a trip — tries Groq/Cerebras/Mistral before Haiku."""
-    from utilities.free_llm import generate
+    from utilities.llm_router import generate
 
     prompt = f"""You are generating a random group trip for {group_size} friends. Pick ANYWHERE on planet Earth — be creative and varied. Mix famous cities with unexpected places. Respond in JSON only:
 
