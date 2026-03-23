@@ -2068,8 +2068,13 @@ def api_photo_search():
 # ── Chat / Messages routes ────────────────────────────────────
 
 @app.route('/api/plan/<plan_id>/messages')
-@api_auth_required
 def api_get_messages(plan_id):
+    # Allow unauthenticated access for bot trips (public voyeur mode)
+    plan = get_plan_by_id(plan_id)
+    is_bot_trip = plan and plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
     messages = get_plan_messages(plan_id)
     # Organize into threads: top-level messages + replies nested under parent
     top_level = []
