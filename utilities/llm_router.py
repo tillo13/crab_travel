@@ -4,20 +4,63 @@ All secrets are in the shared kumori-404602 GCP Secret Manager.
 
 Strategy: Round-robin across free backends so every backend gets tested and
 we have real latency/reliability data. On failure, try the next one in rotation.
-Paid backends (DeepSeek, GPT-4o-mini, Haiku) only used if ALL free ones fail.
-
-12 backends deep. Portable — drop into any project with the same Secret Manager.
+Each backend has a daily cap matching its free tier — once hit, skip till midnight.
+Paid backends (GPT-4o-mini, Haiku) only used if ALL free ones fail.
 """
 
 import logging
 import time
 import requests
 import random
+from datetime import date
 
 logger = logging.getLogger(__name__)
 
 # Round-robin counter — rotates which free backend goes first
 _call_counter = 0
+
+# ── Daily usage caps (actual free tier limits with safety buffer) ──
+DAILY_CAPS = {
+    'groq': 14000,               # 14400/day free, 30 RPM
+    'cerebras': 9500,            # ~1M tokens/day
+    'mistral': 4500,             # generous free tier
+    'together': 900,             # ~1000/day free
+    'gemini': 1400,              # 1500/day free
+    'grok': 500,                 # PoW bypass, no hard limit
+    'openrouter-gemma': 15,      # 50/day shared across all 3 openrouter models
+    'openrouter-llama': 15,
+    'openrouter-gemma-nano': 15,
+    'deepseek': 500,             # PoW bypass, no hard limit
+    'gpt4o-mini': 450,           # $5 free credits
+    'haiku': 100,                # Max plan, last resort
+}
+
+_daily_counts = {}
+_count_date = None
+
+
+def _check_daily_cap(backend_name):
+    """Return True if this backend is still under its daily free cap."""
+    global _daily_counts, _count_date
+    today = date.today()
+    if _count_date != today:
+        _daily_counts = {}
+        _count_date = today
+    cap = DAILY_CAPS.get(backend_name, 100)
+    used = _daily_counts.get(backend_name, 0)
+    if used >= cap:
+        return False
+    return True
+
+
+def _record_call(backend_name):
+    """Record a successful call against the daily cap."""
+    global _daily_counts, _count_date
+    today = date.today()
+    if _count_date != today:
+        _daily_counts = {}
+        _count_date = today
+    _daily_counts[backend_name] = _daily_counts.get(backend_name, 0) + 1
 
 
 def _log(backend, model, prompt_len, response_len, duration_ms, success, error=None, caller=None):
@@ -231,6 +274,13 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
 
 def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
     """Try a single backend, log result. Returns text or raises."""
+    name = backend['name']
+
+    # Skip if daily free cap is reached — no wasted 429s
+    if not _check_daily_cap(name):
+        logger.debug(f"Skipping {name} — daily cap reached")
+        return None
+
     start = time.time()
     try:
         if backend.get('type') == 'gemini':
@@ -244,8 +294,9 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
 
         ms = int((time.time() - start) * 1000)
         if text:
+            _record_call(name)
             _log(backend['name'], backend.get('model', ''), prompt_len, len(text), ms, True, caller=caller)
-            logger.info(f"🆓 {backend['name']} responded ({len(text)} chars, {ms}ms)")
+            logger.info(f"🆓 {name} responded ({len(text)} chars, {ms}ms)")
             return text
         return None
     except Exception as e:
@@ -283,11 +334,15 @@ def generate(prompt, max_tokens=500, temperature=1.0, caller='crawl'):
         if text:
             return text, backend['name']
 
-    # Absolute last resort — Anthropic Haiku
+    # Absolute last resort — Anthropic Haiku (still capped)
+    if not _check_daily_cap('haiku'):
+        logger.warning("All backends at daily cap — cannot serve request")
+        return None, None
     start = time.time()
     try:
         text = _try_haiku(prompt, max_tokens, temperature)
         ms = int((time.time() - start) * 1000)
+        _record_call('haiku')
         _log('haiku', 'claude-haiku-4-5-20251001', prompt_len, len(text), ms, True, caller=caller)
         logger.info(f"💰 Haiku LAST RESORT ({len(text)} chars, {ms}ms)")
         return text, 'haiku'
