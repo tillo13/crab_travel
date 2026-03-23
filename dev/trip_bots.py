@@ -1254,7 +1254,15 @@ def build_random_trip(base_url, bot_secret):
         ctx.log_event('create', organizer['name'], f"Created: {trip_data['title']} → {', '.join(trip_data['destinations'])}")
         result.ok()
         from utilities.postgres_utils import update_bot_run
-        update_bot_run(ctx.run_id, plan_id=ctx.plan_id)
+        # Write summary immediately so /live shows title while trip is still running
+        update_bot_run(ctx.run_id, plan_id=ctx.plan_id, summary={
+            'title': trip_data['title'],
+            'destinations': trip_data['destinations'],
+            'group_size': group_size,
+            'vibe': trip_data['group_vibes'],
+            'invite_token': ctx.invite_token,
+            'plan_id': ctx.plan_id,
+        })
         # Get destination IDs
         resp2 = ctx.bot.get(f'/api/plan/{ctx.plan_id}/destinations')
         for d in resp2.json().get('data', {}).get('destinations', []):
