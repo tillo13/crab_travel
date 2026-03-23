@@ -1,7 +1,11 @@
 """
-Free LLM router — tries free-tier backends before falling back to Haiku.
-Groq (14,400/day) → Cerebras (1M tokens/day) → Mistral (500K tokens/min) → Haiku (paid fallback).
-All secrets are in the shared kumori GCP Secret Manager.
+Free LLM router — tries every free-tier backend before paid fallbacks.
+All secrets are in the shared kumori-404602 GCP Secret Manager.
+
+Order: Groq → Cerebras → Mistral → Together → OpenRouter (3 free models) →
+       DeepSeek → GPT-4o-mini → Haiku (last resort)
+
+10 backends deep. Haiku should basically never get hit.
 """
 
 import logging
@@ -9,8 +13,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# ── Backend configs: (name, url, model, secret_name) ──
+# All OpenAI-compatible backends, cheapest/free first.
+# OpenRouter gets 3 entries (one per free model) for max coverage.
 BACKENDS = [
+    # ── Completely free tiers ──
     {
         'name': 'groq',
         'url': 'https://api.groq.com/openai/v1/chat/completions',
@@ -29,6 +35,45 @@ BACKENDS = [
         'model': 'mistral-small-latest',
         'secret': 'KINDNESS_MISTRAL_API_KEY',
     },
+    {
+        'name': 'together',
+        'url': 'https://api.together.ai/v1/chat/completions',
+        'model': 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        'secret': 'KINDNESS_TOGETHER_API_KEY',
+    },
+    {
+        'name': 'openrouter-gemma',
+        'url': 'https://openrouter.ai/api/v1/chat/completions',
+        'model': 'google/gemma-3-4b-it:free',
+        'secret': 'KINDNESS_OPENROUTER_API_KEY',
+    },
+    {
+        'name': 'openrouter-llama',
+        'url': 'https://openrouter.ai/api/v1/chat/completions',
+        'model': 'meta-llama/llama-3.2-3b-instruct:free',
+        'secret': 'KINDNESS_OPENROUTER_API_KEY',
+    },
+    {
+        'name': 'openrouter-gemma-nano',
+        'url': 'https://openrouter.ai/api/v1/chat/completions',
+        'model': 'google/gemma-3n-e2b-it:free',
+        'secret': 'KINDNESS_OPENROUTER_API_KEY',
+    },
+    # ── Cheap paid (pennies) ──
+    {
+        'name': 'deepseek',
+        'url': 'https://api.deepseek.com/v1/chat/completions',
+        'model': 'deepseek-chat',
+        'secret': 'KINDNESS_DEEPSEEK_API_KEY',
+    },
+    {
+        'name': 'gpt4o-mini',
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'model': 'gpt-4o-mini',
+        'secret': 'KINDNESS_OPENAI_API_KEY',
+    },
+    # ── Paid last resort ──
+    # Haiku handled separately (Anthropic API format, not OpenAI-compatible)
 ]
 
 _key_cache = {}
@@ -36,8 +81,11 @@ _key_cache = {}
 
 def _get_key(secret_name):
     if secret_name not in _key_cache:
-        from utilities.google_auth_utils import get_secret
-        _key_cache[secret_name] = get_secret(secret_name)
+        try:
+            from utilities.google_auth_utils import get_secret
+            _key_cache[secret_name] = get_secret(secret_name)
+        except Exception:
+            _key_cache[secret_name] = None
     return _key_cache[secret_name]
 
 
@@ -47,12 +95,17 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
     if not key:
         return None
 
+    headers = {
+        'Authorization': f'Bearer {key}',
+        'Content-Type': 'application/json',
+    }
+    # OpenRouter wants HTTP-Referer
+    if 'openrouter' in backend['name']:
+        headers['HTTP-Referer'] = 'https://crab.travel'
+
     resp = requests.post(
         backend['url'],
-        headers={
-            'Authorization': f'Bearer {key}',
-            'Content-Type': 'application/json',
-        },
+        headers=headers,
         json={
             'model': backend['model'],
             'messages': [{'role': 'user', 'content': prompt}],
@@ -66,7 +119,7 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
 
 
 def _try_haiku(prompt, max_tokens=500, temperature=1.0):
-    """Paid fallback — Anthropic Haiku."""
+    """Absolute last resort — Anthropic Haiku (paid)."""
     from utilities.claude_utils import _get_api_key, API_URL
 
     resp = requests.post(
@@ -90,7 +143,7 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
 
 def generate(prompt, max_tokens=500, temperature=1.0):
     """
-    Try free backends first, fall back to Haiku.
+    Try all free backends first, then cheap paid, then Haiku as absolute last resort.
     Returns: (text, backend_name)
     """
     for backend in BACKENDS:
@@ -100,14 +153,14 @@ def generate(prompt, max_tokens=500, temperature=1.0):
                 logger.info(f"🆓 {backend['name']} responded ({len(text)} chars)")
                 return text, backend['name']
         except Exception as e:
-            logger.warning(f"Free LLM {backend['name']} failed: {e}")
+            logger.warning(f"LLM {backend['name']} failed: {e}")
             continue
 
-    # Paid fallback
+    # Absolute last resort — paid Haiku
     try:
         text = _try_haiku(prompt, max_tokens, temperature)
-        logger.info(f"💰 Haiku fallback responded ({len(text)} chars)")
+        logger.info(f"💰 Haiku last-resort fallback ({len(text)} chars)")
         return text, 'haiku'
     except Exception as e:
-        logger.error(f"All LLM backends failed including Haiku: {e}")
+        logger.error(f"ALL {len(BACKENDS) + 1} backends failed: {e}")
         return None, None
