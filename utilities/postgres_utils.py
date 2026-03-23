@@ -431,6 +431,23 @@ def init_database():
             )
         """)
 
+        # ── LLM Telemetry ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.llm_calls (
+                pk_id BIGSERIAL PRIMARY KEY,
+                backend VARCHAR(30) NOT NULL,
+                model VARCHAR(100),
+                prompt_length INTEGER,
+                response_length INTEGER,
+                duration_ms INTEGER,
+                success BOOLEAN DEFAULT TRUE,
+                error_message TEXT,
+                caller VARCHAR(50),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_calls_backend ON crab.llm_calls(backend, created_at)")
+
         # ── Member Watch Tables ──
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS crab.member_watches (
@@ -2560,6 +2577,33 @@ def get_watch_history(watch_id, limit=50):
     except Exception as e:
         logger.error(f"Get watch history failed: {e}")
         return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── LLM Telemetry ─────────────────────────────────────────────
+
+def log_llm_call(backend, model=None, prompt_length=0, response_length=0,
+                 duration_ms=0, success=True, error_message=None, caller=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO crab.llm_calls
+                (backend, model, prompt_length, response_length, duration_ms, success, error_message, caller)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (backend, model, prompt_length, response_length, duration_ms, success,
+              (error_message or '')[:500] if error_message else None, caller))
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.debug(f"LLM telemetry log failed: {e}")
     finally:
         if cursor:
             cursor.close()

@@ -9,9 +9,19 @@ Order: Groq → Cerebras → Mistral → Together → Gemini → Grok → OpenRo
 """
 
 import logging
+import time
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _log(backend, model, prompt_len, response_len, duration_ms, success, error=None, caller=None):
+    """Log to DB — fire and forget, never break the actual call."""
+    try:
+        from utilities.postgres_utils import log_llm_call
+        log_llm_call(backend, model, prompt_len, response_len, duration_ms, success, error, caller)
+    except Exception:
+        pass
 
 # All OpenAI-compatible backends, cheapest/free first.
 # Gemini and Haiku handled separately (different API formats).
@@ -189,12 +199,16 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
     return resp.json()['content'][0]['text']
 
 
-def generate(prompt, max_tokens=500, temperature=1.0):
+def generate(prompt, max_tokens=500, temperature=1.0, caller='crawl'):
     """
-    Try ALL free backends first, then cheap paid, then Haiku as absolute last resort.
-    11 backends deep. Returns: (text, backend_name)
+    Try ALL free backends, then cheap paid, then Haiku last resort.
+    12 backends deep. Every attempt logged to crab.llm_calls.
+    Returns: (text, backend_name)
     """
+    prompt_len = len(prompt)
+
     for backend in BACKENDS:
+        start = time.time()
         try:
             if backend.get('type') == 'gemini':
                 text = _try_gemini(prompt, max_tokens, temperature)
@@ -202,18 +216,28 @@ def generate(prompt, max_tokens=500, temperature=1.0):
                 text = _try_grok(prompt, max_tokens, temperature)
             else:
                 text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
+
+            ms = int((time.time() - start) * 1000)
             if text:
-                logger.info(f"🆓 {backend['name']} responded ({len(text)} chars)")
+                _log(backend['name'], backend.get('model', ''), prompt_len, len(text), ms, True, caller=caller)
+                logger.info(f"🆓 {backend['name']} responded ({len(text)} chars, {ms}ms)")
                 return text, backend['name']
         except Exception as e:
-            logger.warning(f"LLM {backend['name']} failed: {e}")
+            ms = int((time.time() - start) * 1000)
+            _log(backend['name'], backend.get('model', ''), prompt_len, 0, ms, False, str(e)[:200], caller=caller)
+            logger.warning(f"LLM {backend['name']} failed ({ms}ms): {e}")
             continue
 
     # Absolute last resort — paid Haiku
+    start = time.time()
     try:
         text = _try_haiku(prompt, max_tokens, temperature)
-        logger.info(f"💰 Haiku last-resort fallback ({len(text)} chars)")
+        ms = int((time.time() - start) * 1000)
+        _log('haiku', 'claude-haiku-4-5-20251001', prompt_len, len(text), ms, True, caller=caller)
+        logger.info(f"💰 Haiku last-resort fallback ({len(text)} chars, {ms}ms)")
         return text, 'haiku'
     except Exception as e:
+        ms = int((time.time() - start) * 1000)
+        _log('haiku', 'claude-haiku-4-5-20251001', prompt_len, 0, ms, False, str(e)[:200], caller=caller)
         logger.error(f"ALL {len(BACKENDS) + 1} backends failed: {e}")
         return None, None
