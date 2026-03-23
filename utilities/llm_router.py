@@ -85,12 +85,10 @@ BACKENDS = [
         'model': 'google/gemma-3n-e2b-it:free',
         'secret': 'KINDNESS_OPENROUTER_API_KEY',
     },
-    # DeepSeek — free/cheap, in the rotation
+    # DeepSeek — free via Cloud Run worker PoW bypass (not the paid API)
     {
         'name': 'deepseek',
-        'url': 'https://api.deepseek.com/v1/chat/completions',
-        'model': 'deepseek-chat',
-        'secret': 'KINDNESS_DEEPSEEK_API_KEY',
+        'type': 'deepseek',
     },
 ]
 
@@ -185,6 +183,26 @@ def _try_grok(prompt, max_tokens=500, temperature=1.0):
     return None
 
 
+def _try_deepseek(prompt, max_tokens=500, temperature=1.0):
+    """DeepSeek via kindness Cloud Run worker — free, uses PoW bypass."""
+    WORKER_URL = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
+    resp = requests.post(
+        WORKER_URL,
+        json={
+            'backend': 'deepseek',
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+        },
+        timeout=60,
+    )
+    if resp.ok:
+        text = resp.json().get('text', '')
+        if text:
+            return text
+    return None
+
+
 def _try_haiku(prompt, max_tokens=500, temperature=1.0):
     """Absolute last resort — Anthropic Haiku (paid)."""
     from utilities.claude_utils import _get_api_key, API_URL, log_api_usage
@@ -219,6 +237,8 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
             text = _try_gemini(prompt, max_tokens, temperature)
         elif backend.get('type') == 'grok':
             text = _try_grok(prompt, max_tokens, temperature)
+        elif backend.get('type') == 'deepseek':
+            text = _try_deepseek(prompt, max_tokens, temperature)
         else:
             text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
 
