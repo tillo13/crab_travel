@@ -1040,11 +1040,11 @@ from datetime import date, timedelta
 
 
 def _random_blackouts():
-    """Generate 0-2 random blackout date ranges for a crawl bot."""
+    """Generate 0-3 random blackout date ranges for a crawl bot."""
     blackouts = []
-    if random.random() < 0.4:  # 40% chance of having blackouts
-        for _ in range(random.randint(1, 2)):
-            start_offset = random.randint(30, 180)
+    if random.random() < 0.6:  # 60% chance of having blackouts
+        for _ in range(random.randint(1, 3)):
+            start_offset = random.randint(14, 120)
             duration = random.randint(1, 5)
             start = (date.today() + timedelta(days=start_offset)).isoformat()
             end = (date.today() + timedelta(days=start_offset + duration)).isoformat()
@@ -1053,16 +1053,15 @@ def _random_blackouts():
 
 
 def _random_tentative_dates():
-    """Generate 1-3 tentative date ranges for a crawl bot."""
+    """Every crawl bot gets 2-4 tentative date ranges to fill the calendar."""
     tentative = []
-    if random.random() < 0.7:  # 70% chance of having tentative dates
-        for _ in range(random.randint(1, 3)):
-            start_offset = random.randint(14, 120)
-            duration = random.randint(3, 10)
-            start = (date.today() + timedelta(days=start_offset)).isoformat()
-            end = (date.today() + timedelta(days=start_offset + duration)).isoformat()
-            pref = random.choice(['ideal', 'works', 'if_needed'])
-            tentative.append({'start': start, 'end': end, 'preference': pref})
+    for _ in range(random.randint(2, 4)):
+        start_offset = random.randint(7, 90)
+        duration = random.randint(3, 14)
+        start = (date.today() + timedelta(days=start_offset)).isoformat()
+        end = (date.today() + timedelta(days=start_offset + duration)).isoformat()
+        pref = random.choice(['ideal', 'ideal', 'works', 'if_needed'])  # bias toward ideal
+        tentative.append({'start': start, 'end': end, 'preference': pref})
     return tentative
 
 
@@ -1099,11 +1098,23 @@ def generate_random_personas(count):
             'vote_ranks': {},  # filled after destinations are known
             'blackouts': _random_blackouts(),
             'tentative_dates': _random_tentative_dates(),
-            'is_flexible': random.random() < 0.3,
+            'is_flexible': random.random() < 0.1,  # most bots show specific dates
         }
-        # ~40% of personas post a chat message
-        if random.random() < 0.4:
-            persona['chat_messages'] = [f"Excited for this trip! Love {random.choice(interests)}."]
+        # ~80% of personas post chat messages — make it lively
+        if random.random() < 0.8:
+            msgs = [f"Excited for this trip! Love {random.choice(interests)}."]
+            if random.random() < 0.5:
+                msgs.append(random.choice([
+                    "Who's handling the group dinner reservation?",
+                    "I found some amazing spots we need to check out!",
+                    "Can we make sure there's a chill day in the itinerary?",
+                    f"Budget-wise I'm comfortable up to ${budget_base // 100 + budget_range // 100}",
+                    "This is going to be legendary!",
+                    f"Anyone else into {random.choice(interests)}? We should plan something around that.",
+                    "I'll look into flights from my end",
+                    "Hotel vs Airbnb? I'm flexible either way",
+                ]))
+            persona['chat_messages'] = msgs
         # ~20% are late joiners (not the organizer)
         if i > 0 and random.random() < 0.2:
             persona['late_joiner'] = True
@@ -1172,7 +1183,7 @@ def build_random_trip(base_url, bot_secret):
     """Generate a fully random trip and run it through the quick pipeline."""
     from utilities.postgres_utils import insert_bot_run
 
-    group_size = random.choice([2, 3, 4, 5, 6, 7, 8, 10, 12, 15])
+    group_size = random.choice([5, 6, 7, 8, 10, 12, 15, 18, 20, 25])
     log.info(f"\n  🎲 Generating random trip for {group_size} people...")
 
     # Ask Haiku to invent the trip
