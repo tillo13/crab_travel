@@ -637,12 +637,7 @@ def api_admin_speed_test():
 @app.route('/live')
 def live_page():
     """Public page — anyone can watch the crabs crawl."""
-    is_admin_user = False
-    if 'user' in session:
-        from utilities.admin_utils import is_admin
-        real_uid = session.get('_real_uid') or session['user']['id']
-        is_admin_user = is_admin(real_uid)
-    return render_template('admin_bots.html', active_page='live', is_admin=is_admin_user)
+    return render_template('admin_bots.html', active_page='live')
 
 
 @app.route('/admin/bots')
@@ -660,7 +655,7 @@ def api_live_status():
     """Public endpoint — bot run status for the /live page."""
     from utilities.postgres_utils import get_bot_runs, get_bot_events
 
-    runs = get_bot_runs(limit=20)
+    runs = get_bot_runs(limit=50)
     # Serialize datetimes + extract summary info
     for r in runs:
         for k in ('started_at', 'finished_at'):
@@ -2007,7 +2002,7 @@ def task_crawl():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        # Prune old bot plans (keep last 15)
+        # Prune old bot plans (keep last 100 — the more the merrier)
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -2016,7 +2011,7 @@ def task_crawl():
                     SELECT plan_id FROM crab.plans
                     WHERE title LIKE '[BOT]%%'
                     ORDER BY created_at DESC
-                    OFFSET 15
+                    OFFSET 100
                 )
             """)
             pruned = cur.rowcount

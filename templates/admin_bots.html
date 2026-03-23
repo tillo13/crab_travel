@@ -23,8 +23,6 @@
   .event-error { color: #EF4444; }
   .event-warning { color: #F59E0B; }
   #activity-feed { max-height: 500px; overflow-y: auto; }
-  .btn-bot { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
-  .btn-bot:disabled { opacity: 0.4; cursor: not-allowed; }
   .dest-tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: rgba(232,89,58,0.1); color: #F47A5F; margin-right: 0.25rem; }
   html:not(.dark) .dest-tag { background: rgba(232,89,58,0.08); }
   .stat-num { font-family: 'DM Serif Display', Georgia, serif; }
@@ -43,22 +41,9 @@
 
 <!-- Header -->
 <div class="mb-8">
-  {% if is_admin %}
-  <p class="text-xs text-crab-sand-dim mb-2"><a href="/admin" class="hover:text-crab-coral transition-colors">&larr; Admin Panel</a></p>
-  {% endif %}
   <h1 class="text-3xl font-display mb-2">Crab Crawlers <span class="text-crab-coral">Live</span></h1>
   <p class="text-sm text-crab-sand-dim leading-relaxed max-w-2xl">AI-powered crabs are always crawling — planning trips to every corner of the planet, voting on destinations, debating in chat, and coordinating group travel from scratch. Watch it happen in real time. We don't hide in our shell.</p>
 </div>
-
-<!-- Admin Controls -->
-{% if is_admin %}
-<div class="flex gap-3 mb-6">
-  <button id="btn-run-quick" onclick="runBots('quick')" class="btn-bot bg-crab-teal text-white hover:bg-crab-teal-light">Run Quick</button>
-  <button id="btn-run-full" onclick="runBots('full')" class="btn-bot bg-crab-coral text-white hover:bg-crab-coral-light">Run Full</button>
-  <button id="btn-stop" onclick="stopBots()" class="btn-bot bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30" disabled>Stop</button>
-  <button id="btn-cleanup" onclick="cleanupBots()" class="btn-bot bg-white/5 text-crab-sand-dim border border-white/10 hover:bg-white/10">Cleanup</button>
-</div>
-{% endif %}
 
 <!-- Stats Bar -->
 <div class="grid grid-cols-3 gap-3 mb-6">
@@ -117,33 +102,9 @@
 </div>
 
 <script>
-const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 let pollInterval = null;
 let currentFilter = 'all';
 const TOTAL_PHASES = 13; // setup through stop
-
-// ── Admin API Calls ──────────────────────────────────────────
-{% if is_admin %}
-async function runBots(mode) {
-  const btn = mode === 'full' ? document.getElementById('btn-run-full') : document.getElementById('btn-run-quick');
-  btn.disabled = true;
-  try {
-    const resp = await fetch('/api/admin/bots/run', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({mode})
-    });
-    const data = await resp.json();
-    if (data.error) { alert(data.error); btn.disabled = false; return; }
-  } catch(e) { alert('Failed: ' + e); btn.disabled = false; }
-}
-async function stopBots() { await fetch('/api/admin/bots/stop', {method: 'POST'}); }
-async function cleanupBots() {
-  if (!confirm('Delete all bot trip data?')) return;
-  const resp = await fetch('/api/admin/bots/cleanup', {method: 'POST'});
-  const data = await resp.json();
-  alert(`Cleaned up ${data.deleted || 0} bot plans`);
-}
-{% endif %}
 
 // ── Polling ──────────────────────────────────────────────────
 async function pollStatus() {
@@ -159,20 +120,23 @@ function renderBoard(data) {
   const {runs, events} = data;
   if (!runs || runs.length === 0) return;
 
+  // Filter out empty/broken runs (old manual runs with no trip data)
+  const validRuns = runs.filter(r => r.trip_title && r.trip_destinations && r.trip_destinations.length > 0);
+
   // Stats
   const allDests = new Set();
   let totalCrabs = 0;
-  runs.forEach(r => {
+  validRuns.forEach(r => {
     (r.trip_destinations || []).forEach(d => allDests.add(d));
     totalCrabs += r.trip_group_size || 0;
   });
-  document.getElementById('stat-trips').textContent = runs.length;
+  document.getElementById('stat-trips').textContent = validRuns.length;
   document.getElementById('stat-destinations').textContent = allDests.size;
   document.getElementById('stat-crabs').textContent = totalCrabs;
 
   // Split runs into active and completed
-  const activeRuns = runs.filter(r => r.status === 'running');
-  const completedRuns = runs.filter(r => r.status !== 'running');
+  const activeRuns = validRuns.filter(r => r.status === 'running');
+  const completedRuns = validRuns.filter(r => r.status !== 'running');
 
   // Render active trips
   const activeBoard = document.getElementById('active-trips');
@@ -220,16 +184,6 @@ function renderBoard(data) {
   // Manage polling — always poll (crabs are always crawling)
   if (!pollInterval) {
     pollInterval = setInterval(pollStatus, 3000);
-  }
-  // Update admin buttons
-  if (IS_ADMIN) {
-    const hasRunning = runs.some(r => r.status === 'running');
-    const stopBtn = document.getElementById('btn-stop');
-    if (stopBtn) stopBtn.disabled = !hasRunning;
-    const qBtn = document.getElementById('btn-run-quick');
-    const fBtn = document.getElementById('btn-run-full');
-    if (qBtn) qBtn.disabled = hasRunning;
-    if (fBtn) fBtn.disabled = hasRunning;
   }
 }
 

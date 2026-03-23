@@ -1,7 +1,7 @@
 cron:
 - description: "Crab Crawlers — run a random bot trip"
   url: /tasks/crawl
-  schedule: every 10 minutes
+  schedule: every 5 minutes
   timezone: America/Los_Angeles
 
 - description: "Refresh global deals cache from all travel APIs"
