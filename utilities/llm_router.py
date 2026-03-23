@@ -187,7 +187,7 @@ def _try_grok(prompt, max_tokens=500, temperature=1.0):
 
 def _try_haiku(prompt, max_tokens=500, temperature=1.0):
     """Absolute last resort — Anthropic Haiku (paid)."""
-    from utilities.claude_utils import _get_api_key, API_URL
+    from utilities.claude_utils import _get_api_key, API_URL, log_api_usage
 
     resp = requests.post(
         API_URL,
@@ -205,7 +205,10 @@ def _try_haiku(prompt, max_tokens=500, temperature=1.0):
         timeout=30,
     )
     resp.raise_for_status()
-    return resp.json()['content'][0]['text']
+    data = resp.json()
+    log_api_usage('claude-haiku-4-5-20251001', data.get('usage', {}),
+                  feature='haiku_last_resort')
+    return data['content'][0]['text']
 
 
 def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
