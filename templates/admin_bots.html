@@ -28,6 +28,13 @@
   .dest-tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: rgba(232,89,58,0.1); color: #F47A5F; margin-right: 0.25rem; }
   html:not(.dark) .dest-tag { background: rgba(232,89,58,0.08); }
   .stat-num { font-family: 'DM Serif Display', Georgia, serif; }
+  .filter-tab { padding: 0.35rem 0.9rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.08); background: transparent; color: #C8C2B8; transition: all 0.2s; }
+  .filter-tab:hover { border-color: rgba(232,89,58,0.3); color: #F0EAE0; }
+  .filter-tab.active { background: rgba(232,89,58,0.15); border-color: rgba(232,89,58,0.3); color: #E8593A; }
+  html:not(.dark) .filter-tab { border-color: #e5e7eb; color: #6b7280; }
+  html:not(.dark) .filter-tab.active { background: rgba(232,89,58,0.08); color: #E8593A; }
+  .trip-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; margin-top: 0.5rem; }
+  .trip-progress-bar { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #E8593A, #0D9488); transition: width 0.5s ease; }
 </style>
 {% endblock %}
 
@@ -69,19 +76,39 @@
   </div>
 </div>
 
-<!-- Departures Board -->
-<div class="mb-6">
-  <h2 class="font-display text-xl mb-4">Departures Board</h2>
-  <div id="departures" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+<!-- Filter Tabs -->
+<div class="flex gap-2 mb-4">
+  <button id="filter-all" onclick="setFilter('all')" class="filter-tab active">All</button>
+  <button id="filter-active" onclick="setFilter('active')" class="filter-tab">Active</button>
+  <button id="filter-complete" onclick="setFilter('complete')" class="filter-tab">Completed</button>
+</div>
+
+<!-- Active Trips -->
+<div class="mb-6" id="active-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+    <span>Live Now</span>
+    <span id="active-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="active-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3">
     <div class="trip-card opacity-40 text-center py-8">
-      <div class="text-sm text-crab-sand-dim">No trips yet. The crabs are warming up...</div>
+      <div class="text-sm text-crab-sand-dim">No active trips right now...</div>
     </div>
   </div>
 </div>
 
+<!-- Completed Trips -->
+<div class="mb-6" id="completed-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Completed</span>
+    <span id="completed-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="completed-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
 <!-- Live Activity Feed -->
 <div class="trip-card mb-6">
-  <h2 class="font-display text-xl mb-3">Activity Feed</h2>
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">Activity Feed <span class="w-2 h-2 rounded-full bg-crab-coral animate-pulse"></span></h2>
   <div id="activity-feed">
     <div class="text-sm text-crab-sand-dim opacity-40">Waiting for crab activity...</div>
   </div>
@@ -92,6 +119,8 @@
 <script>
 const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 let pollInterval = null;
+let currentFilter = 'all';
+const TOTAL_PHASES = 13; // setup through stop
 
 // ── Admin API Calls ──────────────────────────────────────────
 {% if is_admin %}
@@ -141,52 +170,34 @@ function renderBoard(data) {
   document.getElementById('stat-destinations').textContent = allDests.size;
   document.getElementById('stat-crabs').textContent = totalCrabs;
 
-  // Departures board
-  const board = document.getElementById('departures');
-  board.innerHTML = runs.map(r => {
-    const isRunning = r.status === 'running';
-    const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
-    const title = r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip');
-    const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
-    const vibe = r.trip_vibe || '';
-    const size = r.trip_group_size || '?';
-    const statusLabel = r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
-    const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
+  // Split runs into active and completed
+  const activeRuns = runs.filter(r => r.status === 'running');
+  const completedRuns = runs.filter(r => r.status !== 'running');
 
-    // Duration
-    let duration = '';
-    if (r.started_at) {
-      const start = new Date(r.started_at);
-      const end = r.finished_at ? new Date(r.finished_at) : new Date();
-      const secs = Math.round((end - start) / 1000);
-      duration = secs < 60 ? secs + 's' : Math.floor(secs/60) + 'm ' + (secs%60) + 's';
-    }
+  // Render active trips
+  const activeBoard = document.getElementById('active-trips');
+  const activeCountEl = document.getElementById('active-count');
+  if (activeCountEl) activeCountEl.textContent = activeRuns.length > 0 ? `(${activeRuns.length})` : '';
 
-    // Time ago
-    let timeAgo = '';
-    if (r.started_at) {
-      const mins = Math.round((Date.now() - new Date(r.started_at)) / 60000);
-      timeAgo = mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins/60) + 'h ago';
-    }
+  if (activeRuns.length > 0) {
+    activeBoard.innerHTML = activeRuns.map(r => renderTripCard(r, true)).join('');
+  } else {
+    activeBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No active trips right now — next crawl coming soon...</div></div>';
+  }
 
-    const cardContent = `
-      <div class="flex items-start justify-between mb-2">
-        <div>
-          <div class="font-display text-base">${title}</div>
-          <div class="text-xs text-crab-sand-dim mt-0.5">${vibe}</div>
-        </div>
-        <span class="phase-badge ${badgeClass}">${statusLabel}</span>
-      </div>
-      <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">generating...</span>'}</div>
-      <div class="flex items-center justify-between text-xs text-crab-sand-dim">
-        <span>${size} crabs</span>
-        <span>${duration} &middot; ${timeAgo}</span>
-      </div>`;
-    if (linkUrl) {
-      return `<a href="${linkUrl}" class="trip-card block ${isRunning ? 'is-running' : ''} hover:bg-white/5 dark:hover:bg-white/5" style="text-decoration:none;color:inherit;">${cardContent}</a>`;
-    }
-    return `<div class="trip-card ${isRunning ? 'is-running' : ''}">${cardContent}</div>`;
-  }).join('');
+  // Render completed trips
+  const completedBoard = document.getElementById('completed-trips');
+  const completedCountEl = document.getElementById('completed-count');
+  if (completedCountEl) completedCountEl.textContent = completedRuns.length > 0 ? `(${completedRuns.length})` : '';
+
+  if (completedRuns.length > 0) {
+    completedBoard.innerHTML = completedRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    completedBoard.innerHTML = '';
+  }
+
+  // Apply current filter
+  applyFilter();
 
   // Activity feed
   const feed = document.getElementById('activity-feed');
@@ -208,7 +219,7 @@ function renderBoard(data) {
 
   // Manage polling — always poll (crabs are always crawling)
   if (!pollInterval) {
-    pollInterval = setInterval(pollStatus, 4000);
+    pollInterval = setInterval(pollStatus, 3000);
   }
   // Update admin buttons
   if (IS_ADMIN) {
@@ -222,8 +233,87 @@ function renderBoard(data) {
   }
 }
 
+function renderTripCard(r, isActive) {
+  const isRunning = r.status === 'running';
+  const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
+  const title = (r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip')).replace('[BOT] ', '');
+  const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
+  const vibe = r.trip_vibe || '';
+  const size = r.trip_group_size || '?';
+  const statusLabel = r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
+  const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
+
+  let duration = '';
+  if (r.started_at) {
+    const start = new Date(r.started_at);
+    const end = r.finished_at ? new Date(r.finished_at) : new Date();
+    const secs = Math.round((end - start) / 1000);
+    duration = secs < 60 ? secs + 's' : Math.floor(secs/60) + 'm ' + (secs%60) + 's';
+  }
+
+  let timeAgo = '';
+  if (r.started_at) {
+    const mins = Math.round((Date.now() - new Date(r.started_at)) / 60000);
+    timeAgo = mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins/60) + 'h ago';
+  }
+
+  // Progress bar for active trips
+  const phasesTotal = r.phases_passed + r.phases_failed + r.phases_warned;
+  const progressPct = isRunning ? Math.min(100, Math.round((phasesTotal / TOTAL_PHASES) * 100)) : 100;
+  const progressBar = isActive ? `<div class="trip-progress"><div class="trip-progress-bar" style="width:${progressPct}%"></div></div>` : '';
+
+  // Current phase indicator for active trips
+  const phaseInfo = isActive && r.phases_passed > 0
+    ? `<span class="text-[10px] text-crab-teal">${r.phases_passed} phases done</span>`
+    : '';
+
+  const cardContent = `
+    <div class="flex items-start justify-between mb-2">
+      <div>
+        <div class="font-display text-base">${title}</div>
+        <div class="text-xs text-crab-sand-dim mt-0.5">${vibe}</div>
+      </div>
+      <span class="phase-badge ${badgeClass}">${statusLabel}</span>
+    </div>
+    <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">generating...</span>'}</div>
+    <div class="flex items-center justify-between text-xs text-crab-sand-dim">
+      <span>${size} crabs ${phaseInfo}</span>
+      <span>${duration} &middot; ${timeAgo}</span>
+    </div>
+    ${progressBar}`;
+
+  if (linkUrl) {
+    return `<a href="${linkUrl}" class="trip-card block ${isRunning ? 'is-running' : ''} hover:bg-white/5 dark:hover:bg-white/5" style="text-decoration:none;color:inherit;">${cardContent}</a>`;
+  }
+  return `<div class="trip-card ${isRunning ? 'is-running' : ''}">${cardContent}</div>`;
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('filter-' + filter).classList.add('active');
+  applyFilter();
+}
+
+function applyFilter() {
+  const activeEl = document.getElementById('active-section');
+  const completedEl = document.getElementById('completed-section');
+  if (!activeEl || !completedEl) return;
+
+  if (currentFilter === 'all') {
+    activeEl.style.display = '';
+    completedEl.style.display = '';
+  } else if (currentFilter === 'active') {
+    activeEl.style.display = '';
+    completedEl.style.display = 'none';
+  } else {
+    activeEl.style.display = 'none';
+    completedEl.style.display = '';
+  }
+}
+
 // Start polling on load
 pollStatus();
-pollInterval = setInterval(pollStatus, 4000);
+pollInterval = setInterval(pollStatus, 3000);
 </script>
 {% endblock %}

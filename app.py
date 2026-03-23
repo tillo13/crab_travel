@@ -678,18 +678,22 @@ def api_live_status():
         r['trip_vibe'] = summary.get('vibe', '')
         r['invite_token'] = summary.get('invite_token', '')
 
-    # Get events for ALL recent runs (last 200 events across all runs)
+    # Get events — prefer active run, fall back to most recent runs
     events = []
     if runs:
-        # Get events for the most recent or active run
-        active = next((r for r in runs if r['status'] == 'running'), runs[0] if runs else None)
-        if active:
-            events = get_bot_events(active['run_id'], limit=100)
-            for e in events:
+        active_runs = [r for r in runs if r['status'] == 'running']
+        target_runs = active_runs if active_runs else runs[:3]
+        for run in target_runs:
+            run_events = get_bot_events(run['run_id'], limit=50)
+            for e in run_events:
                 if e.get('created_at'):
                     e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
                 if e.get('run_id'):
                     e['run_id'] = str(e['run_id'])
+            events.extend(run_events)
+        # Sort by created_at descending, limit to 200
+        events.sort(key=lambda e: e.get('created_at', ''), reverse=True)
+        events = events[:200]
 
     return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
 
@@ -1028,27 +1032,47 @@ def invite_page(invite_token):
         return str(o)
     destinations_json = json.dumps(destinations, default=_default_ser)
 
-    # Calendar data — all members' blackouts + tentative dates
-    all_blackouts = get_plan_blackouts(plan['plan_id']) if not (user is None) else []
-    all_tentative = get_plan_tentative_dates(plan['plan_id']) if not (user is None) else []
-    calendar_json = json.dumps({
-        'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
-        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
-        'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
-    }, default=_default_ser)
+    # Helper to strip [BOT] prefix from names
+    def _clean(name):
+        return (name or '').replace('[BOT] ', '')
 
+    # Calendar data — all members' blackouts + tentative dates
     is_organizer = user is not None and user['id'] == plan['organizer_id']
     is_bot_trip = plan.get('title', '').startswith('[BOT]')
 
-    # Bot trips are fully open — no login gate, show everything
-    if is_bot_trip and user is None:
+    # Always load calendar data for all members (bot trips + logged-in users)
+    if user is not None or is_bot_trip:
         all_blackouts = get_plan_blackouts(plan['plan_id'])
         all_tentative = get_plan_tentative_dates(plan['plan_id'])
-        calendar_json = json.dumps({
-            'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
-            'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
-            'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
-        }, default=_default_ser)
+    else:
+        all_blackouts = []
+        all_tentative = []
+    calendar_json = json.dumps({
+        'blackouts': [{'name': _clean(b['full_name']), 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+        'tentative': [{'name': _clean(t['full_name']), 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
+        'members': [{'name': _clean(m['display_name']), 'is_flexible': m.get('is_flexible', False)} for m in members],
+    }, default=_default_ser)
+
+    # Fetch watch data for locked plans
+    watches_json = '[]'
+    if plan.get('status') == 'locked' or plan.get('locked_destination'):
+        from utilities.postgres_utils import get_watches_for_plan, get_watch_history
+        watches = get_watches_for_plan(plan['plan_id'])
+        watches_data = []
+        for w in watches:
+            history = get_watch_history(w['pk_id'], limit=20)
+            watches_data.append({
+                'pk_id': w['pk_id'], 'member_id': w['member_id'],
+                'member_name': w['member_name'], 'watch_type': w['watch_type'],
+                'origin': w.get('origin'), 'destination': w['destination'],
+                'status': w['status'],
+                'best_price': float(w['best_price_usd']) if w.get('best_price_usd') else None,
+                'last_price': float(w['last_price_usd']) if w.get('last_price_usd') else None,
+                'deep_link': w.get('deep_link'),
+                'last_checked': w['last_checked_at'].isoformat() if w.get('last_checked_at') else None,
+                'history': [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history],
+            })
+        watches_json = json.dumps(watches_data, default=_default_ser)
 
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
@@ -1063,6 +1087,7 @@ def invite_page(invite_token):
         profile_completed=profile_completed,
         destinations_json=destinations_json,
         calendar_json=calendar_json if not (user is None and not is_bot_trip) else '{}',
+        watches_json=watches_json,
     )
 
 
@@ -1671,8 +1696,80 @@ def api_lock_plan(plan_id):
     success = lock_plan(plan_id, data['destination'], data.get('start_date'), data.get('end_date'))
     if success:
         logger.info(f"🔒 Plan locked: {plan['title']} → {data['destination']}")
+        # Auto-create per-member price watches in background
+        from utilities.watch_engine import create_watches_for_plan
+        threading.Thread(target=create_watches_for_plan, args=(plan_id,), daemon=True).start()
         return jsonify({'success': True})
     return jsonify({'error': 'Lock failed'}), 500
+
+
+# ── Watch routes ────────────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/watches')
+def api_get_watches(plan_id):
+    """Get all member watches for a plan, grouped by member."""
+    from utilities.postgres_utils import get_watches_for_plan, get_watch_history
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    # Allow unauthenticated access for bot trips
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+    watches = get_watches_for_plan(plan_id)
+    # Group by member and attach recent history for sparklines
+    members = {}
+    for w in watches:
+        mid = w['member_id']
+        if mid not in members:
+            members[mid] = {
+                'member_id': mid,
+                'member_name': w['member_name'],
+                'watches': [],
+            }
+        history = get_watch_history(w['pk_id'], limit=20)
+        w['history'] = [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history]
+        # Convert decimals for JSON
+        for field in ('best_price_usd', 'last_price_usd'):
+            if w.get(field) is not None:
+                w[field] = float(w[field])
+        members[mid]['watches'].append(w)
+
+    return jsonify({'success': True, 'data': {'members': list(members.values())}})
+
+
+@app.route('/api/plan/<plan_id>/watches/<int:watch_id>/status', methods=['POST'])
+@api_auth_required
+def api_update_watch_status(plan_id, watch_id):
+    """Update watch status (mark as booked, paused, or active)."""
+    from utilities.postgres_utils import update_watch_status
+    data = request.get_json()
+    new_status = data.get('status') if data else None
+    if new_status not in ('active', 'paused', 'booked'):
+        return jsonify({'error': 'Invalid status'}), 400
+    success = update_watch_status(watch_id, new_status)
+    return jsonify({'success': success})
+
+
+@app.route('/api/plan/<plan_id>/watches/<int:watch_id>/history')
+def api_get_watch_history(plan_id, watch_id):
+    """Price history for a single watch (sparkline data)."""
+    from utilities.postgres_utils import get_watch_history
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+    history = get_watch_history(watch_id, limit=int(request.args.get('limit', 50)))
+    return jsonify({
+        'success': True,
+        'data': [{'price': float(h['price_usd']), 'source': h['source'],
+                   'at': h['observed_at'].isoformat()} for h in history]
+    })
 
 
 # ── Recommendation routes ───────────────────────────────────
@@ -1950,6 +2047,22 @@ def task_refresh_deals():
         return jsonify({'success': True, 'deals_upserted': total})
     except Exception as e:
         logger.error(f"❌ refresh-deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/check-watches')
+def task_check_watches():
+    """Cron job — check all active member watches for price changes."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.watch_engine import check_all_watches
+        summary = check_all_watches()
+        logger.info(f"✅ /tasks/check-watches complete: {summary}")
+        return jsonify({'success': True, **summary})
+    except Exception as e:
+        logger.error(f"❌ check-watches failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

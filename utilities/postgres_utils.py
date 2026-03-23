@@ -431,6 +431,47 @@ def init_database():
             )
         """)
 
+        # ── Member Watch Tables ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.member_watches (
+                pk_id BIGSERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                member_id INTEGER NOT NULL REFERENCES crab.plan_members(pk_id) ON DELETE CASCADE,
+                watch_type VARCHAR(20) NOT NULL,
+                origin VARCHAR(10),
+                destination VARCHAR(100) NOT NULL,
+                checkin DATE,
+                checkout DATE,
+                budget_max INTEGER,
+                status VARCHAR(20) DEFAULT 'active',
+                best_price_usd NUMERIC(10,2),
+                best_price_at TIMESTAMPTZ,
+                last_price_usd NUMERIC(10,2),
+                last_checked_at TIMESTAMPTZ,
+                alert_threshold_pct INTEGER DEFAULT 10,
+                deep_link TEXT,
+                data JSONB DEFAULT '{}'
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_member_watches_plan ON crab.member_watches(plan_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_member_watches_status ON crab.member_watches(status)")
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_member_watches_unique
+            ON crab.member_watches(plan_id, member_id, watch_type, COALESCE(origin, ''))
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.watch_history (
+                pk_id BIGSERIAL PRIMARY KEY,
+                watch_id BIGINT NOT NULL REFERENCES crab.member_watches(pk_id) ON DELETE CASCADE,
+                price_usd NUMERIC(10,2) NOT NULL,
+                source VARCHAR(50) NOT NULL,
+                deep_link TEXT,
+                data JSONB DEFAULT '{}',
+                observed_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_watch_history_watch ON crab.watch_history(watch_id, observed_at)")
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),
@@ -2322,6 +2363,203 @@ def get_bot_run_status(run_id):
     except Exception as e:
         logger.error(f"Get bot run status failed: {e}")
         return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ── Member Watch CRUD ─────────────────────────────────────────
+
+def create_member_watch(plan_id, member_id, watch_type, destination, checkin=None, checkout=None,
+                        origin=None, budget_max=None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.member_watches
+                (plan_id, member_id, watch_type, origin, destination, checkin, checkout, budget_max)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (plan_id, member_id, watch_type, COALESCE(origin, '')) DO NOTHING
+            RETURNING *
+        """, (plan_id, member_id, watch_type, origin, destination, checkin, checkout, budget_max))
+        row = cursor.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Create member watch failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_watches_for_plan(plan_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT w.*, m.display_name, u.full_name,
+                   COALESCE(u.full_name, m.display_name) as member_name
+            FROM crab.member_watches w
+            JOIN crab.plan_members m ON m.pk_id = w.member_id
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE w.plan_id = %s
+            ORDER BY m.joined_at, w.watch_type
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get watches for plan failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_watches_for_member(plan_id, member_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT * FROM crab.member_watches
+            WHERE plan_id = %s AND member_id = %s
+            ORDER BY watch_type
+        """, (plan_id, member_id))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get watches for member failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_active_watches():
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT w.*, m.display_name,
+                   COALESCE(u.full_name, m.display_name) as member_name,
+                   u.email as user_email, u.phone_number, u.notify_channel
+            FROM crab.member_watches w
+            JOIN crab.plan_members m ON m.pk_id = w.member_id
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE w.status = 'active'
+            ORDER BY w.destination, w.checkin, w.watch_type
+        """)
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get active watches failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_watch_price(watch_id, price_usd, deep_link=None, data=None, source='unknown'):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Update last price and conditionally update best price
+        cursor.execute("""
+            UPDATE crab.member_watches SET
+                last_price_usd = %s,
+                last_checked_at = NOW(),
+                deep_link = COALESCE(%s, deep_link),
+                data = COALESCE(%s, data),
+                best_price_usd = CASE
+                    WHEN best_price_usd IS NULL OR %s < best_price_usd THEN %s
+                    ELSE best_price_usd
+                END,
+                best_price_at = CASE
+                    WHEN best_price_usd IS NULL OR %s < best_price_usd THEN NOW()
+                    ELSE best_price_at
+                END
+            WHERE pk_id = %s
+            RETURNING *, (best_price_usd IS NOT NULL AND %s < best_price_usd) as is_new_best
+        """, (price_usd, deep_link, psycopg2.extras.Json(data) if data else None,
+              price_usd, price_usd, price_usd, watch_id, price_usd))
+        watch = cursor.fetchone()
+        # Record history
+        cursor.execute("""
+            INSERT INTO crab.watch_history (watch_id, price_usd, source, deep_link, data)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (watch_id, price_usd, source, deep_link,
+              psycopg2.extras.Json(data) if data else psycopg2.extras.Json({})))
+        conn.commit()
+        return dict(watch) if watch else None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Update watch price failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_watch_status(watch_id, status):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.member_watches SET status = %s WHERE pk_id = %s
+        """, (status, watch_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Update watch status failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_watch_history(watch_id, limit=50):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT * FROM crab.watch_history
+            WHERE watch_id = %s
+            ORDER BY observed_at DESC LIMIT %s
+        """, (watch_id, limit))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get watch history failed: {e}")
+        return []
     finally:
         if cursor:
             cursor.close()

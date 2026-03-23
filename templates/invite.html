@@ -444,6 +444,26 @@
     </div>
   </div>
 
+  <!-- Price Watches (collapsible, only shown for locked plans) -->
+  {% if plan.locked_destination or plan.status == 'locked' %}
+  <div class="mb-4 animate-in stagger-1" id="watches-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleWatches()">
+        <div class="flex items-center gap-2">
+          <svg id="watches-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">📡 Price Watches</span>
+          <span class="text-xs text-crab-sand-dim" id="watches-count"></span>
+        </div>
+      </div>
+      <div id="watches-body">
+        <div class="p-4 md:p-6" id="watches-container">
+          <p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">Loading watches...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Update Your Info (collapsible, expanded by default) -->
   <div class="mb-4 animate-in stagger-1" id="details-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
@@ -1325,9 +1345,12 @@ var _chatMessages = [];
 var _openThreadId = null;
 var _currentUserId = {{ user.id if user and user.id else 'null' }};
 
+function stripBot(s) { return (s || '').replace(/\[BOT\]\s*/g, ''); }
+
 function chatAvatar(msg) {
-  if (msg.user_picture) return '<img src="' + msg.user_picture + '" alt="" onerror="this.parentElement.textContent=\'' + (msg.display_name||'?')[0].toUpperCase() + '\'">';
-  return (msg.display_name || '?')[0].toUpperCase();
+  var name = stripBot(msg.display_name || '?');
+  if (msg.user_picture) return '<img src="' + msg.user_picture + '" alt="" onerror="this.parentElement.textContent=\'' + name[0].toUpperCase() + '\'">';
+  return name[0].toUpperCase();
 }
 
 function chatTime(iso) {
@@ -1345,8 +1368,8 @@ function renderMsg(msg) {
   var html = '<div class="chat-msg" data-id="' + msg.message_id + '">';
   html += '<div class="chat-avatar">' + chatAvatar(msg) + '</div>';
   html += '<div class="flex-1 min-w-0">';
-  html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + (msg.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(msg.created_at) + '</span></div>';
-  html += '<div class="chat-text">' + escapeHtml(msg.content).replace(/\n/g, '<br>') + '</div>';
+  html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + stripBot(msg.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(msg.created_at) + '</span></div>';
+  html += '<div class="chat-text">' + escapeHtml(stripBot(msg.content)).replace(/\n/g, '<br>') + '</div>';
   html += '<div class="chat-actions">';
   if (!NEEDS_LOGIN) html += '<button class="chat-action-btn" onclick="toggleThread(\'' + msg.message_id + '\')">💬 Reply</button>';
   if (msg.user_id === _currentUserId) html += '<button class="chat-action-btn" onclick="deleteMsg(\'' + msg.message_id + '\')">Delete</button>';
@@ -1364,8 +1387,8 @@ function renderMsg(msg) {
         html += '<div class="chat-msg" data-id="' + r.message_id + '">';
         html += '<div class="chat-avatar">' + chatAvatar(r) + '</div>';
         html += '<div class="flex-1 min-w-0">';
-        html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + (r.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(r.created_at) + '</span></div>';
-        html += '<div class="chat-text">' + escapeHtml(r.content).replace(/\n/g, '<br>') + '</div>';
+        html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + stripBot(r.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(r.created_at) + '</span></div>';
+        html += '<div class="chat-text">' + escapeHtml(stripBot(r.content)).replace(/\n/g, '<br>') + '</div>';
         html += '</div></div>';
       });
       html += '</div>';
@@ -1545,6 +1568,7 @@ function toggleSection(bodyId, chevId) {
 function toggleChat() { toggleSection('chat-body', 'chat-chevron'); }
 function toggleDetails() { toggleSection('details-body', 'details-chevron'); }
 function toggleDestinations() { toggleSection('dest-body', 'dest-chevron'); }
+function toggleWatches() { toggleSection('watches-body', 'watches-chevron'); }
 
 function toggleCalendar() {
   var body = document.getElementById('cal-body');
@@ -1749,5 +1773,152 @@ function dateMap_lookup(ds) {
 }
 
 if (!NEEDS_LOGIN) renderCalendar();
+
+// ── Price Watches ──────────────────────────────────────────
+var _watchesData = {{ watches_json|safe }};
+
+function renderWatches() {
+  var container = document.getElementById('watches-container');
+  var countEl = document.getElementById('watches-count');
+  if (!container) return;
+  if (!_watchesData || !_watchesData.length) {
+    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">No price watches yet — watches are created when a destination is locked.</p>';
+    return;
+  }
+
+  // Group by member
+  var byMember = {};
+  _watchesData.forEach(function(w) {
+    if (!byMember[w.member_id]) byMember[w.member_id] = {name: stripBot(w.member_name), watches: []};
+    byMember[w.member_id].watches.push(w);
+  });
+
+  var memberIds = Object.keys(byMember);
+  if (countEl) countEl.textContent = _watchesData.length + ' active';
+
+  var html = '<div class="space-y-4">';
+  memberIds.forEach(function(mid) {
+    var m = byMember[mid];
+    html += '<div class="bg-white/[0.03] border border-white/6 rounded-xl p-4">';
+    html += '<div class="flex items-center gap-2 mb-3">';
+    html += '<span class="text-sm font-medium text-crab-sand">' + escapeHtml(m.name) + '</span>';
+    html += '</div>';
+    html += '<div class="space-y-2">';
+    m.watches.forEach(function(w) {
+      html += renderWatchRow(w);
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderWatchRow(w) {
+  var statusBadge = '';
+  if (w.status === 'booked') {
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal">Booked</span>';
+  } else if (w.status === 'paused') {
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-crab-sand-dim">Paused</span>';
+  } else {
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-coral/20 text-crab-coral animate-pulse">Watching</span>';
+  }
+
+  var icon = w.watch_type === 'flight' ? '✈️' : '🏨';
+  var route = '';
+  if (w.watch_type === 'flight' && w.origin) {
+    route = w.origin + ' → ' + escapeHtml(w.destination);
+  } else {
+    route = escapeHtml(w.destination);
+  }
+
+  var priceHtml = '';
+  if (w.last_price !== null && w.last_price !== undefined) {
+    priceHtml += '<span class="text-lg font-bold text-crab-sand">$' + w.last_price.toFixed(0) + '</span>';
+    if (w.best_price !== null && w.best_price !== undefined && w.best_price < w.last_price) {
+      priceHtml += '<span class="text-xs text-crab-teal ml-1">best: $' + w.best_price.toFixed(0) + '</span>';
+    } else if (w.best_price !== null && w.last_price <= w.best_price) {
+      priceHtml += '<span class="text-xs text-crab-teal ml-1">★ best price</span>';
+    }
+  } else {
+    priceHtml = '<span class="text-sm text-crab-sand-dim">Checking prices...</span>';
+  }
+
+  // Sparkline SVG from history
+  var sparkHtml = '';
+  if (w.history && w.history.length > 1) {
+    sparkHtml = renderSparkline(w.history);
+  }
+
+  var bookBtn = '';
+  if (w.deep_link && w.status === 'active') {
+    bookBtn = '<a href="' + escapeHtml(w.deep_link) + '" target="_blank" rel="noopener" class="px-3 py-1 rounded-lg text-xs font-medium bg-crab-coral text-white hover:bg-crab-coral/80 transition-colors">Book Now</a>';
+  }
+
+  var markBookedBtn = '';
+  if (w.status === 'active' && !NEEDS_LOGIN) {
+    markBookedBtn = '<button onclick="markWatchBooked(' + w.pk_id + ')" class="px-2 py-1 rounded-lg text-[10px] border border-white/10 text-crab-sand-dim hover:text-crab-sand hover:border-white/20 transition-colors">Mark Booked</button>';
+  }
+
+  var lastChecked = '';
+  if (w.last_checked) {
+    var ago = Math.round((Date.now() - new Date(w.last_checked).getTime()) / 60000);
+    if (ago < 60) lastChecked = ago + 'm ago';
+    else if (ago < 1440) lastChecked = Math.round(ago/60) + 'h ago';
+    else lastChecked = Math.round(ago/1440) + 'd ago';
+  }
+
+  return '<div class="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b border-white/[0.04] last:border-0">' +
+    '<div class="flex items-center gap-2 min-w-0 flex-1">' +
+      '<span class="text-base">' + icon + '</span>' +
+      '<span class="text-sm text-crab-sand font-medium truncate">' + route + '</span>' +
+      statusBadge +
+    '</div>' +
+    '<div class="flex items-center gap-3">' +
+      sparkHtml +
+      '<div class="text-right">' + priceHtml + '</div>' +
+      (lastChecked ? '<span class="text-[10px] text-crab-sand-dim">' + lastChecked + '</span>' : '') +
+      bookBtn + markBookedBtn +
+    '</div>' +
+  '</div>';
+}
+
+function renderSparkline(history) {
+  if (!history || history.length < 2) return '';
+  var prices = history.slice().reverse().map(function(h) { return h.price; });
+  var min = Math.min.apply(null, prices);
+  var max = Math.max.apply(null, prices);
+  var range = max - min || 1;
+  var w = 60, h = 20;
+  var step = w / (prices.length - 1);
+
+  var points = prices.map(function(p, i) {
+    var x = (i * step).toFixed(1);
+    var y = (h - ((p - min) / range) * (h - 2) - 1).toFixed(1);
+    return x + ',' + y;
+  }).join(' ');
+
+  var isDown = prices[prices.length - 1] < prices[0];
+  var color = isDown ? '#0D9488' : '#E8593A';
+
+  return '<svg width="' + w + '" height="' + h + '" class="opacity-60">' +
+    '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+}
+
+function markWatchBooked(watchId) {
+  fetch('/api/plan/' + PLAN_ID + '/watches/' + watchId + '/status', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'booked'}),
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.success) {
+      // Update local data and re-render
+      _watchesData.forEach(function(w) { if (w.pk_id === watchId) w.status = 'booked'; });
+      renderWatches();
+    }
+  });
+}
+
+renderWatches();
 </script>
 {% endblock %}

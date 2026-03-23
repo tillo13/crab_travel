@@ -545,7 +545,7 @@ def phase_preferences(ctx):
             'dietary_needs': p['dietary'],
             'interests': p['interests'],
             'mobility_notes': p['mobility'],
-            'notes': f'{BOT_PREFIX} Synthetic test preferences',
+            'notes': 'Synthetic test preferences',
         })
         if resp.status_code == 200 and resp.json().get('success'):
             result.ok()
@@ -586,7 +586,7 @@ def phase_vote(ctx):
             'budget_max': carlos['budget_max'],
             'accommodation_style': carlos['accommodation'],
             'interests': carlos['interests'],
-            'notes': f'{BOT_PREFIX} Late joiner preferences',
+            'notes': 'Late joiner preferences',
         })
 
     # Everyone votes
@@ -637,7 +637,7 @@ def phase_chat(ctx):
         ctx.bot.login_as(p)
         for msg_text in p['chat_messages']:
             resp = ctx.bot.post(f'/api/plan/{ctx.plan_id}/messages', {
-                'content': f'{BOT_PREFIX} {msg_text}',
+                'content': msg_text,
             })
             data = resp.json()
             if resp.status_code == 200 and data.get('success'):
@@ -656,7 +656,7 @@ def phase_chat(ctx):
         replier = ctx.personas[1]  # second persona replies
         ctx.bot.login_as(replier)
         resp = ctx.bot.post(f'/api/plan/{ctx.plan_id}/messages', {
-            'content': f'{BOT_PREFIX} Totally agree, this is going to be amazing!',
+            'content': 'Totally agree, this is going to be amazing!',
             'parent_id': first_msg_id,
         })
         if resp.status_code == 200 and resp.json().get('success'):
@@ -811,7 +811,74 @@ def phase_browse(ctx):
     return result.finish()
 
 
-# ─── Phase 10: Stop ─────────────────────────────────────────────────────────
+# ─── Phase 10: Watch Create ──────────────────────────────────────────────────
+
+def phase_watch_create(ctx):
+    """Verify watches were auto-created after plan lock."""
+    result = PhaseResult('watch_create')
+    ctx.bot.login_as(ctx.personas[0])  # organizer checks
+
+    resp = ctx.bot.get(f'/api/plan/{ctx.plan_id}/watches')
+    if resp.status_code != 200:
+        result.fail(f"Get watches failed: {resp.status_code}")
+        return result.finish()
+
+    data = resp.json().get('data', {})
+    members = data.get('members', [])
+
+    if not members:
+        result.warn("No watches found — may need time for background thread")
+        ctx.log_event('watch_create', 'system', 'No watches found (background may still be running)')
+        # Give background thread time and retry once
+        time.sleep(3)
+        resp = ctx.bot.get(f'/api/plan/{ctx.plan_id}/watches')
+        if resp.status_code == 200:
+            data = resp.json().get('data', {})
+            members = data.get('members', [])
+
+    total_watches = sum(len(m.get('watches', [])) for m in members)
+    flight_watches = sum(1 for m in members for w in m.get('watches', []) if w.get('watch_type') == 'flight')
+    hotel_watches = sum(1 for m in members for w in m.get('watches', []) if w.get('watch_type') == 'hotel')
+
+    if total_watches > 0:
+        result.ok()
+        ctx.log_event('watch_create', 'system',
+                      f'Watches auto-created: {flight_watches} flight, {hotel_watches} hotel for {len(members)} members')
+    else:
+        result.warn("No watches created — members may lack home airports")
+        ctx.log_event('watch_create', 'system', 'No watches created (no home airports?)')
+
+    return result.finish()
+
+
+# ─── Phase 11: Watch Check ──────────────────────────────────────────────────
+
+def phase_watch_check(ctx):
+    """Trigger a watch price check and verify results."""
+    result = PhaseResult('watch_check')
+
+    # Trigger the check-watches task endpoint
+    import os
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    resp = ctx.bot.session.get(f'{ctx.bot.base_url}/tasks/check-watches?secret={task_secret}')
+    if resp.status_code == 200:
+        summary = resp.json()
+        checked = summary.get('checked', 0)
+        alerts = summary.get('alerts_sent', 0)
+        if checked > 0:
+            result.ok()
+            ctx.log_event('watch_check', 'system', f'Watch check: {checked} checked, {alerts} alerts')
+        else:
+            result.warn(f"Watch check ran but 0 prices checked (sandbox keys may return 0 results)")
+            ctx.log_event('watch_check', 'system', 'Watch check ran, 0 prices (sandbox)')
+    else:
+        result.warn(f"Watch check endpoint returned {resp.status_code}")
+        ctx.log_event('watch_check', 'system', f'Watch check returned {resp.status_code}')
+
+    return result.finish()
+
+
+# ─── Phase 12: Stop ─────────────────────────────────────────────────────────
 
 def phase_stop(ctx):
     """Log completion. No booking."""
@@ -879,7 +946,7 @@ def deep_cleanup():
 # ─── Orchestrator ────────────────────────────────────────────────────────────
 
 PHASES_QUICK = ['setup', 'create', 'join', 'suggest', 'preferences', 'vote', 'chat']
-PHASES_FULL = PHASES_QUICK + ['ai_research', 'lock_search', 'browse', 'stop']
+PHASES_FULL = PHASES_QUICK + ['ai_research', 'lock_search', 'watch_create', 'watch_check', 'browse', 'stop']
 
 PHASE_MAP = {
     'setup': phase_setup,
@@ -891,6 +958,8 @@ PHASE_MAP = {
     'chat': phase_chat,
     'ai_research': phase_ai_research,
     'lock_search': phase_lock_search,
+    'watch_create': phase_watch_create,
+    'watch_check': phase_watch_check,
     'browse': phase_browse,
     'stop': phase_stop,
 }
@@ -967,6 +1036,35 @@ def run_phases(ctx, phase_names):
 # ─── Random Trip Generator (Haiku-powered) ──────────────────────────────────
 
 import random
+from datetime import date, timedelta
+
+
+def _random_blackouts():
+    """Generate 0-2 random blackout date ranges for a crawl bot."""
+    blackouts = []
+    if random.random() < 0.4:  # 40% chance of having blackouts
+        for _ in range(random.randint(1, 2)):
+            start_offset = random.randint(30, 180)
+            duration = random.randint(1, 5)
+            start = (date.today() + timedelta(days=start_offset)).isoformat()
+            end = (date.today() + timedelta(days=start_offset + duration)).isoformat()
+            blackouts.append({'start': start, 'end': end})
+    return blackouts
+
+
+def _random_tentative_dates():
+    """Generate 1-3 tentative date ranges for a crawl bot."""
+    tentative = []
+    if random.random() < 0.7:  # 70% chance of having tentative dates
+        for _ in range(random.randint(1, 3)):
+            start_offset = random.randint(14, 120)
+            duration = random.randint(3, 10)
+            start = (date.today() + timedelta(days=start_offset)).isoformat()
+            end = (date.today() + timedelta(days=start_offset + duration)).isoformat()
+            pref = random.choice(['ideal', 'works', 'if_needed'])
+            tentative.append({'start': start, 'end': end, 'preference': pref})
+    return tentative
+
 
 def generate_random_personas(count):
     """Generate N random bot personas with varied preferences."""
@@ -999,8 +1097,8 @@ def generate_random_personas(count):
             'role': 'organizer' if i == 0 else 'member',
             'chat_messages': [],
             'vote_ranks': {},  # filled after destinations are known
-            'blackouts': [],
-            'tentative_dates': [],
+            'blackouts': _random_blackouts(),
+            'tentative_dates': _random_tentative_dates(),
             'is_flexible': random.random() < 0.3,
         }
         # ~40% of personas post a chat message
