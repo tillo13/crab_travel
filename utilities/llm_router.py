@@ -12,55 +12,71 @@ import logging
 import time
 import requests
 import random
-from datetime import date
 
 logger = logging.getLogger(__name__)
 
 # Round-robin counter — rotates which free backend goes first
 _call_counter = 0
 
-# ── Daily usage caps (actual free tier limits with safety buffer) ──
-DAILY_CAPS = {
-    'groq': 14000,               # 14400/day free, 30 RPM
-    'cerebras': 9500,            # ~1M tokens/day
-    'mistral': 4500,             # generous free tier
-    'together': 900,             # ~1000/day free
-    'gemini': 1400,              # 1500/day free
-    'grok': 500,                 # PoW bypass, no hard limit
-    'openrouter-gemma': 15,      # 50/day shared across all 3 openrouter models
-    'openrouter-llama': 15,
-    'openrouter-gemma-nano': 15,
-    'deepseek': 500,             # PoW bypass, no hard limit
-    'gpt4o-mini': 450,           # $5 free credits
-    'haiku': 100,                # Max plan, last resort
-}
+# ── Shared cross-app daily caps ──
+from utilities.llm_usage_caps import check_cap, record_call as _shared_record_call, init as _init_caps
 
-_daily_counts = {}
-_count_date = None
+_caps_initialized = False
+
+def _ensure_caps():
+    global _caps_initialized
+    if not _caps_initialized:
+        _caps_initialized = True
+        try:
+            from utilities.postgres_utils import get_db_connection
+            import psycopg2.extras
+
+            def _db_write(backend, app_name):
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("""
+                        INSERT INTO kumori_llm_daily_caps (usage_date, backend, app_name, call_count)
+                        VALUES (CURRENT_DATE, %s, %s, 1)
+                        ON CONFLICT (usage_date, backend, app_name)
+                        DO UPDATE SET call_count = kumori_llm_daily_caps.call_count + 1
+                    """, (backend, app_name))
+                    conn.commit()
+                    cur.close()
+                finally:
+                    conn.close()
+
+            def _db_read():
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("""
+                        SELECT backend, SUM(call_count) as total
+                        FROM kumori_llm_daily_caps
+                        WHERE usage_date = CURRENT_DATE
+                        GROUP BY backend
+                    """)
+                    result = {row[0]: row[1] for row in cur.fetchall()}
+                    cur.close()
+                    return result
+                finally:
+                    conn.close()
+
+            _init_caps('crab_travel', db_write_fn=_db_write, db_read_fn=_db_read)
+            logger.info("Shared LLM caps initialized with DB sync")
+        except Exception as e:
+            logger.warning(f"Shared caps DB init failed (local only): {e}")
+            _init_caps('crab_travel')
 
 
 def _check_daily_cap(backend_name):
-    """Return True if this backend is still under its daily free cap."""
-    global _daily_counts, _count_date
-    today = date.today()
-    if _count_date != today:
-        _daily_counts = {}
-        _count_date = today
-    cap = DAILY_CAPS.get(backend_name, 100)
-    used = _daily_counts.get(backend_name, 0)
-    if used >= cap:
-        return False
-    return True
+    _ensure_caps()
+    return check_cap(backend_name)
 
 
 def _record_call(backend_name):
-    """Record a successful call against the daily cap."""
-    global _daily_counts, _count_date
-    today = date.today()
-    if _count_date != today:
-        _daily_counts = {}
-        _count_date = today
-    _daily_counts[backend_name] = _daily_counts.get(backend_name, 0) + 1
+    _ensure_caps()
+    _shared_record_call(backend_name)
 
 
 def _log(backend, model, prompt_len, response_len, duration_ms, success, error=None, caller=None):
