@@ -1877,6 +1877,53 @@ def api_deals():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/tasks/crawl')
+def task_crawl():
+    """Cron job — run one random bot trip (Crab Crawlers)."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        import subprocess
+        cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.abspath(__file__))
+        # Run one quick random trip (no AI research to keep it fast + cheap)
+        subprocess.Popen(
+            ['python3', '-c',
+             'import sys; sys.path.insert(0,"."); '
+             'from dev.trip_bots import build_random_trip; '
+             'from utilities.google_auth_utils import get_secret; '
+             'build_random_trip("https://crab.travel", get_secret("CRAB_BOT_SECRET"))'],
+            cwd=cwd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Prune old bot plans (keep last 15)
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                DELETE FROM crab.plans WHERE plan_id IN (
+                    SELECT plan_id FROM crab.plans
+                    WHERE title LIKE '[BOT]%%'
+                    ORDER BY created_at DESC
+                    OFFSET 15
+                )
+            """)
+            pruned = cur.rowcount
+            if pruned:
+                logger.info(f"🧹 Pruned {pruned} old bot plans")
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+        logger.info("🦀 Crab Crawl cron triggered — random trip starting")
+        return jsonify({'success': True, 'message': 'Crawl started'})
+    except Exception as e:
+        logger.error(f"❌ Crawl cron failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/tasks/refresh-deals')
 def task_refresh_deals():
     """Nightly cron job — refresh deals cache from all sources for all hubs."""
