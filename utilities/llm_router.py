@@ -90,13 +90,32 @@ def _log(backend, model, prompt_len, response_len, duration_ms, success, error=N
 # All OpenAI-compatible backends, cheapest/free first.
 # Gemini and Haiku handled separately (different API formats).
 BACKENDS = [
-    # ── Completely free tiers ──
+    # ── Groq free tier — per-model limits, 1K RPD each ──
     {
         'name': 'groq',
         'url': 'https://api.groq.com/openai/v1/chat/completions',
         'model': 'llama-3.3-70b-versatile',
         'secret': 'KINDNESS_GROQ_API_KEY',
     },
+    {
+        'name': 'groq-kimi',
+        'url': 'https://api.groq.com/openai/v1/chat/completions',
+        'model': 'moonshotai/kimi-k2-instruct',
+        'secret': 'KINDNESS_GROQ_API_KEY',
+    },
+    {
+        'name': 'groq-qwen',
+        'url': 'https://api.groq.com/openai/v1/chat/completions',
+        'model': 'qwen/qwen3-32b',
+        'secret': 'KINDNESS_GROQ_API_KEY',
+    },
+    {
+        'name': 'groq-gptoss',
+        'url': 'https://api.groq.com/openai/v1/chat/completions',
+        'model': 'openai/gpt-oss-120b',
+        'secret': 'KINDNESS_GROQ_API_KEY',
+    },
+    # ── Other free tiers ──
     {
         'name': 'cerebras',
         'url': 'https://api.cerebras.ai/v1/chat/completions',
@@ -115,7 +134,21 @@ BACKENDS = [
         'model': 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
         'secret': 'KINDNESS_TOGETHER_API_KEY',
     },
-    # Gemini — uses its own SDK, 1500 req/day free
+    # LLM7.io — no API key needed, 30 RPM, OpenAI-compatible
+    {
+        'name': 'llm7',
+        'url': 'https://api.llm7.io/v1/chat/completions',
+        'model': 'deepseek-r1',
+        'secret': None,
+    },
+    # NVIDIA NIM — 5K lifetime credits, 40 RPM. Conserve, use as mid-priority.
+    {
+        'name': 'nvidia',
+        'url': 'https://integrate.api.nvidia.com/v1/chat/completions',
+        'model': 'meta/llama-3.3-70b-instruct',
+        'secret': 'KINDNESS_NVIDIA_API_KEY',
+    },
+    # Gemini — 250 req/day free for Flash, 10 RPM
     {
         'name': 'gemini',
         'type': 'gemini',
@@ -177,14 +210,14 @@ def _get_key(secret_name):
 
 def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
     """Call an OpenAI-compatible chat API."""
-    key = _get_key(backend['secret'])
-    if not key:
-        return None
+    headers = {'Content-Type': 'application/json'}
 
-    headers = {
-        'Authorization': f'Bearer {key}',
-        'Content-Type': 'application/json',
-    }
+    if backend.get('secret'):
+        key = _get_key(backend['secret'])
+        if not key:
+            return None
+        headers['Authorization'] = f'Bearer {key}'
+
     if 'openrouter' in backend['name']:
         headers['HTTP-Referer'] = 'https://crab.travel'
 

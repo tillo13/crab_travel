@@ -25,20 +25,25 @@ logger = logging.getLogger(__name__)
 
 # ── Actual free tier daily caps (validated March 2026) ──
 # These are the REAL limits. When hit, skip the backend — no retries, no 429 waste.
+# Sources: official docs + community reports. Groq limits are PER-MODEL.
 DAILY_CAPS = {
-    'groq': 14000,               # 14,400 req/day free, 30 RPM, 500K tok/day
-    'cerebras': 9500,            # 1M tokens/day free
-    'mistral': 2800,             # 2 RPM = ~2,880/day theoretical max
-    'together': 900,             # ~$100 signup credits, not daily reset
-    'gemini': 230,               # 250 req/day for Flash (cut Dec 2025)
+    'groq': 900,                 # llama-3.3-70b: 1K RPD, 30 RPM, 100K tok/day
+    'groq-kimi': 900,            # kimi-k2-instruct: 1K RPD, 60 RPM, 300K tok/day
+    'groq-qwen': 900,            # qwen3-32b: 1K RPD, 60 RPM, 500K tok/day
+    'groq-gptoss': 900,          # gpt-oss-120b: 1K RPD, 30 RPM, 200K tok/day
+    'cerebras': 9500,            # 1M tokens/day free, 30 RPM
+    'mistral': 2800,             # 2 RPM = ~2,880/day theoretical max, 1B tok/month
+    'together': 900,             # ~$100 signup credits, not daily reset — will run out
+    'gemini': 230,               # 250 req/day for Flash (cut Dec 2025), 10 RPM
+    'nvidia': 500,               # 5K LIFETIME credits (not daily!), 40 RPM — conserve
+    'llm7': 500,                 # No documented daily cap, no key needed, 30 RPM
     'grok': 500,                 # PoW bypass via Cloud Run worker, no hard limit
     'grok_fast': 500,
     'grok4': 200,
     'deepseek': 500,             # PoW bypass via Cloud Run worker, no hard limit
-    'openrouter': 45,            # 50/day total across all :free models (no credits)
-    'openrouter-gemma': 15,      # Share the 50/day across 3 models
-    'openrouter-llama': 15,
-    'openrouter-gemma-nano': 15,
+    'openrouter-gemma': 45,      # 50/day per :free model (no credits on account)
+    'openrouter-llama': 45,
+    'openrouter-gemma-nano': 45,
     'gpt4o_mini': 200,           # Free credits gone mid-2025, 3 RPM free tier
     'gpt4o': 20,                 # Expensive, minimal use
     'haiku': 10,                 # Last resort — Max plan but keep near zero
