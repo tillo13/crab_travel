@@ -106,6 +106,13 @@ let pollInterval = null;
 let currentFilter = 'all';
 const TOTAL_PHASES = 13; // setup through stop
 
+// ── Initial data (server-side rendered to avoid blank flash) ──
+{% if initial_data %}
+const _initialData = {{ initial_data|safe }};
+{% else %}
+const _initialData = null;
+{% endif %}
+
 // ── Polling ──────────────────────────────────────────────────
 async function pollStatus() {
   try {
@@ -266,8 +273,9 @@ function applyFilter() {
   }
 }
 
-// Start polling on load
-pollStatus();
+// Render server-side data immediately (no blank flash), then start polling
+if (_initialData) renderBoard(_initialData);
+else pollStatus();
 pollInterval = setInterval(pollStatus, 3000);
 </script>
 {% endblock %}

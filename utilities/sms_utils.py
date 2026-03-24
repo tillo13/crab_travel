@@ -92,10 +92,11 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
             conn.close()
 
 
-def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id=None):
+def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id=None, message_id=None):
     """Send email notifications to plan members who opted in.
 
     Respects notify_channel (email/both) and notify_chat = realtime.
+    Includes deep link to the exact message and an unsubscribe link.
     """
     from utilities.postgres_utils import get_db_connection
     from utilities.gmail_utils import send_simple_email
@@ -107,7 +108,7 @@ def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_i
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT DISTINCT u.pk_id, u.full_name, u.email
+            SELECT DISTINCT u.pk_id, u.full_name, u.email, m.member_token
             FROM crab.plan_members m
             JOIN crab.users u ON u.pk_id = m.user_id
             WHERE m.plan_id = %s::uuid
@@ -121,13 +122,25 @@ def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_i
         plan_row = cursor.fetchone()
         plan_name = plan_row['title'] if plan_row else 'your trip'
 
+        # Build deep link to the chat message
+        plan_url = f"https://crab.travel/plan/{plan_id}"
+        if message_id:
+            plan_url += f"#msg-{message_id}"
+
         sent = 0
         for member in members:
             if exclude_user_id and member['pk_id'] == exclude_user_id:
                 continue
             preview = message_text[:300] + '...' if len(message_text) > 300 else message_text
+            unsub_url = f"https://crab.travel/notifications/off/{member['member_token']}"
             subject = f"[crab.travel] {sender_name} in {plan_name}"
-            body = f"{sender_name} said:\n\n{preview}\n\n—\nReply at https://crab.travel"
+            body = (
+                f"{sender_name} said:\n\n"
+                f"{preview}\n\n"
+                f"—\n"
+                f"Reply at {plan_url}\n\n"
+                f"Unsubscribe from this trip: {unsub_url}"
+            )
             if send_simple_email(subject, body, member['email']):
                 sent += 1
 
@@ -143,8 +156,8 @@ def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_i
             conn.close()
 
 
-def notify_plan_members(plan_id, sender_name, message_text, exclude_user_id=None):
+def notify_plan_members(plan_id, sender_name, message_text, exclude_user_id=None, message_id=None):
     """Unified dispatcher — sends both SMS and email notifications."""
     sms_count = notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id)
-    email_count = notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id)
+    email_count = notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_id, message_id=message_id)
     return sms_count + email_count

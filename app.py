@@ -636,8 +636,44 @@ def api_admin_speed_test():
 
 @app.route('/live')
 def live_page():
-    """Public page — anyone can watch the crabs crawl."""
-    return render_template('admin_bots.html', active_page='live')
+    """Public page — anyone can watch the crabs crawl.
+    Pre-fetches initial data so page renders instantly (no blank flash)."""
+    import json as _json
+    try:
+        from utilities.postgres_utils import get_bot_runs, get_bot_events
+        runs = get_bot_runs(limit=50)
+        for r in runs:
+            for k in ('started_at', 'finished_at'):
+                if r.get(k):
+                    r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
+            if r.get('plan_id'):
+                r['plan_id'] = str(r['plan_id'])
+            if r.get('run_id'):
+                r['run_id'] = str(r['run_id'])
+            summary = r.get('summary') or {}
+            r['trip_title'] = summary.get('title', '')
+            r['trip_destinations'] = summary.get('destinations', [])
+            r['trip_group_size'] = summary.get('group_size', 0)
+            r['trip_vibe'] = summary.get('vibe', '')
+            r['invite_token'] = summary.get('invite_token', '')
+        events = []
+        if runs:
+            active_runs = [r for r in runs if r['status'] == 'running']
+            target_runs = active_runs if active_runs else runs[:3]
+            for run in target_runs:
+                run_events = get_bot_events(run['run_id'], limit=50)
+                for e in run_events:
+                    if e.get('created_at'):
+                        e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+                    if e.get('run_id'):
+                        e['run_id'] = str(e['run_id'])
+                events.extend(run_events)
+            events.sort(key=lambda e: e.get('created_at', ''), reverse=True)
+            events = events[:200]
+        initial_data = _json.dumps({'runs': runs, 'events': events})
+    except Exception:
+        initial_data = None
+    return render_template('admin_bots.html', active_page='live', initial_data=initial_data)
 
 
 @app.route('/admin/bots')
@@ -871,6 +907,30 @@ def profile():
     logger.info(f"📍 Profile: {user['email']}")
     return render_template('profile.html', active_page='profile', user=user, profile=profile_data,
                            user_phone=user_phone, notify_prefs=notify_prefs)
+
+
+@app.route('/notifications/off/<member_token>')
+def unsubscribe_notifications(member_token):
+    """One-click email unsubscribe — sets notify_chat=off for this user."""
+    from utilities.postgres_utils import get_member_by_token
+    member = get_member_by_token(member_token)
+    if not member or not member.get('user_id'):
+        return render_template('404.html'), 404
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE crab.users SET notify_chat = 'off' WHERE pk_id = %s", (member['user_id'],))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Unsubscribe failed: {e}")
+        return render_template('404.html'), 500
+    return """<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed — crab.travel</title>
+    <style>body{font-family:system-ui;background:#1a0a0a;color:#f0eae0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+    .box{text-align:center;max-width:400px;padding:2rem}h1{font-size:1.5rem;margin-bottom:1rem}a{color:#e8593a}</style></head>
+    <body><div class="box"><h1>Unsubscribed</h1><p>You won't receive chat notifications anymore.</p>
+    <p style="margin-top:1rem"><a href="/profile">Re-enable in profile settings</a></p></div></body></html>"""
 
 
 @app.route('/api/profile', methods=['POST'])
@@ -2253,6 +2313,7 @@ def api_post_message(plan_id):
         threading.Thread(
             target=notify_plan_members,
             args=(plan_id, display_name, content, user['id']),
+            kwargs={'message_id': msg['message_id']},
             daemon=True,
         ).start()
     except Exception as e:
