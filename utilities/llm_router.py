@@ -5,6 +5,7 @@ All secrets are in the shared kumori-404602 GCP Secret Manager.
 Strategy: Round-robin across free backends so every backend gets tested and
 we have real latency/reliability data. On failure, try the next one in rotation.
 Each backend has a daily cap matching its free tier — once hit, skip till midnight.
+RPM throttle prevents hammering backends faster than their rate limits allow.
 Paid backends (GPT-4o-mini, Haiku) only used if ALL free ones fail.
 """
 
@@ -17,6 +18,37 @@ logger = logging.getLogger(__name__)
 
 # Round-robin counter — rotates which free backend goes first
 _call_counter = 0
+
+# ── RPM throttle — track last call time per backend to respect rate limits ──
+_last_call_time = {}  # backend_name -> timestamp
+
+# Minimum seconds between calls per backend (derived from RPM limits)
+RPM_SPACING = {
+    'groq': 2.0,              # 30 RPM = 1 per 2s
+    'groq-kimi': 1.0,         # 60 RPM = 1 per 1s
+    'groq-qwen': 1.0,         # 60 RPM
+    'groq-gptoss': 2.0,       # 30 RPM
+    'cerebras': 2.0,          # 30 RPM
+    'mistral': 30.0,          # 2 RPM = 1 per 30s
+    'nvidia': 1.5,            # 40 RPM = 1 per 1.5s
+    'llm7': 2.0,              # 30 RPM
+    'gemini': 6.0,            # 10 RPM = 1 per 6s
+    'openrouter-gemma': 3.0,  # 20 RPM
+    'openrouter-llama': 3.0,
+    'openrouter-gemma-nano': 3.0,
+}
+
+
+def _rpm_ok(backend_name):
+    """Return True if enough time has passed since last call to this backend."""
+    spacing = RPM_SPACING.get(backend_name, 1.0)
+    last = _last_call_time.get(backend_name, 0)
+    return (time.time() - last) >= spacing
+
+
+def _rpm_record(backend_name):
+    """Record that we just called this backend."""
+    _last_call_time[backend_name] = time.time()
 
 # ── Shared cross-app daily caps ──
 from utilities.llm_usage_caps import check_cap, record_call as _shared_record_call, init as _init_caps
@@ -128,12 +160,7 @@ BACKENDS = [
         'model': 'mistral-small-latest',
         'secret': 'KINDNESS_MISTRAL_API_KEY',
     },
-    {
-        'name': 'together',
-        'url': 'https://api.together.ai/v1/chat/completions',
-        'model': 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-        'secret': 'KINDNESS_TOGETHER_API_KEY',
-    },
+    # together removed — $100 signup credits exhausted, 401 Unauthorized
     # LLM7.io — no API key needed, 30 RPM, OpenAI-compatible
     {
         'name': 'llm7',
@@ -221,6 +248,9 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
     if 'openrouter' in backend['name']:
         headers['HTTP-Referer'] = 'https://crab.travel'
 
+    # NVIDIA NIM needs longer timeout — cold starts can take 45s+
+    timeout = 60 if backend['name'] == 'nvidia' else 30
+
     resp = requests.post(
         backend['url'],
         headers=headers,
@@ -230,7 +260,7 @@ def _try_openai_compatible(backend, prompt, max_tokens=500, temperature=1.0):
             'max_tokens': max_tokens,
             'temperature': temperature,
         },
-        timeout=30,
+        timeout=timeout,
     )
     resp.raise_for_status()
     return resp.json()['choices'][0]['message']['content'].strip()
@@ -325,6 +355,11 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
     """Try a single backend, log result. Returns text or raises."""
     name = backend['name']
 
+    # Skip if calling too fast — respect RPM limits
+    if not _rpm_ok(name):
+        logger.debug(f"Skipping {name} — RPM throttle")
+        return None
+
     # Skip if daily free cap is reached — no wasted 429s
     if not _check_daily_cap(name):
         logger.debug(f"Skipping {name} — daily cap reached")
@@ -342,6 +377,7 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
             text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
 
         ms = int((time.time() - start) * 1000)
+        _rpm_record(name)  # Record call time even on empty response
         if text:
             _record_call(name)
             _log(backend['name'], backend.get('model', ''), prompt_len, len(text), ms, True, caller=caller)
@@ -350,6 +386,7 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
         return None
     except Exception as e:
         ms = int((time.time() - start) * 1000)
+        _rpm_record(name)  # Record call time on failure too — don't hammer a failing backend
         _log(backend['name'], backend.get('model', ''), prompt_len, 0, ms, False, str(e)[:200], caller=caller)
         logger.warning(f"LLM {backend['name']} failed ({ms}ms): {e}")
         return None
