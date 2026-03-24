@@ -2594,7 +2594,7 @@ def log_llm_call(backend, model=None, prompt_length=0, response_length=0,
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO crab.llm_calls
+            INSERT INTO crab_llm_telemetry
                 (backend, model, prompt_length, response_length, duration_ms, success, error_message, caller)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (backend, model, prompt_length, response_length, duration_ms, success,
