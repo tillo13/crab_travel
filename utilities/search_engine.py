@@ -144,41 +144,124 @@ def trigger_search(plan_id, destination, checkin=None, checkout=None,
     threading.Thread(target=_mark_done, daemon=True).start()
 
 
+_IATA_CACHE = {}
+
+# Fast local lookup — covers common destinations without burning an LLM call
+_IATA_MAP = {
+    'phoenix': 'PHX', 'scottsdale': 'PHX', 'mesa': 'PHX', 'tempe': 'PHX',
+    'new york': 'JFK', 'new york city': 'JFK', 'nyc': 'JFK', 'manhattan': 'JFK',
+    'los angeles': 'LAX', 'la': 'LAX', 'hollywood': 'LAX',
+    'chicago': 'ORD',
+    'miami': 'MIA', 'fort lauderdale': 'FLL',
+    'las vegas': 'LAS', 'vegas': 'LAS',
+    'nashville': 'BNA',
+    'denver': 'DEN',
+    'austin': 'AUS',
+    'seattle': 'SEA',
+    'san francisco': 'SFO', 'sf': 'SFO',
+    'boston': 'BOS',
+    'atlanta': 'ATL',
+    'dallas': 'DFW', 'fort worth': 'DFW',
+    'houston': 'IAH',
+    'portland': 'PDX',
+    'san diego': 'SAN',
+    'orlando': 'MCO',
+    'hawaii': 'HNL', 'honolulu': 'HNL', 'maui': 'OGG', 'kauai': 'LIH',
+    'helsinki': 'HEL',
+    'london': 'LHR',
+    'paris': 'CDG',
+    'rome': 'FCO',
+    'tokyo': 'NRT',
+    'cancun': 'CUN',
+    'detroit': 'DTW',
+    'minneapolis': 'MSP',
+    'philadelphia': 'PHL', 'philly': 'PHL',
+    'charlotte': 'CLT',
+    'salt lake city': 'SLC',
+    'san antonio': 'SAT',
+    'tampa': 'TPA',
+    'new orleans': 'MSY', 'nola': 'MSY',
+    'pittsburgh': 'PIT',
+    'st louis': 'STL', 'saint louis': 'STL',
+    'kansas city': 'MCI',
+    'indianapolis': 'IND',
+    'raleigh': 'RDU', 'durham': 'RDU',
+    'savannah': 'SAV',
+    'charleston': 'CHS',
+    'boise': 'BOI',
+    'tucson': 'TUS',
+    'albuquerque': 'ABQ',
+    'anchorage': 'ANC',
+    'juneau': 'JNU',
+    'key west': 'EYW',
+    'napa': 'SFO', 'napa valley': 'SFO',
+    'palm springs': 'PSP',
+    'jackson hole': 'JAC',
+    'aspen': 'ASE',
+    'cabo': 'SJD', 'cabo san lucas': 'SJD',
+    'barcelona': 'BCN',
+    'amsterdam': 'AMS',
+    'lisbon': 'LIS',
+    'dublin': 'DUB',
+    'reykjavik': 'KEF', 'iceland': 'KEF',
+    'bali': 'DPS',
+    'bangkok': 'BKK',
+    'sydney': 'SYD',
+    'toronto': 'YYZ',
+    'vancouver': 'YVR',
+    'mexico city': 'MEX',
+}
+
+
 def _destination_iata(destination):
+    """Convert a destination string to an IATA airport code.
+
+    Tries: exact 3-letter code → local map → in-memory cache → LLM lookup.
     """
-    Best-effort: if destination looks like an IATA code already, use it.
-    Otherwise return as-is — adapters handle city name lookups.
-    Known city→IATA mappings for common US destinations.
-    Full IATA lookup via an API is a future improvement.
-    """
-    IATA_MAP = {
-        'phoenix': 'PHX', 'scottsdale': 'PHX',
-        'new york': 'NYC', 'new york city': 'NYC',
-        'los angeles': 'LAX',
-        'chicago': 'ORD',
-        'miami': 'MIA',
-        'las vegas': 'LAS',
-        'nashville': 'BNA',
-        'denver': 'DEN',
-        'austin': 'AUS',
-        'seattle': 'SEA',
-        'san francisco': 'SFO',
-        'boston': 'BOS',
-        'atlanta': 'ATL',
-        'dallas': 'DFW',
-        'houston': 'IAH',
-        'portland': 'PDX',
-        'san diego': 'SAN',
-        'orlando': 'MCO',
-        'hawaii': 'HNL', 'honolulu': 'HNL',
-        'helsinki': 'HEL',
-        'london': 'LON',
-        'paris': 'PAR',
-        'rome': 'ROM',
-        'tokyo': 'TYO',
-        'cancun': 'CUN',
-    }
+    if not destination:
+        return destination
+
     key = destination.lower().strip()
+
+    # Already an IATA code
     if len(key) == 3 and key.isalpha():
         return key.upper()
-    return IATA_MAP.get(key, destination)
+
+    # Strip common suffixes like "AZ", "CA", state abbreviations
+    import re
+    cleaned = re.sub(r',?\s+[A-Z]{2}$', '', destination.strip())
+    clean_key = cleaned.lower().strip()
+
+    # Local map (fast, no API call)
+    if clean_key in _IATA_MAP:
+        return _IATA_MAP[clean_key]
+    if key in _IATA_MAP:
+        return _IATA_MAP[key]
+
+    # In-memory cache from previous LLM lookups
+    if key in _IATA_CACHE:
+        return _IATA_CACHE[key]
+    if clean_key in _IATA_CACHE:
+        return _IATA_CACHE[clean_key]
+
+    # LLM lookup — use a free backend to resolve
+    try:
+        from utilities.llm_router import generate
+        prompt = (
+            f"What is the nearest major airport IATA code for: {destination}\n"
+            "Reply with ONLY the 3-letter IATA code, nothing else. "
+            "Example: PHX"
+        )
+        result, _backend = generate(prompt, max_tokens=10, temperature=0.0, caller='iata_lookup')
+        if result:
+            code = result.strip().upper()[:3]
+            if len(code) == 3 and code.isalpha():
+                _IATA_CACHE[key] = code
+                _IATA_CACHE[clean_key] = code
+                logger.info(f"IATA lookup: '{destination}' → {code} (via LLM)")
+                return code
+    except Exception as e:
+        logger.warning(f"IATA LLM lookup failed for '{destination}': {e}")
+
+    # Last resort — return as-is
+    return destination

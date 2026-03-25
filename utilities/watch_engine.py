@@ -8,12 +8,15 @@ Usage:
     check_all_watches()                 # called by /tasks/check-watches cron
 """
 
+import json
 import logging
 import time
 from collections import defaultdict
+from datetime import date, datetime, timezone
 from utilities.postgres_utils import (
     get_plan_by_id, get_plan_members, get_all_plan_preferences,
     create_member_watch, get_active_watches, update_watch_price,
+    get_watch_history,
 )
 from utilities.search_engine import _destination_iata
 from utilities.adapters.duffel import DuffelAdapter
@@ -122,6 +125,12 @@ def check_all_watches():
                 if updated and _should_alert(old_price, best_flight['price_usd'], w['alert_threshold_pct']):
                     _send_alert(w, old_price, best_flight['price_usd'], best_flight.get('deep_link'))
                     alerts_sent += 1
+                # Compute AI recommendation after price update
+                try:
+                    rec = compute_recommendation(w)
+                    _update_recommendation(w['pk_id'], rec)
+                except Exception as e:
+                    logger.warning(f"Recommendation failed for watch {w['pk_id']}: {e}")
 
         time.sleep(1)  # Rate limiting between searches
 
@@ -146,6 +155,12 @@ def check_all_watches():
                     if updated and _should_alert(old_price, price, w['alert_threshold_pct']):
                         _send_alert(w, old_price, price, best_hotel.get('deep_link'))
                         alerts_sent += 1
+                    # Compute AI recommendation after price update
+                    try:
+                        rec = compute_recommendation(w)
+                        _update_recommendation(w['pk_id'], rec)
+                    except Exception as e:
+                        logger.warning(f"Recommendation failed for watch {w['pk_id']}: {e}")
 
         time.sleep(1)
 
@@ -203,6 +218,142 @@ def _should_alert(old_price, new_price, threshold_pct):
         return False
     drop_pct = ((old_price - new_price) / old_price) * 100
     return drop_pct >= (threshold_pct or 10)
+
+
+def compute_recommendation(watch, history=None):
+    """Analyze price history + timing and return a booking recommendation.
+
+    Returns dict: {verdict, reason, trend, scans, computed_at}
+    verdict is one of: 'book_now', 'book_soon', 'wait', 'watching'
+    """
+    if history is None:
+        history = get_watch_history(watch['pk_id'], limit=50)
+
+    prices = [float(h['price_usd']) for h in reversed(history)] if history else []
+    n_scans = len(prices)
+    now = datetime.now(timezone.utc).date()
+
+    # Days until departure
+    checkin = watch.get('checkin')
+    if isinstance(checkin, str):
+        checkin = date.fromisoformat(checkin)
+    days_out = (checkin - now).days if checkin else 999
+
+    current_price = prices[-1] if prices else None
+    best_price = float(watch['best_price_usd']) if watch.get('best_price_usd') else current_price
+
+    if not current_price or n_scans < 2:
+        return {
+            'verdict': 'watching',
+            'reason': f'Gathering data — {n_scans} scan{"s" if n_scans != 1 else ""} so far. Need a few more to spot trends.',
+            'trend': 'flat',
+            'scans': n_scans,
+            'computed_at': datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Compute trend from recent prices
+    recent = prices[-min(5, n_scans):]
+    if len(recent) >= 2:
+        avg_first_half = sum(recent[:len(recent)//2]) / max(len(recent)//2, 1)
+        avg_second_half = sum(recent[len(recent)//2:]) / max(len(recent) - len(recent)//2, 1)
+        pct_change = ((avg_second_half - avg_first_half) / avg_first_half) * 100 if avg_first_half > 0 else 0
+    else:
+        pct_change = 0
+
+    if pct_change < -3:
+        trend = 'dropping'
+    elif pct_change > 3:
+        trend = 'rising'
+    else:
+        trend = 'stable'
+
+    # How close to best price?
+    pct_from_best = ((current_price - best_price) / best_price * 100) if best_price > 0 else 0
+
+    # Consecutive drops
+    consecutive_drops = 0
+    for i in range(len(prices) - 1, 0, -1):
+        if prices[i] < prices[i - 1]:
+            consecutive_drops += 1
+        else:
+            break
+
+    # Decision logic
+    verdict = 'wait'
+    reason = ''
+
+    watch_type_label = 'flight' if watch.get('watch_type') == 'flight' else 'hotel'
+
+    if days_out <= 7:
+        verdict = 'book_now'
+        reason = f'Only {days_out} days until departure. {watch_type_label.title()} prices almost never drop this close to travel.'
+    elif days_out <= 14:
+        if trend == 'dropping':
+            verdict = 'book_soon'
+            reason = f'Prices are dropping but you\'re {days_out} days out. Could dip a bit more, but don\'t wait too long.'
+        else:
+            verdict = 'book_now'
+            reason = f'{days_out} days out and prices are {trend}. This is the booking window — waiting is risky.'
+    elif pct_from_best <= 2 and n_scans >= 4:
+        verdict = 'book_now'
+        if pct_from_best == 0:
+            reason = f'This is the lowest price we\'ve seen across {n_scans} scans. Strong buy signal.'
+        else:
+            reason = f'Within 2% of the best price we\'ve tracked. After {n_scans} scans, this is a good deal.'
+    elif trend == 'dropping' and consecutive_drops >= 3:
+        verdict = 'wait'
+        reason = f'Prices dropped {consecutive_drops} scans in a row (↓{abs(pct_change):.0f}%). Trend is in your favor — let it ride.'
+    elif trend == 'dropping':
+        verdict = 'wait'
+        reason = f'Prices trending down over recent scans. {days_out} days out gives you room to wait for a better deal.'
+    elif trend == 'rising' and days_out > 30:
+        verdict = 'book_soon'
+        reason = f'Prices are climbing (↑{pct_change:.0f}% recently). Still {days_out} days out, but the trend isn\'t great.'
+    elif trend == 'rising' and days_out <= 30:
+        verdict = 'book_now'
+        reason = f'Prices rising and only {days_out} days out. The longer you wait, the more you\'ll pay.'
+    elif trend == 'stable' and n_scans >= 6:
+        verdict = 'book_soon'
+        reason = f'Prices have been flat across {n_scans} scans. Unlikely to drop much — book when ready.'
+    else:
+        verdict = 'wait'
+        reason = f'{n_scans} scans over {days_out} days out. Prices look {trend} — watching for a better entry point.'
+
+    return {
+        'verdict': verdict,
+        'reason': reason,
+        'trend': trend,
+        'scans': n_scans,
+        'current_price': current_price,
+        'best_price': best_price,
+        'pct_from_best': round(pct_from_best, 1),
+        'days_out': days_out,
+        'computed_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _update_recommendation(watch_id, recommendation):
+    """Store the computed recommendation in the member_watches table."""
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE crab.member_watches SET recommendation = %s WHERE pk_id = %s
+        """, (psycopg2.extras.Json(recommendation), watch_id))
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Update recommendation failed for watch {watch_id}: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 def _send_alert(watch, old_price, new_price, deep_link=None):

@@ -2029,18 +2029,47 @@ function renderWatchRow(w) {
     else lastChecked = Math.round(ago/1440) + 'd ago';
   }
 
-  return '<div class="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b border-white/[0.04] last:border-0">' +
-    '<div class="flex items-center gap-2 min-w-0 flex-1">' +
-      '<span class="text-base">' + icon + '</span>' +
-      '<span class="text-sm text-crab-sand font-medium truncate">' + route + '</span>' +
-      statusBadge +
+  // AI recommendation
+  var recHtml = '';
+  if (w.recommendation && w.status !== 'booked') {
+    var rec = w.recommendation;
+    var verdictMap = {
+      'book_now':  {label: 'Book Now',  color: 'text-crab-teal',  bg: 'bg-crab-teal/10 border-crab-teal/20', icon: '🟢'},
+      'book_soon': {label: 'Book Soon', color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/20', icon: '🟡'},
+      'wait':      {label: 'Wait',      color: 'text-crab-sand-dim', bg: 'bg-white/[0.03] border-white/6', icon: '⏳'},
+      'watching':  {label: 'Watching',   color: 'text-crab-sand-dim', bg: 'bg-white/[0.03] border-white/6', icon: '👀'},
+    };
+    var v = verdictMap[rec.verdict] || verdictMap['watching'];
+    var meta = '';
+    if (rec.scans) meta += rec.scans + ' scans';
+    if (rec.days_out && rec.days_out < 900) meta += (meta ? ' · ' : '') + rec.days_out + 'd out';
+    if (rec.trend && rec.trend !== 'flat') meta += (meta ? ' · ' : '') + '↕ ' + rec.trend;
+
+    recHtml = '<div class="mt-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] leading-snug ' + v.bg + '">' +
+      '<div class="flex items-center gap-1.5 mb-0.5">' +
+        '<span>' + v.icon + '</span>' +
+        '<span class="font-semibold ' + v.color + '">' + v.label + '</span>' +
+        (meta ? '<span class="text-crab-sand-dim/60 ml-auto">' + meta + '</span>' : '') +
+      '</div>' +
+      '<div class="text-crab-sand-dim">' + escapeHtml(rec.reason) + '</div>' +
+    '</div>';
+  }
+
+  return '<div class="py-2 border-b border-white/[0.04] last:border-0">' +
+    '<div class="flex flex-col sm:flex-row sm:items-center gap-2">' +
+      '<div class="flex items-center gap-2 min-w-0 flex-1">' +
+        '<span class="text-base">' + icon + '</span>' +
+        '<span class="text-sm text-crab-sand font-medium truncate">' + route + '</span>' +
+        statusBadge +
+      '</div>' +
+      '<div class="flex items-center gap-3">' +
+        sparkHtml +
+        '<div class="text-right">' + priceHtml + '</div>' +
+        (lastChecked ? '<span class="text-[10px] text-crab-sand-dim">' + lastChecked + '</span>' : '') +
+        bookBtn + markBookedBtn +
+      '</div>' +
     '</div>' +
-    '<div class="flex items-center gap-3">' +
-      sparkHtml +
-      '<div class="text-right">' + priceHtml + '</div>' +
-      (lastChecked ? '<span class="text-[10px] text-crab-sand-dim">' + lastChecked + '</span>' : '') +
-      bookBtn + markBookedBtn +
-    '</div>' +
+    recHtml +
   '</div>';
 }
 

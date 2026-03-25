@@ -1134,6 +1134,7 @@ def invite_page(invite_token):
         for w in watches:
             history = get_watch_history(w['pk_id'], limit=20)
             watch_data = w.get('data') or {}
+            rec = w.get('recommendation') or {}
             watches_data.append({
                 'pk_id': w['pk_id'], 'member_id': w['member_id'],
                 'member_name': w['member_name'], 'watch_type': w['watch_type'],
@@ -1146,6 +1147,7 @@ def invite_page(invite_token):
                 'history': [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history],
                 'booked_price': watch_data.get('booked_price'),
                 'confirmation': watch_data.get('confirmation'),
+                'recommendation': rec if rec else None,
             })
         watches_json = json.dumps(watches_data, default=_default_ser)
 
