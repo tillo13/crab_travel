@@ -520,7 +520,7 @@
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDetails()">
         <div class="flex items-center gap-2">
           <svg id="details-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          <span class="text-sm font-display">✏️ {% if is_member %}Update Your Info{% else %}Join {{ plan.title }}{% endif %}</span>
+          <span class="text-sm font-display">✏️ {% if is_member %}Update Your Info{% else %}Join {{ plan.title|replace('[BOT] ', '') }}{% endif %}</span>
         </div>
       </div>
       <div id="details-body" class="p-6 md:p-8">
@@ -594,7 +594,7 @@
         <div class="mt-8">
           <button onclick="submitJoin()" id="submit-btn"
             class="w-full sm:w-auto px-8 py-3 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
-            {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title }}{% endif %}
+            {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title|replace('[BOT] ', '') }}{% endif %}
           </button>
           <p id="submit-status" class="text-sm mt-3 hidden"></p>
         </div>
