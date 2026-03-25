@@ -48,7 +48,9 @@ def _get_connection_pool():
         pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1, maxconn=4,
             dbname=creds['dbname'], user=creds['user'],
-            password=creds['password'], host=host
+            password=creds['password'], host=host,
+            connect_timeout=10,
+            options='-c statement_timeout=30000'  # 30s query timeout to prevent stuck connections
         )
         _connection_pools[GCP_PROJECT_ID] = pool
         logger.info("🔌 Database connection pool created")
