@@ -74,6 +74,35 @@ except Exception as e:
 AUTH_ENABLED = google_auth is not None
 
 
+@app.before_request
+def check_apikey_auth():
+    """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing)."""
+    if 'apikey' not in request.args:
+        return
+    apikey = request.args.get('apikey')
+    expected = get_secret('CRAB_TEST_APIKEY')
+    if not expected or apikey != expected:
+        return
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return
+    from utilities.admin_utils import _get_user_session_data
+    user_data = _get_user_session_data(user_id)
+    if not user_data:
+        return
+    session.permanent = True
+    session['user'] = user_data
+    logger.info(f"apikey auth: logged in as user {user_id}")
+    # Strip apikey from URL and redirect
+    from urllib.parse import urlencode, parse_qs, urlparse, urlunparse
+    parsed = urlparse(request.url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params.pop('apikey', None)
+    params.pop('user_id', None)
+    clean_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+    return redirect(clean_url)
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
