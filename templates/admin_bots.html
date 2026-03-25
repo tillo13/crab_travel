@@ -41,15 +41,15 @@
 
 <!-- Header -->
 <div class="mb-8">
-  <h1 class="text-3xl font-display mb-2">Crab Crawlers <span class="text-crab-coral">Live</span></h1>
-  <p class="text-sm text-crab-sand-dim leading-relaxed max-w-2xl">AI-powered crabs are always crawling — planning trips to every corner of the planet, voting on destinations, debating in chat, and coordinating group travel from scratch. Watch it happen in real time. We don't hide in our shell.</p>
+  <h1 class="text-3xl font-display mb-2">See It <span class="text-crab-coral">Live</span></h1>
+  <p class="text-sm text-crab-sand-dim leading-relaxed max-w-2xl">Our AI is always planning — building real trips with real flights, real hotels, and real itineraries. Click any trip below to see exactly what your group trip experience would look like on crab.travel. These aren't mockups — they're live.</p>
 </div>
 
 <!-- Stats Bar -->
 <div class="grid grid-cols-3 gap-3 mb-6">
   <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
     <div id="stat-trips" class="text-2xl stat-num text-crab-coral">0</div>
-    <div class="text-xs text-crab-sand-dim">Trips Planned</div>
+    <div class="text-xs text-crab-sand-dim">Trips Built</div>
   </div>
   <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
     <div id="stat-destinations" class="text-2xl stat-num text-crab-teal">0</div>
@@ -57,7 +57,7 @@
   </div>
   <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
     <div id="stat-crabs" class="text-2xl stat-num text-crab-coral-light">0</div>
-    <div class="text-xs text-crab-sand-dim">Crabs Crawling</div>
+    <div class="text-xs text-crab-sand-dim">Travelers</div>
   </div>
 </div>
 
@@ -262,7 +262,7 @@ function renderTripCard(r, isActive) {
     </div>
     <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">generating...</span>'}</div>
     <div class="flex items-center justify-between text-xs text-crab-sand-dim">
-      <span>${size} crabs ${phaseInfo}</span>
+      <span>${size} travelers ${phaseInfo}</span>
       <span>${duration} &middot; ${timeAgo}</span>
     </div>
     ${progressBar}
