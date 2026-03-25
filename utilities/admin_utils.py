@@ -143,11 +143,11 @@ def get_admin_dashboard_data(user_page=1, plan_page=1, per_page=50):
     # --- Recent votes (for activity tab) ---
     cur.execute("""
         SELECT v.created_at, u.full_name, p.title as plan_title,
-               d.destination_name, v.vote_type
+               d.destination_name, v.vote
         FROM crab.votes v
         JOIN crab.users u ON u.pk_id = v.user_id
         JOIN crab.plans p ON p.plan_id = v.plan_id
-        LEFT JOIN crab.destination_suggestions d ON d.suggestion_id = v.suggestion_id
+        LEFT JOIN crab.destination_suggestions d ON d.suggestion_id = v.target_id
         ORDER BY v.created_at DESC LIMIT 20
     """)
     recent_votes = cur.fetchall()
