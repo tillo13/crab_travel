@@ -80,7 +80,10 @@ def check_apikey_auth():
     if 'apikey' not in request.args:
         return
     apikey = request.args.get('apikey')
-    expected = get_secret('CRAB_TEST_APIKEY')
+    try:
+        expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
+    except Exception:
+        return  # Secret not configured — silently ignore
     if not expected or apikey != expected:
         return
     user_id = request.args.get('user_id', type=int)
