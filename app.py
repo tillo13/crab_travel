@@ -92,8 +92,11 @@ def check_apikey_auth():
     user_id = request.args.get('user_id', type=int)
     if not user_id:
         return
-    from utilities.admin_utils import _get_user_session_data
-    user_data = _get_user_session_data(user_id)
+    try:
+        from utilities.admin_utils import _get_user_session_data
+        user_data = _get_user_session_data(user_id)
+    except Exception:
+        return  # Pool exhausted or DB error — fail gracefully, don't crash the request
     if not user_data:
         return
     session.permanent = True
