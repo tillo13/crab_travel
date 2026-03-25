@@ -9,7 +9,7 @@ cron:
   schedule: every 24 hours
   timezone: America/Los_Angeles
 
-- description: "Check member price watches and send alerts"
+- description: "Check member price watches — prioritized by departure date"
   url: /tasks/check-watches
-  schedule: every 6 hours
+  schedule: every 4 hours
   timezone: America/Los_Angeles

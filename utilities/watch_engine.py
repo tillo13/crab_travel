@@ -22,6 +22,7 @@ from utilities.search_engine import _destination_iata
 from utilities.adapters.duffel import DuffelAdapter
 from utilities.adapters.liteapi import LiteAPIAdapter
 from utilities.adapters.travelpayouts import TravelpayoutsAdapter
+from utilities.adapters.xotelo import XoteloAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -80,17 +81,37 @@ def create_watches_for_plan(plan_id):
 
 
 def check_all_watches():
-    """Check prices for all active watches. Called by cron every 6 hours."""
+    """Check prices for all active watches. Called by cron.
+
+    Prioritization:
+    1. Trips departing within 14 days (urgent)
+    2. Trips departing within 30 days
+    3. Everything else
+    Skips watches departing 60+ days out to conserve API calls.
+    """
     watches = get_active_watches()
     if not watches:
         logger.info("Watch check: no active watches")
         return {'checked': 0, 'alerts_sent': 0, 'errors': []}
 
+    today = date.today()
+
     # Group watches to minimize API calls
-    flight_groups = defaultdict(list)  # (origin, destination, checkin, checkout) → [watches]
-    hotel_groups = defaultdict(list)   # (destination, checkin, checkout) → [watches]
+    flight_groups = defaultdict(list)
+    hotel_groups = defaultdict(list)
 
     for w in watches:
+        # Skip watches 60+ days out — prices are too volatile to be useful
+        checkin = w.get('checkin')
+        if checkin:
+            if isinstance(checkin, str):
+                checkin = date.fromisoformat(checkin)
+            days_out = (checkin - today).days
+            if days_out > 60:
+                continue
+            if days_out < 0:
+                continue  # Past departure, skip
+
         if w['watch_type'] == 'flight' and w.get('origin'):
             key = (w['origin'], w['destination'], str(w['checkin']), str(w['checkout']))
             flight_groups[key].append(w)
@@ -98,15 +119,25 @@ def check_all_watches():
             key = (w['destination'], str(w['checkin']), str(w['checkout']))
             hotel_groups[key].append(w)
 
+    # Sort groups by departure date (soonest first)
+    def _sort_key(group_key):
+        checkin_str = group_key[2] if len(group_key) > 2 else '9999-12-31'
+        return checkin_str
+
+    sorted_flight_keys = sorted(flight_groups.keys(), key=_sort_key)
+    sorted_hotel_keys = sorted(hotel_groups.keys(), key=_sort_key)
+
     checked = 0
     alerts_sent = 0
     errors = []
 
-    # Check flights — cap at 50 unique searches per run
+    # Cap: 150 searches per run (free APIs can handle it)
     search_count = 0
-    max_searches = 50
+    max_searches = 150
 
-    for (origin, destination, checkin, checkout), group_watches in flight_groups.items():
+    for key in sorted_flight_keys:
+        origin, destination, checkin, checkout = key
+        group_watches = flight_groups[key]
         if search_count >= max_searches:
             logger.warning(f"Watch check: hit {max_searches} search cap, deferring remaining")
             break
@@ -134,7 +165,9 @@ def check_all_watches():
 
         time.sleep(1)  # Rate limiting between searches
 
-    for (destination, checkin, checkout), group_watches in hotel_groups.items():
+    for key in sorted_hotel_keys:
+        destination, checkin, checkout = key
+        group_watches = hotel_groups[key]
         if search_count >= max_searches:
             logger.warning(f"Watch check: hit {max_searches} search cap, deferring remaining")
             break
@@ -170,11 +203,13 @@ def check_all_watches():
 
 
 def _search_best_flight(origin, destination, checkin, checkout):
-    """Search adapters for the cheapest flight on this route."""
+    """Search adapters for the cheapest flight on this route.
+    Order: free APIs first (Travelpayouts), Duffel last (has excess search fees).
+    """
     dest_iata = _destination_iata(destination)
     best = None
 
-    for AdapterClass in [DuffelAdapter, TravelpayoutsAdapter]:
+    for AdapterClass in [TravelpayoutsAdapter, DuffelAdapter]:
         try:
             adapter = AdapterClass()
             flights = adapter.search_flights(
@@ -191,10 +226,12 @@ def _search_best_flight(origin, destination, checkin, checkout):
 
 
 def _search_best_hotel(destination, checkin, checkout):
-    """Search adapters for the cheapest hotel in this destination."""
+    """Search adapters for the cheapest hotel in this destination.
+    Order: Xotelo (free, real prices) → Travelpayouts (free) → LiteAPI (sandbox).
+    """
     best = None
 
-    for AdapterClass in [LiteAPIAdapter, TravelpayoutsAdapter]:
+    for AdapterClass in [XoteloAdapter, TravelpayoutsAdapter, LiteAPIAdapter]:
         try:
             adapter = AdapterClass()
             hotels = adapter.search_hotels(
