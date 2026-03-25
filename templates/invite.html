@@ -1654,8 +1654,14 @@ function renderCalendar() {
 
   var dataSpanMonths = 3;
   if (allDates.length) {
+    var earliest = new Date(allDates[0] + 'T00:00:00');
     var latest = new Date(allDates[allDates.length - 1] + 'T00:00:00');
     dataSpanMonths = Math.max(3, (latest.getFullYear() - today.getFullYear()) * 12 + latest.getMonth() - today.getMonth() + 1);
+    // Auto-skip to first month with data if current view is empty
+    if (_calOffset === 0) {
+      var firstDataMonth = (earliest.getFullYear() - today.getFullYear()) * 12 + earliest.getMonth() - today.getMonth();
+      if (firstDataMonth > 0) _calOffset = firstDataMonth;
+    }
   }
 
   // Build date→info map with preference tracking
