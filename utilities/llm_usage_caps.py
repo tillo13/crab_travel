@@ -23,32 +23,47 @@ from datetime import date
 
 logger = logging.getLogger(__name__)
 
-# ── Actual free tier daily caps (validated March 2026) ──
+# ── Actual free tier daily caps (recalibrated 2026-03-24) ──
 # These are the REAL limits. When hit, skip the backend — no retries, no 429 waste.
-# Sources: official docs + community reports. Groq limits are PER-MODEL.
+#
+# With crawlers running every 5 min = ~288 calls/day, we need ~300/day total.
+# Spread across Tier 1 backends (cerebras + 4× groq) = ~60 each, well under limits.
+# Keep caps conservative to avoid 429 storms that waste time and log noise.
+#
+# KEY INSIGHT: All 4 Groq models share ONE API key with a shared 30 RPM pool.
+# The per-model 1K RPD is real, but the RPM is the binding constraint with concurrency.
 DAILY_CAPS = {
-    'groq': 900,                 # llama-3.3-70b: 1K RPD, 30 RPM, 100K tok/day
-    'groq-kimi': 900,            # kimi-k2-instruct: 1K RPD, 60 RPM, 300K tok/day
-    'groq-qwen': 900,            # qwen3-32b: 1K RPD, 60 RPM, 500K tok/day
-    'groq-gptoss': 900,          # gpt-oss-120b: 1K RPD, 30 RPM, 200K tok/day
-    'cerebras': 9500,            # 1M tokens/day free, 30 RPM
-    'mistral': 2800,             # 2 RPM = ~2,880/day theoretical max, 1B tok/month
-    'together': 900,             # ~$100 signup credits, not daily reset — will run out
-    'gemini': 230,               # 250 req/day for Flash (cut Dec 2025), 10 RPM
-    'nvidia': 500,               # 5K LIFETIME credits (not daily!), 40 RPM — conserve
-    'llm7': 500,                 # No documented daily cap, no key needed, 30 RPM
-    'grok': 500,                 # PoW bypass via Cloud Run worker, no hard limit
-    'grok_fast': 500,
-    'grok4': 200,
-    'deepseek': 500,             # PoW bypass via Cloud Run worker, no hard limit
-    'openrouter-gemma': 45,      # 50/day per :free model (no credits on account)
-    'openrouter-llama': 45,
-    'openrouter-gemma-nano': 45,
-    'gpt4o_mini': 200,           # Free credits gone mid-2025, 3 RPM free tier
-    'gpt4o': 20,                 # Expensive, minimal use
-    'haiku': 10,                 # Last resort — Max plan but keep near zero
-    'sonnet': 10,
-    'opus': 5,
+    # ── Tier 1: Workhorses (carry bulk of traffic) ──
+    'cerebras': 1000,            # 1M tokens/day free, 30 RPM — our #1 backend
+    'groq': 500,                 # 1K RPD per model, but shared key RPM limits real throughput
+    'groq-kimi': 500,            # same — cap at 500 to leave room for user-triggered calls
+    'groq-qwen': 500,            # same
+    'groq-gptoss': 500,          # same
+
+    # ── Tier 2: Moderate (fill gaps when Tier 1 throttled) ──
+    'gemini': 200,               # 250 req/day for Flash, 10 RPM — leave 50 for user calls
+    'llm7': 300,                 # No documented cap, no key — conservative
+
+    # ── Tier 3: Low caps or slow (deep fallbacks) ──
+    'openrouter-gemma': 40,      # 50/day per :free model — leave 10 buffer
+    'openrouter-llama': 40,
+    'openrouter-gemma-nano': 40,
+    'nvidia': 50,                # 1K LIFETIME credits (not daily!) — PROTECT. ~20 days at 50/day.
+    'grok': 100,                 # PoW via Cloud Run — free but slow, 60s timeouts
+    'deepseek': 100,             # PoW via Cloud Run — free but slow, 60s timeouts
+    'mistral': 100,              # 2 RPM = max ~2,880/day but practically useless at that speed
+
+    # ── Dead backends (keep in caps table for tracking, 0 = disabled) ──
+    'together': 0,               # Credits exhausted, 401 Unauthorized — dead
+    'grok_fast': 0,              # Not currently wired up
+    'grok4': 0,                  # Not currently wired up
+
+    # ── Paid backends (absolute last resort) ──
+    'gpt4o-mini': 50,            # Paid — keep low, only for when all free fail
+    'gpt4o': 5,                  # Expensive
+    'haiku': 10,                 # Anthropic paid — absolute last resort
+    'sonnet': 5,
+    'opus': 2,
     'local': 999999,             # No limit
 }
 

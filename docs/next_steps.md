@@ -2,22 +2,35 @@
 
 Not the public roadmap. This is what we're actually working on right now, what's blocked, and what to pick up next.
 
-Last updated: 2026-03-22
+Last updated: 2026-03-24
 
 ---
 
 ## Blocked — Waiting on External
 
 ### Twilio A2P Campaign Approval
-- **Status:** IN_PROGRESS (submitted 2026-03-20)
+- **Status:** IN_PROGRESS (resubmitted 2026-03-24, ~2nd attempt)
 - **Campaign SID:** QE2c6890da8086d771620e9b13fadeba0b
-- **Brand SID:** BN05299cc8c46ebf46b61fb87fb11d6ff9
-- **Phone number:** +1 (425) 600-2722
+- **Brand SID:** BN05299cc8c46ebf46b61fb87fb11d6ff9 (APPROVED)
+- **Phone number:** +1 (425) 600-2722 ("crab.travel 600-CRAB")
 - **What's blocked:** All outbound SMS — chat notifications, vote prompts, price alerts
 - **Error on send attempt:** 30034 (carrier blocked, unverified campaign)
-- **Expected approval:** ~3/25–3/27 (3-7 business days from submission)
-- **No errors on submission** — clean app, just waiting on carrier review
-- **Test command:** See `check_twilio_status.py` below or hit `/api/admin/test-sms`
+- **Expected approval:** ~3/27–3/31 (3-7 business days from resubmission)
+- **Test command:** See quick commands below or hit `/api/admin/test-sms`
+
+**First submission (2026-03-20) — FAILED:**
+- Rejection reason: error 30908 — "a compliant privacy policy can not be verified" (field: MESSAGE_FLOW)
+- The privacy policy at `/privacy` existed but didn't have enough SMS-specific detail
+- The `MessageFlow` field in the submission only linked to `/terms#sms`, not `/privacy#sms`
+
+**What we fixed for resubmission (2026-03-24):**
+1. Expanded `/privacy#sms` (section 4) with sub-sections: what data we collect (phone number, delivery logs), how we use it (transactional only), who we share it with (Twilio, named explicitly), how to opt out (STOP or profile toggle), and that consent is not required to use the platform
+2. Added cross-links: privacy page links to `/terms#sms`, terms page links to `/privacy#sms`
+3. Added `id="sms"` anchor to privacy page so `/privacy#sms` deep link works
+4. Updated `MessageFlow` in the API submission to reference BOTH URLs: `/terms#sms` AND `/privacy#sms`
+5. Updated `HelpMessage` to include contact URL
+
+**If it fails again:** The reviewer comment will be in the `errors` array. Check with the quick command below. Common next steps would be adding a screenshot of the opt-in checkbox to the terms page, or adding a physical mailing address to the contact page.
 
 ### Kayak Affiliate
 - **Applied:** 2026-03-05
@@ -178,19 +191,18 @@ Scale from 1 bot trip to 20-50 concurrent trips running on staggered schedules, 
 ## Quick Commands
 
 ```bash
-# Check Twilio A2P campaign status
-python3 -c "
-from utilities.google_auth_utils import get_secret
-import requests, json
-sid = get_secret('CRAB_TWILIO_ACCOUNT_SID')
-token = get_secret('CRAB_TWILIO_AUTH_TOKEN')
-msg_sid = get_secret('CRAB_TWILIO_MESSAGING_SERVICE_SID')
-r = requests.get(f'https://messaging.twilio.com/v1/Services/{msg_sid}/Compliance/Usa2p', auth=(sid, token))
-for c in r.json().get('compliance', []):
-    print(f'Status: {c[\"campaign_status\"]}')
-    print(f'Errors: {c[\"errors\"]}')
-    print(f'Rate limits: {c[\"rate_limits\"]}')
-"
+# Check Twilio A2P campaign status (run from project root)
+export $(grep '^TWILIO' .env | xargs) && curl -s -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN" \
+  "https://messaging.twilio.com/v1/Services/$TWILIO_MESSAGING_SERVICE_SID/Compliance/Usa2p" \
+  | python3 -c "import sys,json; [print(f'Status: {c[\"campaign_status\"]}\nErrors: {c[\"errors\"]}\nRate limits: {c[\"rate_limits\"]}') for c in json.load(sys.stdin).get('compliance',[])]"
+
+# Check phone number details
+export $(grep '^TWILIO' .env | xargs) && curl -s -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN" \
+  "https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/IncomingPhoneNumbers.json" \
+  | python3 -c "import sys,json; [print(f'{n[\"friendly_name\"]}: {n[\"phone_number\"]} — SMS:{n[\"capabilities\"][\"sms\"]} Voice:{n[\"capabilities\"][\"voice\"]}') for n in json.load(sys.stdin)['incoming_phone_numbers']]"
+
+# If campaign fails again — delete and resubmit (see git history for the full curl POST)
+# git log --oneline --all | head  # find the resubmission commit for the exact curl command
 
 # Send test SMS (will fail with 30034 until A2P approved)
 curl -X POST https://crab.travel/api/admin/test-sms \

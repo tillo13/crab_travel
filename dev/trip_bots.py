@@ -607,8 +607,9 @@ def phase_vote(ctx):
             if resp.status_code == 200 and resp.json().get('success'):
                 result.ok()
             else:
-                result.fail(f"{p['name']} vote for {dest_name} failed: {resp.text}")
-                ctx.log_event('vote', p['name'], f"Vote FAILED for {dest_name}", 'error')
+                detail = resp.text[:200] if resp.text else f'status={resp.status_code}'
+                result.fail(f"{p['name']} vote for {dest_name} failed: {detail}")
+                ctx.log_event('vote', p['name'], f"Vote FAILED for {dest_name}", 'error', detail=detail)
 
         ctx.log_event('vote', p['name'], f"Voted: {p['vote_ranks']}")
 
@@ -1268,7 +1269,7 @@ def build_random_trip(base_url, bot_secret):
         return False
 
     # Pace the phases so trips stay "active" on /live for minutes, not seconds.
-    # With 1-min cron, multiple trips overlap = always something live.
+    # With 5-min cron, 1-2 trips overlap = always something live.
     PACE = 5  # seconds between phases
 
     # ── Join ──

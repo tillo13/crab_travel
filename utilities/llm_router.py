@@ -23,19 +23,23 @@ _call_counter = 0
 _last_call_time = {}  # backend_name -> timestamp
 
 # Minimum seconds between calls per backend (derived from RPM limits)
+# IMPORTANT: All 4 Groq models share ONE API key, so the shared RPM pool is 30.
+# Space them out to avoid cross-model 429s when concurrent crawls are running.
 RPM_SPACING = {
-    'groq': 2.0,              # 30 RPM = 1 per 2s
-    'groq-kimi': 1.0,         # 60 RPM = 1 per 1s
-    'groq-qwen': 1.0,         # 60 RPM
-    'groq-gptoss': 2.0,       # 30 RPM
-    'cerebras': 2.0,          # 30 RPM
-    'mistral': 30.0,          # 2 RPM = 1 per 30s
-    'nvidia': 1.5,            # 40 RPM = 1 per 1.5s
-    'llm7': 2.0,              # 30 RPM
-    'gemini': 6.0,            # 10 RPM = 1 per 6s
-    'openrouter-gemma': 3.0,  # 20 RPM
-    'openrouter-llama': 3.0,
-    'openrouter-gemma-nano': 3.0,
+    'groq': 4.0,              # 30 RPM shared key — leave headroom
+    'groq-kimi': 4.0,         # same shared key
+    'groq-qwen': 4.0,         # same shared key
+    'groq-gptoss': 4.0,       # same shared key
+    'cerebras': 3.0,          # 30 RPM = 1 per 2s, pad for concurrency
+    'mistral': 60.0,          # 2 RPM — practically useless, keep as deep fallback
+    'nvidia': 5.0,            # 40 RPM but LIFETIME credits — conserve aggressively
+    'llm7': 4.0,              # undocumented limits, be conservative
+    'gemini': 10.0,           # 10 RPM for Flash, but quota errors are sticky
+    'openrouter-gemma': 10.0, # 20 RPM but 50/day — space out to not burn cap in 8 min
+    'openrouter-llama': 10.0,
+    'openrouter-gemma-nano': 10.0,
+    'grok': 10.0,             # Cloud Run worker — slow, give it breathing room
+    'deepseek': 10.0,         # Cloud Run worker — slow, PoW takes time
 }
 
 
@@ -119,15 +123,22 @@ def _log(backend, model, prompt_len, response_len, duration_ms, success, error=N
     except Exception:
         pass
 
-# All OpenAI-compatible backends, cheapest/free first.
-# Gemini and Haiku handled separately (different API formats).
+# Backend order matters: round-robin starts from a rotating index, so backends
+# near each other share load. Group by reliability and capacity.
+#
+# Tier 1 — High capacity, fast, reliable (handle bulk of crawl traffic)
+# Tier 2 — Moderate capacity or slower
+# Tier 3 — Low daily caps or slow/unreliable (deep fallbacks)
+#
+# together removed — $100 signup credits exhausted, 401 Unauthorized
 BACKENDS = [
-    # ── Groq free tier — per-model limits, 1K RPD each ──
+    # ── Tier 1: Groq (4 models × 1K RPD = 4K/day) + Cerebras (9.5K/day) ──
+    # These 5 backends carry ~80% of traffic.
     {
-        'name': 'groq',
-        'url': 'https://api.groq.com/openai/v1/chat/completions',
-        'model': 'llama-3.3-70b-versatile',
-        'secret': 'KINDNESS_GROQ_API_KEY',
+        'name': 'cerebras',
+        'url': 'https://api.cerebras.ai/v1/chat/completions',
+        'model': 'llama3.1-8b',
+        'secret': 'KINDNESS_CEREBRAS_API_KEY',
     },
     {
         'name': 'groq-kimi',
@@ -142,50 +153,33 @@ BACKENDS = [
         'secret': 'KINDNESS_GROQ_API_KEY',
     },
     {
+        'name': 'groq',
+        'url': 'https://api.groq.com/openai/v1/chat/completions',
+        'model': 'llama-3.3-70b-versatile',
+        'secret': 'KINDNESS_GROQ_API_KEY',
+    },
+    {
         'name': 'groq-gptoss',
         'url': 'https://api.groq.com/openai/v1/chat/completions',
         'model': 'openai/gpt-oss-120b',
         'secret': 'KINDNESS_GROQ_API_KEY',
     },
-    # ── Other free tiers ──
+    # ── Tier 2: Moderate capacity ──
+    # Gemini (250/day), LLM7 (no hard cap but undocumented)
     {
-        'name': 'cerebras',
-        'url': 'https://api.cerebras.ai/v1/chat/completions',
-        'model': 'llama3.1-8b',
-        'secret': 'KINDNESS_CEREBRAS_API_KEY',
+        'name': 'gemini',
+        'type': 'gemini',
+        'secret': 'KINDNESS_GEMINI_API_KEY',
     },
-    {
-        'name': 'mistral',
-        'url': 'https://api.mistral.ai/v1/chat/completions',
-        'model': 'mistral-small-latest',
-        'secret': 'KINDNESS_MISTRAL_API_KEY',
-    },
-    # together removed — $100 signup credits exhausted, 401 Unauthorized
-    # LLM7.io — no API key needed, 30 RPM, OpenAI-compatible
     {
         'name': 'llm7',
         'url': 'https://api.llm7.io/v1/chat/completions',
         'model': 'deepseek-r1',
         'secret': None,
     },
-    # NVIDIA NIM — 5K lifetime credits, 40 RPM. Conserve, use as mid-priority.
-    {
-        'name': 'nvidia',
-        'url': 'https://integrate.api.nvidia.com/v1/chat/completions',
-        'model': 'meta/llama-3.3-70b-instruct',
-        'secret': 'KINDNESS_NVIDIA_API_KEY',
-    },
-    # Gemini — 250 req/day free for Flash, 10 RPM
-    {
-        'name': 'gemini',
-        'type': 'gemini',
-        'secret': 'KINDNESS_GEMINI_API_KEY',
-    },
-    # Grok — free, no API key, proxied through kindness Cloud Run worker
-    {
-        'name': 'grok',
-        'type': 'grok',
-    },
+    # ── Tier 3: Low caps or slow — deep fallbacks only ──
+    # OpenRouter (50/day per model), NVIDIA (LIFETIME credits — protect!),
+    # Grok/DeepSeek (Cloud Run worker, 60s timeouts common), Mistral (2 RPM)
     {
         'name': 'openrouter-gemma',
         'url': 'https://openrouter.ai/api/v1/chat/completions',
@@ -204,10 +198,28 @@ BACKENDS = [
         'model': 'google/gemma-3n-e2b-it:free',
         'secret': 'KINDNESS_OPENROUTER_API_KEY',
     },
-    # DeepSeek — free via Cloud Run worker PoW bypass (not the paid API)
+    # NVIDIA NIM — 1K LIFETIME credits (not daily!). Only use as fallback.
+    {
+        'name': 'nvidia',
+        'url': 'https://integrate.api.nvidia.com/v1/chat/completions',
+        'model': 'meta/llama-3.3-70b-instruct',
+        'secret': 'KINDNESS_NVIDIA_API_KEY',
+    },
+    # Grok/DeepSeek — Cloud Run worker, free but slow (60s timeouts common)
+    {
+        'name': 'grok',
+        'type': 'grok',
+    },
     {
         'name': 'deepseek',
         'type': 'deepseek',
+    },
+    # Mistral — 2 RPM is practically useless for bulk, keep as absolute last free option
+    {
+        'name': 'mistral',
+        'url': 'https://api.mistral.ai/v1/chat/completions',
+        'model': 'mistral-small-latest',
+        'secret': 'KINDNESS_MISTRAL_API_KEY',
     },
 ]
 
