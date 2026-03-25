@@ -178,3 +178,23 @@ CREATE TABLE IF NOT EXISTS crab.ai_usage (
     feature VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- LLM Telemetry (public schema — shared infra, not crab-specific)
+-- Logs every LLM attempt across all free/paid backends.
+-- error_type + status_code added 2026-03-24 for dashboarding.
+CREATE TABLE IF NOT EXISTS crab_llm_telemetry (
+    id SERIAL PRIMARY KEY,
+    backend TEXT NOT NULL,
+    model TEXT,
+    prompt_length INTEGER DEFAULT 0,
+    response_length INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    success BOOLEAN DEFAULT true,
+    error_message TEXT,
+    caller TEXT,                -- 'crawl', 'destination_card', 'recommendations', etc.
+    error_type TEXT,            -- 'rate_limit', 'timeout', 'auth', 'payment', 'skip_rpm', 'skip_cap', etc.
+    status_code INTEGER,       -- HTTP status code (429, 401, 500...) or NULL
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_crab_llm_error_type ON crab_llm_telemetry (error_type) WHERE error_type IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crab_llm_created_backend ON crab_llm_telemetry (created_at, backend);

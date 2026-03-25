@@ -2587,7 +2587,14 @@ def get_watch_history(watch_id, limit=50):
 # ── LLM Telemetry ─────────────────────────────────────────────
 
 def log_llm_call(backend, model=None, prompt_length=0, response_length=0,
-                 duration_ms=0, success=True, error_message=None, caller=None):
+                 duration_ms=0, success=True, error_message=None, caller=None,
+                 error_type=None, status_code=None):
+    """Log an LLM call attempt to telemetry.
+
+    error_type: 'rate_limit', 'timeout', 'auth', 'payment', 'connection',
+                'skip_rpm', 'skip_cap', 'server_error', 'other'
+    status_code: HTTP status code (429, 401, 402, 500, etc.) or None
+    """
     conn = None
     cursor = None
     try:
@@ -2595,15 +2602,33 @@ def log_llm_call(backend, model=None, prompt_length=0, response_length=0,
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO crab_llm_telemetry
-                (backend, model, prompt_length, response_length, duration_ms, success, error_message, caller)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (backend, model, prompt_length, response_length, duration_ms,
+                 success, error_message, caller, error_type, status_code)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (backend, model, prompt_length, response_length, duration_ms, success,
-              (error_message or '')[:500] if error_message else None, caller))
+              (error_message or '')[:500] if error_message else None, caller,
+              error_type, status_code))
         conn.commit()
     except Exception as e:
         if conn:
             conn.rollback()
-        logger.debug(f"LLM telemetry log failed: {e}")
+        # Fallback without new columns (before migration runs)
+        try:
+            conn2 = get_db_connection()
+            cur2 = conn2.cursor()
+            cur2.execute("""
+                INSERT INTO crab_llm_telemetry
+                    (backend, model, prompt_length, response_length, duration_ms,
+                     success, error_message, caller)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (backend, model, prompt_length, response_length, duration_ms, success,
+                  (error_message or '')[:500] if error_message else None, caller))
+            conn2.commit()
+            cur2.close()
+            conn2.close()
+        except Exception:
+            pass
+        logger.debug(f"LLM telemetry log failed (new cols?): {e}")
     finally:
         if cursor:
             cursor.close()

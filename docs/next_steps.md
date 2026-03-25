@@ -175,6 +175,76 @@ Scale from 1 bot trip to 20-50 concurrent trips running on staggered schedules, 
 
 ---
 
+## LLM Rate Limit Recalibration — SHIPPED 2026-03-24
+
+Crawlers were burning through free tier limits and generating massive 429 storms (~90% failure on most backends). Root cause: 1-minute cron with 4-7 concurrent crawls all round-robining through the same backends.
+
+**What we changed:**
+
+### Cron frequency: 1 min → 5 min
+- Drops from ~1,440 to ~288 LLM calls/day
+- Still 1-2 live trips overlapping at any time on `/live`
+
+### Backend order reshuffled (reliability tiers)
+- **Tier 1** (bulk): Cerebras (1K cap, fastest), then 4 Groq models (500 each)
+- **Tier 2** (moderate): Gemini (200), LLM7 (300)
+- **Tier 3** (deep fallbacks): OpenRouter (40 each), NVIDIA (50!), Grok (100), DeepSeek (100), Mistral (100)
+
+### RPM spacing widened for concurrency
+- Groq all 4 models: 2s → 4s (share one API key, RPM pool is shared)
+- NVIDIA: 1.5s → 5s (lifetime credits)
+- Gemini: 6s → 10s, OpenRouter: 3s → 10s
+- Added grok: 10s, deepseek: 10s (were missing entirely, defaulted to 1s!)
+
+### Daily caps right-sized
+| Backend | Old Cap | New Cap | Why |
+|---|---|---|---|
+| cerebras | 9,500 | 1,000 | Only need ~288/day total |
+| groq (×4) | 900 each | 500 each | Leave room for user calls |
+| nvidia | 500 | **50** | 1K LIFETIME credits, not daily! ~20 days runway |
+| together | 900 | **0** | Dead — 401 Unauthorized, credits exhausted |
+| grok/deepseek | 500 | 100 | Slow (60s timeouts), just fallbacks |
+| mistral | 2,800 | 100 | 2 RPM is practically useless |
+| gpt4o-mini | 200 | 50 | Paid — only when all free fail |
+
+### 24h stats before the fix (March 24)
+- groq: 10% success (1,082 429s out of 1,209 calls)
+- mistral: 0% success (587/588 were 429s)
+- openrouter: 0% success across all 3 models
+- together: 0% (all 401s — dead)
+- deepseek: 0% (all timeouts)
+- NVIDIA: 51% success but burning lifetime credits at 500/day
+- Paid fallbacks triggered 66 times (52 gpt4o-mini + 14 haiku)
+
+### What still needs attention
+1. **Vote failures** — ~4,000 "Vote FAILED for X" errors per day. Now logging response text in `detail` column for diagnosis. Suspect it's race conditions with large groups (30-100 bots) or plans getting pruned mid-run. Need to investigate.
+2. **NVIDIA lifetime credits** — At 50/day cap we have ~20 days of runway. Once exhausted, remove from rotation or buy more credits.
+3. **Grok/DeepSeek Cloud Run worker** — Both timeout frequently (60s). The PoW bypass worker at `kindness-worker-243380010344.us-central1.run.app` may need a health check or scaling adjustment.
+4. **OpenRouter** — 0% success rate even at 50/day cap. May need a $10 credit purchase to unlock 1K/day, or just remove from rotation to save the timeout overhead.
+5. **Mistral** — 2 RPM makes it nearly useless in a round-robin. Consider removing to avoid wasting time on a backend that can handle ~1 call/minute.
+6. **Monitor post-fix** — After a full day on the new settings, re-check the 24h stats to confirm 429s dropped. Target: <10% failure rate on Tier 1 backends.
+
+### Quick check command
+```bash
+# LLM stats for last 24h (run from project root)
+python3 -c "
+import psycopg2, psycopg2.extras, sys; sys.path.insert(0,'.')
+from utilities.postgres_utils import get_db_connection
+conn = get_db_connection(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+cur.execute('''SELECT backend, COUNT(*) as total,
+    COUNT(*) FILTER (WHERE success=true) as ok,
+    COUNT(*) FILTER (WHERE success=false AND error_message LIKE \'%%429%%\') as rate_limited
+    FROM public.crab_llm_telemetry WHERE created_at > NOW() - interval \'24 hours\'
+    GROUP BY backend ORDER BY total DESC''')
+for s in cur.fetchall():
+    pct = round(s['ok']/s['total']*100) if s['total'] else 0
+    print(f'{s[\"backend\"]:18} | total:{s[\"total\"]:4} | ok:{s[\"ok\"]:4} ({pct}%) | 429s:{s[\"rate_limited\"]:4}')
+conn.close()
+"
+```
+
+---
+
 ## API Keys — Status
 
 | Provider | Status | Key Type | Go-Live Action |

@@ -115,11 +115,66 @@ def _record_call(backend_name):
     _shared_record_call(backend_name)
 
 
+# ── Skip tracking — count how often backends are skipped so we can tune ──
+_skip_counts = {}  # (backend, reason) -> count
+_skip_last_flush = 0
+SKIP_FLUSH_INTERVAL = 300  # flush to DB every 5 min
+
+
+def _log_skip(backend, model, prompt_len, reason, caller):
+    """Track skips in memory, flush to DB periodically to avoid log spam."""
+    global _skip_last_flush
+    key = (backend, reason)
+    _skip_counts[key] = _skip_counts.get(key, 0) + 1
+
+    now = time.time()
+    if now - _skip_last_flush > SKIP_FLUSH_INTERVAL and _skip_counts:
+        _skip_last_flush = now
+        # Flush accumulated skips as batch log entries
+        for (b, r), count in _skip_counts.items():
+            try:
+                from utilities.postgres_utils import log_llm_call
+                log_llm_call(b, '', 0, 0, 0, False,
+                             f'skipped {count}x: {r}', caller,
+                             error_type=r, status_code=None)
+            except Exception:
+                pass
+        _skip_counts.clear()
+
+
+def _classify_error(error_str):
+    """Categorize error for dashboarding. Returns (error_type, status_code)."""
+    if not error_str:
+        return None, None
+    e = str(error_str)
+    if '429' in e:
+        return 'rate_limit', 429
+    if '401' in e or 'Unauthorized' in e:
+        return 'auth', 401
+    if '402' in e or 'Payment Required' in e:
+        return 'payment', 402
+    if '403' in e or 'Forbidden' in e:
+        return 'forbidden', 403
+    if '503' in e or 'Service Unavailable' in e:
+        return 'unavailable', 503
+    if '500' in e and 'Server Error' in e:
+        return 'server_error', 500
+    if 'timed out' in e or 'timeout' in e.lower():
+        return 'timeout', None
+    if 'ConnectionError' in e or 'ConnectionPool' in e:
+        return 'connection', None
+    if 'No module' in e:
+        return 'import_error', None
+    return 'other', None
+
+
 def _log(backend, model, prompt_len, response_len, duration_ms, success, error=None, caller=None):
     """Log to DB — fire and forget, never break the actual call."""
     try:
         from utilities.postgres_utils import log_llm_call
-        log_llm_call(backend, model, prompt_len, response_len, duration_ms, success, error, caller)
+        error_type, status_code = _classify_error(error) if error else (None, None)
+        log_llm_call(backend, model, prompt_len, response_len, duration_ms, success,
+                     error, caller, error_type=error_type, status_code=status_code)
     except Exception:
         pass
 
@@ -298,7 +353,10 @@ def _try_gemini(prompt, max_tokens=500, temperature=1.0):
 
 
 def _try_grok(prompt, max_tokens=500, temperature=1.0):
-    """Grok via kindness Cloud Run worker — free, no API key."""
+    """Grok via kindness Cloud Run worker — free, no API key.
+    Uses 120s timeout (matching kindness_social) because the ECDSA handshake
+    + PoW challenge can take 30-60s before the LLM call even starts.
+    """
     WORKER_URL = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
     resp = requests.post(
         WORKER_URL,
@@ -308,7 +366,7 @@ def _try_grok(prompt, max_tokens=500, temperature=1.0):
             'max_tokens': max_tokens,
             'temperature': temperature,
         },
-        timeout=60,
+        timeout=120,
     )
     if resp.ok:
         text = resp.json().get('text', '')
@@ -318,7 +376,10 @@ def _try_grok(prompt, max_tokens=500, temperature=1.0):
 
 
 def _try_deepseek(prompt, max_tokens=500, temperature=1.0):
-    """DeepSeek via kindness Cloud Run worker — free, uses PoW bypass."""
+    """DeepSeek via kindness Cloud Run worker — free, uses PoW bypass.
+    Uses 120s timeout (matching kindness_social) because PoW solving
+    + session creation + streaming adds up significantly.
+    """
     WORKER_URL = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
     resp = requests.post(
         WORKER_URL,
@@ -328,7 +389,7 @@ def _try_deepseek(prompt, max_tokens=500, temperature=1.0):
             'max_tokens': max_tokens,
             'temperature': temperature,
         },
-        timeout=60,
+        timeout=120,
     )
     if resp.ok:
         text = resp.json().get('text', '')
@@ -369,12 +430,12 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller, prompt_len):
 
     # Skip if calling too fast — respect RPM limits
     if not _rpm_ok(name):
-        logger.debug(f"Skipping {name} — RPM throttle")
+        _log_skip(name, backend.get('model', ''), prompt_len, 'skip_rpm', caller)
         return None
 
     # Skip if daily free cap is reached — no wasted 429s
     if not _check_daily_cap(name):
-        logger.debug(f"Skipping {name} — daily cap reached")
+        _log_skip(name, backend.get('model', ''), prompt_len, 'skip_cap', caller)
         return None
 
     start = time.time()
