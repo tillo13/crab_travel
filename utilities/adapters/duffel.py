@@ -138,9 +138,7 @@ class DuffelAdapter(TravelAdapter):
         )
 
     def _build_deep_link(self, offer_id, origin, destination):
-        """
-        In test mode Duffel doesn't produce real booking URLs.
-        In production this would link to your Duffel-powered checkout
-        or Duffel's hosted booking flow.
-        """
-        return f"https://api.duffel.com/air/offers/{offer_id}"
+        """Build a user-facing booking link. Uses Google Flights search
+        as a fallback since Duffel test mode doesn't produce real URLs."""
+        from urllib.parse import quote
+        return f"https://www.google.com/travel/flights?q=flights+from+{quote(origin)}+to+{quote(destination)}"
