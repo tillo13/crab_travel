@@ -147,7 +147,7 @@ def get_admin_dashboard_data(user_page=1, plan_page=1, per_page=50):
         FROM crab.votes v
         JOIN crab.users u ON u.pk_id = v.user_id
         JOIN crab.plans p ON p.plan_id = v.plan_id
-        LEFT JOIN crab.destination_suggestions d ON d.suggestion_id = v.target_id
+        LEFT JOIN crab.destination_suggestions d ON d.suggestion_id::text = v.target_id
         ORDER BY v.created_at DESC LIMIT 20
     """)
     recent_votes = cur.fetchall()
