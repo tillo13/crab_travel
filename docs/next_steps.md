@@ -216,29 +216,93 @@ Crawlers were burning through free tier limits and generating massive 429 storms
 - NVIDIA: 51% success but burning lifetime credits at 500/day
 - Paid fallbacks triggered 66 times (52 gpt4o-mini + 14 haiku)
 
-### What still needs attention
-1. **Vote failures** — ~4,000 "Vote FAILED for X" errors per day. Now logging response text in `detail` column for diagnosis. Suspect it's race conditions with large groups (30-100 bots) or plans getting pruned mid-run. Need to investigate.
-2. **NVIDIA lifetime credits** — At 50/day cap we have ~20 days of runway. Once exhausted, remove from rotation or buy more credits.
-3. **Grok/DeepSeek Cloud Run worker** — Both timeout frequently (60s). The PoW bypass worker at `kindness-worker-243380010344.us-central1.run.app` may need a health check or scaling adjustment.
-4. **OpenRouter** — 0% success rate even at 50/day cap. May need a $10 credit purchase to unlock 1K/day, or just remove from rotation to save the timeout overhead.
-5. **Mistral** — 2 RPM makes it nearly useless in a round-robin. Consider removing to avoid wasting time on a backend that can handle ~1 call/minute.
-6. **Monitor post-fix** — After a full day on the new settings, re-check the 24h stats to confirm 429s dropped. Target: <10% failure rate on Tier 1 backends.
+### Telemetry upgrade — SHIPPED 2026-03-24
 
-### Quick check command
+Upgraded logging so we can actually diagnose failures instead of guessing.
+
+**Kindness vs Crab comparison revealed the problems** — same backends, wildly different success rates:
+| Backend | Kindness | Crab | Root Cause |
+|---|---|---|---|
+| Grok | **95%** | 47% | Crab used 60s timeout, kindness uses 120s. ECDSA handshake takes 30-60s. |
+| DeepSeek | **86%** | 0% | Same timeout issue. PoW solving + streaming needs 120s. |
+| Mistral | **90%** | 0% | Kindness uses it for eval (low volume), crab round-robins it (hammered). |
+| Cerebras | **94%** | 34% | Crab called too aggressively with concurrent crawls. |
+
+**Fixes deployed:**
+1. Grok/DeepSeek timeout: **60s → 120s** (matching kindness_social)
+2. New telemetry columns: `error_type` (rate_limit, timeout, auth, payment, skip_rpm, skip_cap, etc.) + `status_code` (429, 401, 500...)
+3. Error classifier: `_classify_error()` categorizes every failure automatically
+4. Skip tracking: RPM throttle and daily cap skips now logged (batched every 5min to avoid spam)
+5. Fallback-safe logging: if new columns haven't migrated yet, falls back to old schema
+
+**Telemetry schema comparison:**
+- Kindness has 22 columns (tokens, cost, response_preview, fallback_used, agent_id...)
+- Crab now has 11 columns (was 9). Still lighter but enough for diagnosis.
+
+### Per-backend status and action items
+
+**Healthy (no action needed):**
+- **Cerebras** — 94% in kindness, our #1 workhorse. 1M tokens/day free.
+- **LLM7** — 88% success, no API key needed. Small but reliable.
+- **Grok** — 95% in kindness, should improve to ~90% now with 120s timeout.
+- **DeepSeek** — 86% in kindness, should improve similarly.
+
+**Needs investigation:**
+- **Groq (all 4 models)** — 10-23% success in crab. All 4 share ONE API key with a 30 RPM pool. With 5-min cron the volume should drop enough. If still bad, reduce to 2 Groq models instead of 4.
+- **Gemini** — 36% in kindness, 1% in crab. Getting "quota exceeded" errors. The free tier quota may have been further reduced. Check the Google AI Studio dashboard for current limits.
+- **OpenRouter** — 26% in kindness, 0% in crab. Getting 402 Payment Required AND 429s. The :free models have a 50/day limit without credits. **Action: buy $10 OpenRouter credits to unlock 1K/day, or remove.**
+- **Mistral** — 90% in kindness (low volume eval), 0% in crab (hammered). At 2 RPM it can only handle ~2,880/day max. With the spacing at 60s it should work now — just very slowly.
+
+**Dead/disabled:**
+- **Together** — 401 Unauthorized, credits exhausted. Cap set to 0. Dead.
+- **Grok_fast / Grok4** — Exist in kindness router but not wired in crab. Cap set to 0.
+
+**Protect:**
+- **NVIDIA** — 1K LIFETIME credits. At 50/day cap = ~20 days. Once exhausted, remove or buy more.
+
+### Shared infrastructure notes (for future reference)
+- Both apps call the same `kindness-worker` Cloud Run for grok/deepseek
+- All API keys stored under `KINDNESS_*` prefix in GCP Secret Manager (shared)
+- `kumori_llm_daily_caps` table is the shared cross-app cap enforcement
+- `llm_usage_caps.py` is copy-pasted into each app (canonical source: `~/Desktop/code/kumori/utilities/`)
+- Each app has its own telemetry table (`crab_llm_telemetry`, `kindness_llm_telemetry`)
+- Worker code lives at `~/Desktop/code/kindness_social/worker/` — Flask on Cloud Run
+- Worker Dockerfile: 1 process, 4 threads, 900s gunicorn timeout (worker won't timeout — callers do)
+
+### Quick check commands
 ```bash
-# LLM stats for last 24h (run from project root)
+# LLM stats by error type (run from project root)
 python3 -c "
 import psycopg2, psycopg2.extras, sys; sys.path.insert(0,'.')
 from utilities.postgres_utils import get_db_connection
 conn = get_db_connection(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 cur.execute('''SELECT backend, COUNT(*) as total,
     COUNT(*) FILTER (WHERE success=true) as ok,
-    COUNT(*) FILTER (WHERE success=false AND error_message LIKE \'%%429%%\') as rate_limited
+    COUNT(*) FILTER (WHERE error_type=\'rate_limit\') as rate_limited,
+    COUNT(*) FILTER (WHERE error_type=\'timeout\') as timeouts,
+    COUNT(*) FILTER (WHERE error_type IN (\'skip_rpm\',\'skip_cap\')) as skipped
     FROM public.crab_llm_telemetry WHERE created_at > NOW() - interval \'24 hours\'
     GROUP BY backend ORDER BY total DESC''')
 for s in cur.fetchall():
     pct = round(s['ok']/s['total']*100) if s['total'] else 0
-    print(f'{s[\"backend\"]:18} | total:{s[\"total\"]:4} | ok:{s[\"ok\"]:4} ({pct}%) | 429s:{s[\"rate_limited\"]:4}')
+    print(f'{s[\"backend\"]:18} | total:{s[\"total\"]:4} | ok:{s[\"ok\"]:4} ({pct}%) | 429:{s[\"rate_limited\"]:4} | timeout:{s[\"timeouts\"]:3} | skip:{s[\"skipped\"]:4}')
+conn.close()
+"
+
+# Compare crab vs kindness success rates
+python3 -c "
+import psycopg2, psycopg2.extras, sys; sys.path.insert(0,'.')
+from utilities.postgres_utils import get_db_connection
+conn = get_db_connection(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+for table, label in [('crab_llm_telemetry','CRAB'), ('kindness_llm_telemetry','KINDNESS')]:
+    cur.execute(f'''SELECT backend, COUNT(*) as t, COUNT(*) FILTER (WHERE success=true) as ok
+        FROM public.{table} WHERE created_at > NOW() - interval '24 hours'
+        GROUP BY backend ORDER BY t DESC''')
+    print(f'=== {label} (24h) ===')
+    for s in cur.fetchall():
+        pct = round(s['ok']/s['t']*100) if s['t'] else 0
+        print(f'  {s[\"backend\"]:18} | {s[\"t\"]:4} calls | {pct}% ok')
+    print()
 conn.close()
 "
 ```

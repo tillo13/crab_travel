@@ -41,7 +41,7 @@ DAILY_CAPS = {
     'groq-gptoss': 500,          # same
 
     # ── Tier 2: Moderate (fill gaps when Tier 1 throttled) ──
-    'gemini': 200,               # 250 req/day for Flash, 10 RPM — leave 50 for user calls
+    'gemini': 18,                # 20 req/day for 2.5 Flash free tier (confirmed 2026-03-24) — leave 2 for user calls
     'llm7': 300,                 # No documented cap, no key — conservative
 
     # ── Tier 3: Low caps or slow (deep fallbacks) ──
