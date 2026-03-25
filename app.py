@@ -326,15 +326,14 @@ def api_contact():
         data = request.get_json()
         email = data.get('email', '').strip()
         message = data.get('message', '').strip()
-        honeypot = data.get('honeypot', '').strip()
-        time_open = data.get('time_open', 0)
 
-        if honeypot:
-            logger.warning(f"Spam blocked: honeypot from {request.remote_addr}")
+        # Spam guard (shared across all kumori sites)
+        from utilities.spam_guard import check_spam
+        spam_reason = check_spam(data, request.remote_addr,
+                                 fields=['email', 'message'])
+        if spam_reason:
+            logger.warning(f"Spam blocked: {spam_reason} from {request.remote_addr}")
             return jsonify({'error': 'Invalid submission'}), 400
-
-        if time_open < 3000:
-            return jsonify({'error': 'Please take a moment to review your message'}), 400
 
         if not email or not message:
             return jsonify({'error': 'Email and message are required'}), 400
@@ -532,6 +531,17 @@ def admin_changelog():
     from datetime import datetime, timezone
     now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     return render_template('admin_changelog.html', active_page='admin', commits=commits, now_str=now_str)
+
+
+@app.route('/admin/ops')
+@login_required
+def admin_ops():
+    from utilities.admin_utils import is_admin, get_ops_data
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    data = get_ops_data()
+    return render_template('admin_ops.html', active_page='admin', **data)
 
 
 @app.route('/admin/speed')

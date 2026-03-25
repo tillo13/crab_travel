@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Ops Dashboard — Admin{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto animate-in">
+  <div class="mb-6">
+    <a href="/admin" class="text-sm text-crab-sand-dim hover:text-crab-coral transition-colors">&larr; Back to Admin</a>
+    <h1 class="text-3xl font-display mt-2">Operations Dashboard</h1>
+    <p class="text-sm text-crab-sand-dim">System health, LLM backends, watch engine, pipeline stats — last 24 hours</p>
+  </div>
+
+  <!-- ── Top-Level Health Cards ── -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    {% set total_llm = llm_24h|sum(attribute='total_calls') %}
+    {% set ok_llm = llm_24h|sum(attribute='successes') %}
+    {% set fail_llm = llm_24h|sum(attribute='failures') %}
+    {% set llm_rate = ((ok_llm / total_llm * 100) if total_llm > 0 else 0)|round(1) %}
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs text-crab-sand-dim mb-1">LLM Calls (24h)</div>
+      <div class="text-2xl font-display">{{ total_llm }}</div>
+      <div class="text-xs {% if llm_rate >= 90 %}text-crab-teal{% elif llm_rate >= 70 %}text-yellow-400{% else %}text-crab-coral{% endif %}">{{ llm_rate }}% success</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs text-crab-sand-dim mb-1">Active Watches</div>
+      <div class="text-2xl font-display">{{ watch_status.get('active', 0) }}</div>
+      <div class="text-xs text-crab-sand-dim">{{ watch_total }} total / {{ watch_status.get('booked', 0) }} booked</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs text-crab-sand-dim mb-1">Price Checks (24h)</div>
+      <div class="text-2xl font-display">{{ watch_checks_24h.checks_24h }}</div>
+      <div class="text-xs text-crab-sand-dim">{{ watch_checks_24h.unique_watches_24h }} unique watches</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs text-crab-sand-dim mb-1">Bot Runs (24h)</div>
+      <div class="text-2xl font-display">{{ bot_runs_24h.total_runs or 0 }}</div>
+      <div class="text-xs">
+        <span class="text-crab-teal">{{ bot_runs_24h.passed or 0 }} ok</span>
+        {% if bot_runs_24h.failed %}<span class="text-crab-coral ml-1">{{ bot_runs_24h.failed }} fail</span>{% endif %}
+        {% if bot_runs_24h.running %}<span class="text-yellow-400 ml-1">{{ bot_runs_24h.running }} running</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LLM Backend Health ── -->
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">LLM Backend Health (24h)</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-xs text-crab-sand-dim border-b border-white/6">
+          <th class="text-left px-4 py-2">Backend</th>
+          <th class="text-right px-4 py-2">Calls</th>
+          <th class="text-right px-4 py-2">OK</th>
+          <th class="text-right px-4 py-2">Fail</th>
+          <th class="text-right px-4 py-2">Rate</th>
+          <th class="text-right px-4 py-2">Avg ms</th>
+          <th class="text-right px-4 py-2">P95 ms</th>
+          <th class="text-right px-4 py-2">Data</th>
+        </tr></thead>
+        <tbody>
+        {% for b in llm_24h %}
+          {% set rate = ((b.successes / b.total_calls * 100) if b.total_calls > 0 else 0)|round(1) %}
+          <tr class="border-b border-white/[0.04] hover:bg-white/[0.02]">
+            <td class="px-4 py-2 font-medium">{{ b.backend }}</td>
+            <td class="px-4 py-2 text-right">{{ b.total_calls }}</td>
+            <td class="px-4 py-2 text-right text-crab-teal">{{ b.successes }}</td>
+            <td class="px-4 py-2 text-right {% if b.failures > 0 %}text-crab-coral{% else %}text-crab-sand-dim{% endif %}">{{ b.failures }}</td>
+            <td class="px-4 py-2 text-right {% if rate >= 90 %}text-crab-teal{% elif rate >= 70 %}text-yellow-400{% else %}text-crab-coral{% endif %} font-medium">{{ rate }}%</td>
+            <td class="px-4 py-2 text-right {% if b.avg_ms and b.avg_ms > 5000 %}text-crab-coral{% elif b.avg_ms and b.avg_ms > 2000 %}text-yellow-400{% else %}text-crab-sand-dim{% endif %}">{{ b.avg_ms or '-' }}</td>
+            <td class="px-4 py-2 text-right text-crab-sand-dim">{{ b.p95_ms or '-' }}</td>
+            <td class="px-4 py-2 text-right text-crab-sand-dim text-xs">{{ ((b.total_prompt_bytes + b.total_response_bytes) / 1024)|round(0)|int }}KB</td>
+          </tr>
+        {% endfor %}
+        {% if not llm_24h %}
+          <tr><td colspan="8" class="px-4 py-6 text-center text-crab-sand-dim">No LLM calls in the last 24 hours</td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- ── LLM Calls by Caller ── -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-white/6">
+        <span class="text-sm font-display">LLM Usage by Feature</span>
+      </div>
+      <div class="p-4 space-y-2">
+        {% for c in llm_by_caller %}
+          {% set pct = (c.calls / total_llm * 100) if total_llm > 0 else 0 %}
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-mono text-crab-sand-dim w-28 truncate" title="{{ c.caller }}">{{ c.caller }}</span>
+            <div class="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+              <div class="h-full bg-crab-teal/60 rounded-full" style="width:{{ pct|round(0)|int }}%"></div>
+            </div>
+            <span class="text-xs text-crab-sand w-12 text-right">{{ c.calls }}</span>
+            <span class="text-xs text-crab-sand-dim w-10 text-right">{{ ((c.ok / c.calls * 100) if c.calls > 0 else 0)|round(0)|int }}%</span>
+          </div>
+        {% endfor %}
+        {% if not llm_by_caller %}
+          <p class="text-sm text-crab-sand-dim text-center py-4">No data</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── LLM Daily Cap Usage ── -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-white/6">
+        <span class="text-sm font-display">Daily Cap Usage (Today)</span>
+      </div>
+      <div class="p-4 space-y-2">
+        {% for d in llm_daily_usage %}
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-mono text-crab-sand-dim w-28">{{ d.backend }}</span>
+            <div class="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+              <div class="h-full bg-crab-coral/60 rounded-full" style="width:{{ [d.used_today / 5, 100]|min }}%"></div>
+            </div>
+            <span class="text-xs text-crab-sand w-12 text-right">{{ d.used_today }}</span>
+          </div>
+        {% endfor %}
+        {% if not llm_daily_usage %}
+          <p class="text-sm text-crab-sand-dim text-center py-4">No calls today</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Watch Engine ── -->
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Watch Engine</span>
+    </div>
+    <div class="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div>
+        <div class="text-xs text-crab-sand-dim mb-1">Total Watches</div>
+        <div class="text-xl font-display">{{ watch_total }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-crab-sand-dim mb-1">With Price Data</div>
+        <div class="text-xl font-display">{{ watches_with_history }}</div>
+        <div class="text-xs text-crab-sand-dim">{{ total_price_observations }} observations</div>
+      </div>
+      <div>
+        <div class="text-xs text-crab-sand-dim mb-1">With AI Recs</div>
+        <div class="text-xl font-display">{{ watch_with_recs }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-crab-sand-dim mb-1">Plans Watching</div>
+        <div class="text-xl font-display">{{ plans_with_watches }}</div>
+      </div>
+    </div>
+    {% if watch_verdicts %}
+    <div class="px-5 pb-5">
+      <div class="text-xs text-crab-sand-dim mb-2">AI Recommendation Breakdown</div>
+      <div class="flex gap-2 flex-wrap">
+        {% for v in watch_verdicts %}
+          {% set vcolor = {'book_now': 'bg-crab-teal/20 text-crab-teal', 'book_soon': 'bg-yellow-400/20 text-yellow-400', 'wait': 'bg-white/10 text-crab-sand-dim', 'watching': 'bg-white/5 text-crab-sand-dim'} %}
+          <span class="px-3 py-1 rounded-full text-xs font-medium {{ vcolor.get(v.verdict, 'bg-white/5 text-crab-sand-dim') }}">
+            {{ v.verdict|replace('_', ' ')|title }}: {{ v.count }}
+          </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Pipeline Overview ── -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-white/6">
+        <span class="text-sm font-display">Plan Pipeline</span>
+      </div>
+      <div class="p-4 space-y-2">
+        {% for s in plan_stages %}
+          {% set scolor = {'locked': 'bg-crab-teal', 'planning': 'bg-yellow-400', 'voting': 'bg-crab-coral'} %}
+          <div class="flex items-center justify-between py-1">
+            <span class="text-sm">{{ s.status|title }}</span>
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full {{ scolor.get(s.status, 'bg-white/20') }}"></div>
+              <span class="text-sm font-medium">{{ s.count }}</span>
+            </div>
+          </div>
+        {% endfor %}
+        <div class="flex items-center justify-between py-1 border-t border-white/6 mt-2 pt-2">
+          <span class="text-sm text-crab-sand-dim">Total Members</span>
+          <span class="text-sm font-medium">{{ total_members }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Recent Bot Runs ── -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-white/6">
+        <span class="text-sm font-display">Recent Bot Runs</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-crab-sand-dim border-b border-white/6">
+            <th class="text-left px-3 py-2">Status</th>
+            <th class="text-left px-3 py-2">Mode</th>
+            <th class="text-right px-3 py-2">Phases</th>
+            <th class="text-right px-3 py-2">When</th>
+          </tr></thead>
+          <tbody>
+          {% for r in recent_bot_runs %}
+            {% set sclass = {'passed': 'text-crab-teal', 'failed': 'text-crab-coral', 'running': 'text-yellow-400'} %}
+            <tr class="border-b border-white/[0.04]">
+              <td class="px-3 py-1.5 {{ sclass.get(r.status, 'text-crab-sand-dim') }} font-medium">{{ r.status }}</td>
+              <td class="px-3 py-1.5 text-crab-sand-dim">{{ r.mode or '-' }}</td>
+              <td class="px-3 py-1.5 text-right">
+                <span class="text-crab-teal">{{ r.phases_passed or 0 }}</span>/<span class="text-crab-coral">{{ r.phases_failed or 0 }}</span>
+              </td>
+              <td class="px-3 py-1.5 text-right text-crab-sand-dim">{{ r.started_at.strftime('%b %d %H:%M') if r.started_at else '-' }}</td>
+            </tr>
+          {% endfor %}
+          {% if not recent_bot_runs %}
+            <tr><td colspan="4" class="px-3 py-4 text-center text-crab-sand-dim">No recent bot runs</td></tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Recent LLM Errors ── -->
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">Recent LLM Errors (24h)</span>
+      <span class="text-xs text-crab-sand-dim ml-2">{{ recent_llm_errors|length }} shown</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead><tr class="text-crab-sand-dim border-b border-white/6">
+          <th class="text-left px-3 py-2">Backend</th>
+          <th class="text-left px-3 py-2">Caller</th>
+          <th class="text-left px-3 py-2">Type</th>
+          <th class="text-right px-3 py-2">Code</th>
+          <th class="text-right px-3 py-2">ms</th>
+          <th class="text-left px-3 py-2">Error</th>
+          <th class="text-right px-3 py-2">When</th>
+        </tr></thead>
+        <tbody>
+        {% for e in recent_llm_errors %}
+          <tr class="border-b border-white/[0.04]">
+            <td class="px-3 py-1.5 font-mono">{{ e.backend }}</td>
+            <td class="px-3 py-1.5 text-crab-sand-dim">{{ e.caller or '-' }}</td>
+            <td class="px-3 py-1.5">
+              {% if e.error_type == 'rate_limit' %}<span class="text-yellow-400">rate_limit</span>
+              {% elif e.error_type == 'timeout' %}<span class="text-crab-coral">timeout</span>
+              {% elif e.error_type == 'auth' %}<span class="text-red-400">auth</span>
+              {% elif e.error_type == 'payment' %}<span class="text-red-400">payment</span>
+              {% else %}<span class="text-crab-sand-dim">{{ e.error_type or '-' }}</span>{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right font-mono {% if e.status_code and e.status_code >= 500 %}text-crab-coral{% elif e.status_code == 429 %}text-yellow-400{% else %}text-crab-sand-dim{% endif %}">{{ e.status_code or '-' }}</td>
+            <td class="px-3 py-1.5 text-right text-crab-sand-dim">{{ e.duration_ms or '-' }}</td>
+            <td class="px-3 py-1.5 text-crab-sand-dim max-w-xs truncate" title="{{ e.error_msg }}">{{ e.error_msg or '-' }}</td>
+            <td class="px-3 py-1.5 text-right text-crab-sand-dim whitespace-nowrap">{{ e.created_at.strftime('%H:%M:%S') if e.created_at else '-' }}</td>
+          </tr>
+        {% endfor %}
+        {% if not recent_llm_errors %}
+          <tr><td colspan="7" class="px-3 py-6 text-center text-crab-teal">No errors in the last 24 hours</td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── LLM Hourly Chart ── -->
+  {% if llm_hourly %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b border-white/6">
+      <span class="text-sm font-display">LLM Call Volume (24h)</span>
+    </div>
+    <div class="p-5">
+      <div class="flex items-end gap-[2px] h-24">
+        {% set max_calls = llm_hourly|map(attribute='calls')|max %}
+        {% for h in llm_hourly %}
+          {% set bar_h = (h.calls / max_calls * 100) if max_calls > 0 else 0 %}
+          {% set fail_h = (h.fail / max_calls * 100) if max_calls > 0 else 0 %}
+          <div class="flex-1 flex flex-col justify-end" title="{{ h.hour.strftime('%H:%M') }}: {{ h.calls }} calls ({{ h.fail }} fail)">
+            {% if h.fail > 0 %}<div class="bg-crab-coral/60 rounded-t-sm" style="height:{{ fail_h }}%"></div>{% endif %}
+            <div class="bg-crab-teal/40 {% if h.fail == 0 %}rounded-t-sm{% endif %}" style="height:{{ bar_h - fail_h }}%"></div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="flex justify-between mt-1">
+        <span class="text-[10px] text-crab-sand-dim">{{ llm_hourly[0].hour.strftime('%H:%M') if llm_hourly else '' }}</span>
+        <span class="text-[10px] text-crab-sand-dim">{{ llm_hourly[-1].hour.strftime('%H:%M') if llm_hourly else '' }}</span>
+      </div>
+      <div class="flex gap-4 mt-2">
+        <span class="text-[10px] text-crab-sand-dim flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-crab-teal/40"></span> Success</span>
+        <span class="text-[10px] text-crab-sand-dim flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-crab-coral/60"></span> Failure</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
