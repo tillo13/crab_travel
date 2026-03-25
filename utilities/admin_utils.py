@@ -22,8 +22,8 @@ def is_admin(user_id):
         return False
 
 
-def get_admin_dashboard_data():
-    """Fetch all admin dashboard data in one call."""
+def get_admin_dashboard_data(user_page=1, plan_page=1, per_page=50):
+    """Fetch admin dashboard data with pagination for users/plans."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -53,18 +53,39 @@ def get_admin_dashboard_data():
     """)
     plans_by_stage = {r['stage']: r['count'] for r in cur.fetchall()}
 
-    # --- Users table ---
+    # Active users in last 24h (sent messages or voted)
+    cur.execute("""
+        SELECT COUNT(DISTINCT user_id) as count FROM (
+            SELECT user_id FROM crab.messages WHERE created_at > NOW() - INTERVAL '24 hours'
+            UNION
+            SELECT user_id FROM crab.votes WHERE created_at > NOW() - INTERVAL '24 hours'
+        ) active
+    """)
+    active_users_today = cur.fetchone()['count']
+
+    # Watches with booked status
+    cur.execute("SELECT COUNT(*) as count FROM crab.member_watches WHERE status = 'booked'")
+    watches_booked_count = cur.fetchone()['count']
+
+    # Bot plans count
+    cur.execute("SELECT COUNT(*) as count FROM crab.plans WHERE title LIKE '[BOT]%'")
+    bot_plans_count = cur.fetchone()['count']
+
+    # --- Users table (paginated, first page) ---
+    offset = (user_page - 1) * per_page
     cur.execute("""
         SELECT u.pk_id, u.email, u.full_name, u.home_airport, u.home_location,
                u.phone_number, u.notify_chat, u.notify_updates, u.notify_channel,
                u.is_admin, u.created_at, u.updated_at,
                (SELECT COUNT(*) FROM crab.plan_members m WHERE m.user_id = u.pk_id) as plan_count,
                (SELECT COUNT(*) FROM crab.messages c WHERE c.user_id = u.pk_id) as message_count
-        FROM crab.users u ORDER BY u.pk_id
-    """)
+        FROM crab.users u ORDER BY u.created_at DESC
+        LIMIT %s OFFSET %s
+    """, (per_page, offset))
     users = cur.fetchall()
 
-    # --- Plans table ---
+    # --- Plans table (paginated, first page) ---
+    offset = (plan_page - 1) * per_page
     cur.execute("""
         SELECT p.pk_id, p.plan_id, p.title, p.invite_token, p.status,
                p.created_at,
@@ -76,7 +97,8 @@ def get_admin_dashboard_data():
         FROM crab.plans p
         LEFT JOIN crab.users u ON u.pk_id = p.organizer_id
         ORDER BY p.created_at DESC
-    """)
+        LIMIT %s OFFSET %s
+    """, (per_page, offset))
     plans = cur.fetchall()
 
     # --- Recent messages ---
@@ -118,6 +140,28 @@ def get_admin_dashboard_data():
     """)
     invite_stats = cur.fetchall()
 
+    # --- Recent votes (for activity tab) ---
+    cur.execute("""
+        SELECT v.created_at, u.full_name, p.title as plan_title,
+               d.destination_name, v.vote_type
+        FROM crab.votes v
+        JOIN crab.users u ON u.pk_id = v.user_id
+        JOIN crab.plans p ON p.plan_id = v.plan_id
+        LEFT JOIN crab.destination_suggestions d ON d.suggestion_id = v.suggestion_id
+        ORDER BY v.created_at DESC LIMIT 20
+    """)
+    recent_votes = cur.fetchall()
+
+    # --- Recent joins (for activity tab) ---
+    cur.execute("""
+        SELECT pm.joined_at as created_at, u.full_name, p.title as plan_title
+        FROM crab.plan_members pm
+        JOIN crab.users u ON u.pk_id = pm.user_id
+        JOIN crab.plans p ON p.plan_id = pm.plan_id
+        ORDER BY pm.joined_at DESC LIMIT 20
+    """)
+    recent_joins = cur.fetchall()
+
     cur.close()
     conn.close()
 
@@ -129,13 +173,134 @@ def get_admin_dashboard_data():
         'total_destinations': total_destinations,
         'total_votes': total_votes,
         'plans_by_stage': plans_by_stage,
+        'active_users_today': active_users_today,
+        'watches_booked_count': watches_booked_count,
+        'bot_plans_count': bot_plans_count,
         'users': users,
+        'total_users_count': total_users,
         'plans': plans,
+        'total_plans_count': total_plans,
         'recent_messages': recent_messages,
+        'recent_votes': recent_votes,
+        'recent_joins': recent_joins,
         'messages_24h': messages_24h,
         'votes_24h': votes_24h,
         'joins_24h': joins_24h,
         'invite_stats': invite_stats,
+        'per_page': per_page,
+    }
+
+
+def get_admin_users(search=None, page=1, per_page=50, sort_by='created_at', sort_dir='desc'):
+    """Paginated user list with search."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Whitelist sort columns
+    allowed_sorts = {'created_at', 'full_name', 'email', 'pk_id', 'plan_count', 'message_count'}
+    if sort_by not in allowed_sorts:
+        sort_by = 'created_at'
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+
+    where_clause = ""
+    params = []
+    if search:
+        where_clause = "WHERE u.full_name ILIKE %s OR u.email ILIKE %s"
+        params = [f'%{search}%', f'%{search}%']
+
+    # Count
+    cur.execute(f"SELECT COUNT(*) as count FROM crab.users u {where_clause}", params)
+    total = cur.fetchone()['count']
+
+    # Sort by subquery columns needs wrapping
+    order_col = f"u.{sort_by}" if sort_by not in ('plan_count', 'message_count') else sort_by
+    offset = (page - 1) * per_page
+
+    cur.execute(f"""
+        SELECT u.pk_id, u.email, u.full_name, u.home_airport, u.home_location,
+               u.phone_number, u.notify_chat, u.notify_updates, u.notify_channel,
+               u.is_admin, u.created_at, u.updated_at,
+               (SELECT COUNT(*) FROM crab.plan_members m WHERE m.user_id = u.pk_id) as plan_count,
+               (SELECT COUNT(*) FROM crab.messages c WHERE c.user_id = u.pk_id) as message_count
+        FROM crab.users u {where_clause}
+        ORDER BY {order_col} {sort_dir}
+        LIMIT %s OFFSET %s
+    """, params + [per_page, offset])
+    users = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {
+        'users': [dict(u) for u in users],
+        'total': total,
+        'page': page,
+        'pages': pages,
+        'per_page': per_page,
+    }
+
+
+def get_admin_plans(search=None, status=None, page=1, per_page=50, sort_by='created_at', sort_dir='desc'):
+    """Paginated plan list with search and status filter."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    allowed_sorts = {'created_at', 'title', 'member_count', 'msg_count', 'vote_count'}
+    if sort_by not in allowed_sorts:
+        sort_by = 'created_at'
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+
+    conditions = []
+    params = []
+    if search:
+        conditions.append("(p.title ILIKE %s OR u.full_name ILIKE %s)")
+        params += [f'%{search}%', f'%{search}%']
+    if status:
+        conditions.append("COALESCE(p.status, 'voting') = %s")
+        params.append(status)
+
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    # Count
+    cur.execute(f"""
+        SELECT COUNT(*) as count FROM crab.plans p
+        LEFT JOIN crab.users u ON u.pk_id = p.organizer_id
+        {where_clause}
+    """, params)
+    total = cur.fetchone()['count']
+
+    order_col = f"p.{sort_by}" if sort_by not in ('member_count', 'msg_count', 'vote_count') else sort_by
+    offset = (page - 1) * per_page
+
+    cur.execute(f"""
+        SELECT p.pk_id, p.plan_id, p.title, p.invite_token, p.status,
+               p.created_at,
+               u.full_name as organizer_name,
+               (SELECT COUNT(*) FROM crab.plan_members m WHERE m.plan_id = p.plan_id) as member_count,
+               (SELECT COUNT(*) FROM crab.destination_suggestions d WHERE d.plan_id = p.plan_id) as dest_count,
+               (SELECT COUNT(*) FROM crab.messages c WHERE c.plan_id = p.plan_id) as msg_count,
+               (SELECT COUNT(*) FROM crab.votes v WHERE v.plan_id = p.plan_id) as vote_count
+        FROM crab.plans p
+        LEFT JOIN crab.users u ON u.pk_id = p.organizer_id
+        {where_clause}
+        ORDER BY {order_col} {sort_dir}
+        LIMIT %s OFFSET %s
+    """, params + [per_page, offset])
+    plans = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {
+        'plans': [dict(p) for p in plans],
+        'total': total,
+        'page': page,
+        'pages': pages,
+        'per_page': per_page,
     }
 
 

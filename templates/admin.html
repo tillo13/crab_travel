@@ -1,280 +1,478 @@
 {% extends "base.html" %}
 {% block title %}Admin — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .admin-tab { cursor: pointer; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; transition: all 0.2s; color: rgba(200,194,184,0.6); }
+  .admin-tab:hover { color: #F0EAE0; background: rgba(255,255,255,0.04); }
+  .admin-tab.active { color: #E8593A; background: rgba(232,89,58,0.1); }
+  .admin-tab-panel { display: none; }
+  .admin-tab-panel.active { display: block; }
+  .stat-card { text-align: center; }
+  .stat-card .stat-value { font-size: 1.5rem; font-weight: 700; }
+  .stat-card .stat-label { font-size: 0.7rem; margin-top: 0.25rem; }
+  .admin-table { width: 100%; font-size: 0.8125rem; }
+  .admin-table th { text-align: left; padding: 0.625rem 0.75rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(200,194,184,0.5); border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; white-space: nowrap; user-select: none; }
+  .admin-table th:hover { color: rgba(200,194,184,0.8); }
+  .admin-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .admin-table tbody tr { transition: background 0.15s; }
+  .admin-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+  .badge-voting { background: rgba(232,89,58,0.12); color: #F47A5F; }
+  .badge-planning { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .badge-locked { background: rgba(20,184,166,0.12); color: #14B8A6; }
+  .badge-booked { background: rgba(34,197,94,0.12); color: #22C55E; }
+  .badge-status { padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+  .search-input { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.625rem; padding: 0.5rem 0.75rem 0.5rem 2.25rem; color: #F0EAE0; font-size: 0.8125rem; outline: none; transition: border-color 0.2s; }
+  .search-input:focus { border-color: rgba(232,89,58,0.4); }
+  .search-input::placeholder { color: rgba(200,194,184,0.35); }
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 0.875rem; height: 0.875rem; color: rgba(200,194,184,0.35); }
+  .pagination-btn { padding: 0.375rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 500; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: rgba(200,194,184,0.7); transition: all 0.2s; cursor: pointer; }
+  .pagination-btn:hover:not(:disabled) { border-color: rgba(232,89,58,0.3); color: #F0EAE0; }
+  .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .select-input { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.375rem 0.5rem; color: #F0EAE0; font-size: 0.8125rem; outline: none; }
+  .select-input:focus { border-color: rgba(232,89,58,0.4); }
+  .activity-item { display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.8125rem; padding: 0.5rem 0; }
+  .activity-time { flex-shrink: 0; width: 5.5rem; font-size: 0.7rem; color: rgba(200,194,184,0.4); padding-top: 0.1rem; }
+  .activity-dot { flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 50%; margin-top: 0.35rem; }
+  .dot-message { background: #E8593A; }
+  .dot-vote { background: #14B8A6; }
+  .dot-join { background: #F59E0B; }
+</style>
+{% endblock %}
 {% block content %}
-<div class="max-w-5xl mx-auto animate-in">
+<div class="max-w-6xl mx-auto animate-in">
 
 <!-- Header -->
-<div class="flex items-center justify-between mb-6">
+<div class="flex items-center justify-between mb-5">
   <div>
-    <h1 class="text-3xl font-display">Admin Panel</h1>
-    <p class="text-sm text-crab-sand-dim">crab.travel operations dashboard</p>
+    <h1 class="text-3xl font-display">Admin Dashboard</h1>
+    <p class="text-sm text-crab-sand-dim">crab.travel operations</p>
   </div>
-  {% if mimic_active %}
-  <form method="POST" action="/admin/mimic" class="inline">
-    <input type="hidden" name="action" value="stop">
-    <button class="px-4 py-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-500/30 transition-colors">
-      Mimicking {{ session.user.name }} — Stop
-    </button>
-  </form>
-  {% endif %}
-</div>
-
-<!-- Stat Cards -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
-    <div class="text-2xl font-display text-crab-coral">{{ total_users }}</div>
-    <div class="text-xs text-crab-sand-dim mt-1">Users</div>
-  </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
-    <div class="text-2xl font-display text-crab-teal">{{ total_plans }}</div>
-    <div class="text-xs text-crab-sand-dim mt-1">Plans</div>
-  </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
-    <div class="text-2xl font-display text-crab-coral-light">{{ total_messages }}</div>
-    <div class="text-xs text-crab-sand-dim mt-1">Messages</div>
-  </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 text-center">
-    <div class="text-2xl font-display text-crab-teal-light">{{ total_votes }}</div>
-    <div class="text-xs text-crab-sand-dim mt-1">Votes</div>
+  <div class="flex items-center gap-2">
+    {% if mimic_active %}
+    <form method="POST" action="/admin/mimic" class="inline">
+      <input type="hidden" name="action" value="stop">
+      <button class="px-4 py-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-500/30 transition-colors">
+        Mimicking {{ session.user.name }} — Stop
+      </button>
+    </form>
+    {% endif %}
   </div>
 </div>
 
-<!-- 24h Activity -->
-<div class="grid grid-cols-3 gap-3 mb-8">
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
-    <div class="text-lg font-display">{{ messages_24h }}</div>
-    <div class="text-xs text-crab-sand-dim">Messages (24h)</div>
+<!-- Tab Navigation -->
+<div class="flex items-center gap-1 mb-5 overflow-x-auto pb-1 -mx-1 px-1" style="scrollbar-width: none;">
+  <div class="admin-tab active" data-tab="overview">Overview</div>
+  <div class="admin-tab" data-tab="users">Users</div>
+  <div class="admin-tab" data-tab="plans">Plans</div>
+  <div class="admin-tab" data-tab="activity">Activity</div>
+  <div class="border-l border-white/8 h-5 mx-1"></div>
+  <a href="/admin/ops" class="admin-tab">Ops</a>
+  <a href="/admin/speed" class="admin-tab">Speed</a>
+  <a href="/admin/bots" class="admin-tab">Bots</a>
+  <a href="/admin/changelog" class="admin-tab">Changelog</a>
+</div>
+
+<div id="action-status" class="hidden text-sm rounded-lg p-3 mb-5"></div>
+
+<!-- ═══ OVERVIEW TAB ═══ -->
+<div class="admin-tab-panel active" id="panel-overview">
+
+  <!-- Stat Cards -->
+  <div class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-crab-coral">{{ total_users }}</div>
+      <div class="stat-label text-crab-sand-dim">Users</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-crab-teal">{{ total_plans }}</div>
+      <div class="stat-label text-crab-sand-dim">Plans</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-crab-coral-light">{{ total_messages }}</div>
+      <div class="stat-label text-crab-sand-dim">Messages</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-amber-400">{{ active_users_today }}</div>
+      <div class="stat-label text-crab-sand-dim">Active 24h</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-green-400">{{ watches_booked_count }}</div>
+      <div class="stat-label text-crab-sand-dim">Booked</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 stat-card">
+      <div class="stat-value text-purple-400">{{ bot_plans_count }}</div>
+      <div class="stat-label text-crab-sand-dim">Bot Plans</div>
+    </div>
   </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
-    <div class="text-lg font-display">{{ votes_24h }}</div>
-    <div class="text-xs text-crab-sand-dim">Votes (24h)</div>
+
+  <!-- 24h Activity Row -->
+  <div class="grid grid-cols-3 gap-3 mb-6">
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 stat-card">
+      <div class="text-lg font-display">{{ messages_24h }}</div>
+      <div class="stat-label text-crab-sand-dim">Messages (24h)</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 stat-card">
+      <div class="text-lg font-display">{{ votes_24h }}</div>
+      <div class="stat-label text-crab-sand-dim">Votes (24h)</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 stat-card">
+      <div class="text-lg font-display">{{ joins_24h }}</div>
+      <div class="stat-label text-crab-sand-dim">Joins (24h)</div>
+    </div>
   </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-3 text-center">
-    <div class="text-lg font-display">{{ joins_24h }}</div>
-    <div class="text-xs text-crab-sand-dim">Joins (24h)</div>
+
+  <!-- Plans by Stage -->
+  <div class="mb-6">
+    <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Plans by Stage</h2>
+    <div class="flex gap-2 flex-wrap">
+      {% for stage, count in plans_by_stage.items() %}
+      <span class="badge-status
+        {% if stage == 'voting' %}badge-voting
+        {% elif stage == 'planning' %}badge-planning
+        {% elif stage == 'locked' %}badge-locked
+        {% elif stage == 'booked' %}badge-booked
+        {% else %}bg-white/5 text-crab-sand-dim{% endif %}">
+        {{ stage|capitalize }}: {{ count }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="mb-6">
+    <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Quick Actions</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <a href="/admin/mimic" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/30 transition-colors group text-center">
+        <div class="text-lg mb-1">👤</div>
+        <div class="text-sm font-medium group-hover:text-crab-coral transition-colors">Mimic User</div>
+      </a>
+      <button onclick="sendTestEmail()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
+        <div class="text-lg mb-1">📧</div>
+        <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test Email</div>
+      </button>
+      <button onclick="sendTestSMS()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
+        <div class="text-lg mb-1">📱</div>
+        <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test SMS</div>
+      </button>
+      <button onclick="runSmokeTest()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-amber-500/30 transition-colors group text-center">
+        <div class="text-lg mb-1">🔥</div>
+        <div class="text-sm font-medium group-hover:text-amber-400 transition-colors">Smoke Test</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Recent Messages (overview) -->
+  <div class="mb-6">
+    <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Recent Messages</h2>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-2">
+      {% for msg in recent_messages[:10] %}
+      <div class="flex items-start gap-3 text-sm">
+        <div class="shrink-0 text-xs text-crab-sand-dim opacity-60 w-24">{{ msg.created_at.strftime('%b %d %H:%M') if msg.created_at else '' }}</div>
+        <div>
+          <span class="font-medium text-crab-coral">{{ msg.full_name }}</span>
+          <span class="text-crab-sand-dim opacity-60">in {{ msg.plan_title }}:</span>
+          <span class="text-crab-sand-dim">{{ msg.content[:120] }}{% if msg.content|length > 120 %}...{% endif %}</span>
+        </div>
+      </div>
+      {% endfor %}
+      {% if not recent_messages %}
+      <p class="text-sm text-crab-sand-dim opacity-40">No messages yet</p>
+      {% endif %}
+    </div>
   </div>
 </div>
 
-<!-- Quick Actions -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-  <a href="/admin/mimic" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/30 transition-colors group text-center">
-    <div class="text-lg mb-1">👤</div>
-    <div class="text-sm font-medium group-hover:text-crab-coral transition-colors">Mimic User</div>
-  </a>
-  <a href="/admin/ops" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
-    <div class="text-lg mb-1">📊</div>
-    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Ops Dashboard</div>
-  </a>
-  <a href="/admin/speed" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
-    <div class="text-lg mb-1">⚡</div>
-    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Page Speed</div>
-  </a>
-  <button onclick="sendTestEmail()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
-    <div class="text-lg mb-1">📧</div>
-    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test Email</div>
-  </button>
-  <button onclick="sendTestSMS()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-teal/30 transition-colors group text-center">
-    <div class="text-lg mb-1">📱</div>
-    <div class="text-sm font-medium group-hover:text-crab-teal transition-colors">Test SMS</div>
-  </button>
-  <button onclick="runSmokeTest()" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-amber-500/30 transition-colors group text-center">
-    <div class="text-lg mb-1">🔥</div>
-    <div class="text-sm font-medium group-hover:text-amber-400 transition-colors">Smoke Test</div>
-  </button>
-  <a href="/admin/changelog" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-purple-500/30 transition-colors group text-center">
-    <div class="text-lg mb-1">📋</div>
-    <div class="text-sm font-medium group-hover:text-purple-400 transition-colors">Changelog</div>
-  </a>
-  <a href="/admin/bots" class="bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/30 transition-colors group text-center">
-    <div class="text-lg mb-1">🦀</div>
-    <div class="text-sm font-medium group-hover:text-crab-coral transition-colors">Crab Crawlers</div>
-  </a>
-</div>
-
-<div id="action-status" class="hidden text-sm rounded-lg p-3 mb-6"></div>
-
-<!-- Plans by Stage -->
-<div class="mb-8">
-  <h2 class="text-xl font-display mb-3">Plans by Stage</h2>
-  <div class="flex gap-2 flex-wrap">
-    {% for stage, count in plans_by_stage.items() %}
-    <span class="px-3 py-1.5 rounded-full text-sm font-medium
-      {% if stage == 'voting' %}badge-pending
-      {% elif stage == 'planning' %}badge-success
-      {% elif stage == 'booked' %}bg-crab-coral/15 text-crab-coral
-      {% else %}badge-neutral{% endif %}">
-      {{ stage|capitalize }}: {{ count }}
-    </span>
-    {% endfor %}
+<!-- ═══ USERS TAB ═══ -->
+<div class="admin-tab-panel" id="panel-users">
+  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
+    <div class="search-wrap flex-1 w-full sm:w-auto">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+      <input type="text" id="user-search" class="search-input" placeholder="Search users by name or email...">
+    </div>
+    <select id="user-sort" class="select-input">
+      <option value="created_at:desc">Newest first</option>
+      <option value="created_at:asc">Oldest first</option>
+      <option value="full_name:asc">Name A-Z</option>
+      <option value="full_name:desc">Name Z-A</option>
+      <option value="plan_count:desc">Most plans</option>
+      <option value="message_count:desc">Most messages</option>
+    </select>
   </div>
-</div>
 
-<!-- Users Table -->
-<div class="mb-8">
-  <h2 class="text-xl font-display mb-3">Users ({{ total_users }})</h2>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-4">
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="admin-table">
         <thead>
-          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
-            <th class="px-4 py-3">ID</th>
-            <th class="px-4 py-3">Name</th>
-            <th class="px-4 py-3">Email</th>
-            <th class="px-4 py-3">Airport</th>
-            <th class="px-4 py-3">Phone</th>
-            <th class="px-4 py-3">Notify</th>
-            <th class="px-4 py-3">Plans</th>
-            <th class="px-4 py-3">Msgs</th>
-            <th class="px-4 py-3">Admin</th>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Airport</th>
+            <th>Phone</th>
+            <th>Notify</th>
+            <th>Plans</th>
+            <th>Msgs</th>
+            <th>Joined</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="users-tbody">
           {% for u in users %}
-          <tr class="border-b border-white/4 hover:bg-white/3 transition-colors">
-            <td class="px-4 py-2.5 text-crab-sand-dim">{{ u.pk_id }}</td>
-            <td class="px-4 py-2.5 font-medium">{{ u.full_name }}</td>
-            <td class="px-4 py-2.5 text-crab-sand-dim text-xs">{{ u.email }}</td>
-            <td class="px-4 py-2.5">
-              {% if u.home_airport %}<span class="text-crab-teal">{{ u.home_airport }}</span>{% endif %}
-              {% if u.home_location %}<span class="text-xs text-crab-sand-dim"> {{ u.home_location }}</span>{% endif %}
+          <tr>
+            <td class="font-medium whitespace-nowrap">
+              {{ u.full_name }}
+              {% if u.is_admin %}<span class="text-xs text-amber-400 ml-1">admin</span>{% endif %}
             </td>
-            <td class="px-4 py-2.5 text-xs">{{ u.phone_number or '—' }}</td>
-            <td class="px-4 py-2.5 text-xs">
+            <td class="text-crab-sand-dim text-xs">{{ u.email }}</td>
+            <td>
+              {% if u.home_airport %}<span class="text-crab-teal text-xs font-medium">{{ u.home_airport }}</span>{% endif %}
+              {% if u.home_location %}<span class="text-xs text-crab-sand-dim opacity-60"> {{ u.home_location }}</span>{% endif %}
+            </td>
+            <td class="text-xs text-crab-sand-dim">{{ u.phone_number or '' }}</td>
+            <td class="text-xs">
               <span class="{% if u.notify_chat == 'realtime' %}text-crab-teal{% elif u.notify_chat == 'off' %}text-crab-sand-dim opacity-40{% else %}text-crab-sand-dim{% endif %}">
                 {{ u.notify_chat }}/{{ u.notify_channel }}
               </span>
             </td>
-            <td class="px-4 py-2.5 text-center">{{ u.plan_count }}</td>
-            <td class="px-4 py-2.5 text-center">{{ u.message_count }}</td>
-            <td class="px-4 py-2.5 text-center">{% if u.is_admin %}✓{% endif %}</td>
+            <td class="text-center">{{ u.plan_count }}</td>
+            <td class="text-center">{{ u.message_count }}</td>
+            <td class="text-xs text-crab-sand-dim whitespace-nowrap">{{ u.created_at.strftime('%b %d, %Y') if u.created_at else '' }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
+
+  <div class="flex items-center justify-between" id="users-pagination">
+    <div class="text-xs text-crab-sand-dim" id="users-info">
+      {{ total_users_count }} total users
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="pagination-btn" id="users-prev" disabled>Prev</button>
+      <span class="text-xs text-crab-sand-dim" id="users-page-info">
+        Page 1 of {{ ((total_users_count + per_page - 1) // per_page) or 1 }}
+      </span>
+      <button class="pagination-btn" id="users-next" {% if total_users_count <= per_page %}disabled{% endif %}>Next</button>
+    </div>
+  </div>
 </div>
 
-<!-- Plans Table -->
-<div class="mb-8">
-  <h2 class="text-xl font-display mb-3">Plans ({{ total_plans }})</h2>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+<!-- ═══ PLANS TAB ═══ -->
+<div class="admin-tab-panel" id="panel-plans">
+  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
+    <div class="search-wrap flex-1 w-full sm:w-auto">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+      <input type="text" id="plan-search" class="search-input" placeholder="Search plans by title or organizer...">
+    </div>
+    <select id="plan-status-filter" class="select-input">
+      <option value="">All statuses</option>
+      <option value="voting">Voting</option>
+      <option value="planning">Planning</option>
+      <option value="locked">Locked</option>
+      <option value="booked">Booked</option>
+    </select>
+    <select id="plan-sort" class="select-input">
+      <option value="created_at:desc">Newest first</option>
+      <option value="created_at:asc">Oldest first</option>
+      <option value="title:asc">Title A-Z</option>
+      <option value="member_count:desc">Most members</option>
+      <option value="msg_count:desc">Most messages</option>
+    </select>
+  </div>
+
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-4">
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="admin-table">
         <thead>
-          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
-            <th class="px-4 py-3">Title</th>
-            <th class="px-4 py-3">Organizer</th>
-            <th class="px-4 py-3">Stage</th>
-            <th class="px-4 py-3">Members</th>
-            <th class="px-4 py-3">Dests</th>
-            <th class="px-4 py-3">Msgs</th>
-            <th class="px-4 py-3">Votes</th>
-            <th class="px-4 py-3">Invite Link</th>
-            <th class="px-4 py-3">Created</th>
+          <tr>
+            <th>Title</th>
+            <th>Organizer</th>
+            <th>Status</th>
+            <th>Members</th>
+            <th>Dests</th>
+            <th>Msgs</th>
+            <th>Votes</th>
+            <th>Invite</th>
+            <th>Created</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="plans-tbody">
           {% for p in plans %}
-          <tr class="border-b border-white/4 hover:bg-white/3 transition-colors">
-            <td class="px-4 py-2.5 font-medium">
+          <tr>
+            <td class="font-medium">
               <a href="/plan/{{ p.plan_id }}" class="hover:text-crab-coral transition-colors">{{ p.title }}</a>
             </td>
-            <td class="px-4 py-2.5 text-crab-sand-dim">{{ p.organizer_name or '—' }}</td>
-            <td class="px-4 py-2.5">
-              <span class="px-2 py-0.5 rounded-full text-xs
-                {% if p.status == 'voting' %}badge-pending
-                {% elif p.status == 'planning' %}badge-success
-                {% elif p.status == 'booked' %}bg-crab-coral/15 text-crab-coral
-                {% else %}badge-neutral{% endif %}">
+            <td class="text-crab-sand-dim text-xs">{{ p.organizer_name or '' }}</td>
+            <td>
+              <span class="badge-status badge-{{ (p.status or 'voting') }}">
                 {{ (p.status or 'voting')|capitalize }}
               </span>
             </td>
-            <td class="px-4 py-2.5 text-center">{{ p.member_count }}</td>
-            <td class="px-4 py-2.5 text-center">{{ p.dest_count }}</td>
-            <td class="px-4 py-2.5 text-center">{{ p.msg_count }}</td>
-            <td class="px-4 py-2.5 text-center">{{ p.vote_count }}</td>
-            <td class="px-4 py-2.5 text-xs">
+            <td class="text-center">{{ p.member_count }}</td>
+            <td class="text-center">{{ p.dest_count }}</td>
+            <td class="text-center">{{ p.msg_count }}</td>
+            <td class="text-center">{{ p.vote_count }}</td>
+            <td class="text-xs">
               <a href="/to/{{ p.invite_token }}" class="text-crab-coral hover:underline">/to/{{ p.invite_token }}</a>
             </td>
-            <td class="px-4 py-2.5 text-xs text-crab-sand-dim">{{ p.created_at.strftime('%b %d') if p.created_at else '—' }}</td>
+            <td class="text-xs text-crab-sand-dim whitespace-nowrap">{{ p.created_at.strftime('%b %d') if p.created_at else '' }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
-</div>
 
-<!-- Invite Conversion -->
-<div class="mb-8">
-  <h2 class="text-xl font-display mb-3">Invite Conversion</h2>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-white/6 text-left text-xs text-crab-sand-dim">
-            <th class="px-4 py-3">Plan</th>
-            <th class="px-4 py-3">Link</th>
-            <th class="px-4 py-3">Views</th>
-            <th class="px-4 py-3">Joins</th>
-            <th class="px-4 py-3">Rate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for inv in invite_stats %}
-          <tr class="border-b border-white/4">
-            <td class="px-4 py-2.5 font-medium">{{ inv.title }}</td>
-            <td class="px-4 py-2.5 text-xs text-crab-coral">/to/{{ inv.invite_token }}</td>
-            <td class="px-4 py-2.5">{{ inv.views }}</td>
-            <td class="px-4 py-2.5">{{ inv.joins }}</td>
-            <td class="px-4 py-2.5">
-              {% if inv.views > 0 %}
-              <span class="{% if (inv.joins / inv.views * 100) > 30 %}text-crab-teal{% elif (inv.joins / inv.views * 100) > 10 %}text-amber-400{% else %}text-crab-coral{% endif %}">
-                {{ (inv.joins / inv.views * 100)|round(1) }}%
-              </span>
-              {% else %}—{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <div class="flex items-center justify-between" id="plans-pagination">
+    <div class="text-xs text-crab-sand-dim" id="plans-info">
+      {{ total_plans_count }} total plans
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="pagination-btn" id="plans-prev" disabled>Prev</button>
+      <span class="text-xs text-crab-sand-dim" id="plans-page-info">
+        Page 1 of {{ ((total_plans_count + per_page - 1) // per_page) or 1 }}
+      </span>
+      <button class="pagination-btn" id="plans-next" {% if total_plans_count <= per_page %}disabled{% endif %}>Next</button>
     </div>
   </div>
 </div>
 
-<!-- Recent Messages -->
-<div class="mb-8">
-  <h2 class="text-xl font-display mb-3">Recent Messages</h2>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-3">
-    {% for msg in recent_messages %}
-    <div class="flex items-start gap-3 text-sm">
-      <div class="shrink-0 text-xs text-crab-sand-dim opacity-60 w-24">{{ msg.created_at.strftime('%b %d %H:%M') if msg.created_at else '' }}</div>
-      <div>
-        <span class="font-medium text-crab-coral">{{ msg.full_name }}</span>
-        <span class="text-crab-sand-dim opacity-60">in {{ msg.plan_title }}:</span>
-        <span class="text-crab-sand-dim">{{ msg.content[:120] }}{% if msg.content|length > 120 %}...{% endif %}</span>
+<!-- ═══ ACTIVITY TAB ═══ -->
+<div class="admin-tab-panel" id="panel-activity">
+
+  <!-- Invite Conversion -->
+  <div class="mb-6">
+    <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Invite Conversion</h2>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Link</th>
+              <th>Views</th>
+              <th>Joins</th>
+              <th>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invite_stats %}
+            <tr>
+              <td class="font-medium">{{ inv.title }}</td>
+              <td class="text-xs text-crab-coral">/to/{{ inv.invite_token }}</td>
+              <td>{{ inv.views }}</td>
+              <td>{{ inv.joins }}</td>
+              <td>
+                {% if inv.views > 0 %}
+                <span class="{% if (inv.joins / inv.views * 100) > 30 %}text-crab-teal{% elif (inv.joins / inv.views * 100) > 10 %}text-amber-400{% else %}text-crab-coral{% endif %}">
+                  {{ (inv.joins / inv.views * 100)|round(1) }}%
+                </span>
+                {% else %}<span class="text-crab-sand-dim opacity-40">--</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-    {% endfor %}
-    {% if not recent_messages %}
-    <p class="text-sm text-crab-sand-dim opacity-40">No messages yet</p>
-    {% endif %}
+  </div>
+
+  <!-- Activity Feed -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <!-- Recent Messages -->
+    <div>
+      <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Recent Messages</h2>
+      <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-1">
+        {% for msg in recent_messages %}
+        <div class="activity-item">
+          <div class="activity-time">{{ msg.created_at.strftime('%b %d %H:%M') if msg.created_at else '' }}</div>
+          <div class="activity-dot dot-message"></div>
+          <div>
+            <span class="font-medium text-crab-coral">{{ msg.full_name }}</span>
+            <span class="text-crab-sand-dim opacity-50">in {{ msg.plan_title }}:</span>
+            <span class="text-crab-sand-dim">{{ msg.content[:100] }}{% if msg.content|length > 100 %}...{% endif %}</span>
+          </div>
+        </div>
+        {% endfor %}
+        {% if not recent_messages %}
+        <p class="text-sm text-crab-sand-dim opacity-40">No messages yet</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Recent Votes & Joins -->
+    <div>
+      <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Recent Votes</h2>
+      <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-1 mb-5">
+        {% for v in recent_votes[:10] %}
+        <div class="activity-item">
+          <div class="activity-time">{{ v.created_at.strftime('%b %d %H:%M') if v.created_at else '' }}</div>
+          <div class="activity-dot dot-vote"></div>
+          <div>
+            <span class="font-medium text-crab-teal">{{ v.full_name }}</span>
+            <span class="text-crab-sand-dim opacity-50">{{ v.vote_type }} on {{ v.destination_name or 'dest' }} in {{ v.plan_title }}</span>
+          </div>
+        </div>
+        {% endfor %}
+        {% if not recent_votes %}
+        <p class="text-sm text-crab-sand-dim opacity-40">No votes yet</p>
+        {% endif %}
+      </div>
+
+      <h2 class="text-sm font-medium text-crab-sand-dim mb-2">Recent Joins</h2>
+      <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 space-y-1">
+        {% for j in recent_joins[:10] %}
+        <div class="activity-item">
+          <div class="activity-time">{{ j.created_at.strftime('%b %d %H:%M') if j.created_at else '' }}</div>
+          <div class="activity-dot dot-join"></div>
+          <div>
+            <span class="font-medium text-amber-400">{{ j.full_name }}</span>
+            <span class="text-crab-sand-dim opacity-50">joined {{ j.plan_title }}</span>
+          </div>
+        </div>
+        {% endfor %}
+        {% if not recent_joins %}
+        <p class="text-sm text-crab-sand-dim opacity-40">No joins yet</p>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 
 </div>
 
 <script>
+/* ── Tab switching ── */
+document.querySelectorAll('.admin-tab[data-tab]').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.admin-tab[data-tab]').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.admin-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    /* Save active tab */
+    try { sessionStorage.setItem('admin_tab', tab.dataset.tab); } catch(e) {}
+  });
+});
+/* Restore tab */
+try {
+  var saved = sessionStorage.getItem('admin_tab');
+  if (saved) {
+    var t = document.querySelector('.admin-tab[data-tab="' + saved + '"]');
+    if (t) t.click();
+  }
+} catch(e) {}
+
+/* ── Status banner ── */
 function showStatus(msg, isError) {
   var el = document.getElementById('action-status');
-  el.className = 'text-sm rounded-lg p-3 mb-6 ' + (isError
+  el.className = 'text-sm rounded-lg p-3 mb-5 ' + (isError
     ? 'bg-crab-coral/10 border border-crab-coral/20 text-crab-coral'
     : 'bg-crab-teal/10 border border-crab-teal/20 text-crab-teal');
   el.textContent = msg;
   el.classList.remove('hidden');
 }
 
+/* ── Quick action functions (preserved from original) ── */
 async function sendTestEmail() {
   showStatus('Sending test email...');
   try {
@@ -306,6 +504,176 @@ async function runSmokeTest() {
       showStatus('Smoke test failed: ' + (data.error || 'unknown'), true);
     }
   } catch(e) { showStatus('Error: ' + e.message, true); }
+}
+
+/* ── Users tab — AJAX search/pagination ── */
+var usersState = { page: 1, search: '', sort: 'created_at', dir: 'desc' };
+var usersDebounce = null;
+
+document.getElementById('user-search').addEventListener('input', function() {
+  clearTimeout(usersDebounce);
+  usersDebounce = setTimeout(function() {
+    usersState.search = document.getElementById('user-search').value.trim();
+    usersState.page = 1;
+    loadUsers();
+  }, 300);
+});
+
+document.getElementById('user-sort').addEventListener('change', function() {
+  var parts = this.value.split(':');
+  usersState.sort = parts[0];
+  usersState.dir = parts[1];
+  usersState.page = 1;
+  loadUsers();
+});
+
+document.getElementById('users-prev').addEventListener('click', function() {
+  if (usersState.page > 1) { usersState.page--; loadUsers(); }
+});
+document.getElementById('users-next').addEventListener('click', function() {
+  usersState.page++;
+  loadUsers();
+});
+
+function loadUsers() {
+  var params = new URLSearchParams({
+    page: usersState.page,
+    sort: usersState.sort,
+    dir: usersState.dir,
+  });
+  if (usersState.search) params.set('search', usersState.search);
+
+  fetch('/api/admin/users?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      renderUsersTable(data.users);
+      document.getElementById('users-info').textContent = data.total + ' total users';
+      document.getElementById('users-page-info').textContent = 'Page ' + data.page + ' of ' + data.pages;
+      document.getElementById('users-prev').disabled = data.page <= 1;
+      document.getElementById('users-next').disabled = data.page >= data.pages;
+      usersState.page = data.page;
+    })
+    .catch(function(e) { console.error('Users load error:', e); });
+}
+
+function renderUsersTable(users) {
+  var tbody = document.getElementById('users-tbody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-crab-sand-dim opacity-40">No users found</td></tr>';
+    return;
+  }
+  var html = '';
+  users.forEach(function(u) {
+    var d = u.created_at ? new Date(u.created_at) : null;
+    var dateStr = d ? d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : '';
+    html += '<tr>'
+      + '<td class="font-medium whitespace-nowrap">' + esc(u.full_name || '')
+        + (u.is_admin ? '<span class="text-xs text-amber-400 ml-1">admin</span>' : '') + '</td>'
+      + '<td class="text-crab-sand-dim text-xs">' + esc(u.email || '') + '</td>'
+      + '<td>'
+        + (u.home_airport ? '<span class="text-crab-teal text-xs font-medium">' + esc(u.home_airport) + '</span>' : '')
+        + (u.home_location ? '<span class="text-xs text-crab-sand-dim opacity-60"> ' + esc(u.home_location) + '</span>' : '')
+      + '</td>'
+      + '<td class="text-xs text-crab-sand-dim">' + esc(u.phone_number || '') + '</td>'
+      + '<td class="text-xs"><span class="' + (u.notify_chat === 'realtime' ? 'text-crab-teal' : u.notify_chat === 'off' ? 'text-crab-sand-dim opacity-40' : 'text-crab-sand-dim') + '">'
+        + esc((u.notify_chat || '') + '/' + (u.notify_channel || '')) + '</span></td>'
+      + '<td class="text-center">' + (u.plan_count || 0) + '</td>'
+      + '<td class="text-center">' + (u.message_count || 0) + '</td>'
+      + '<td class="text-xs text-crab-sand-dim whitespace-nowrap">' + dateStr + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* ── Plans tab — AJAX search/pagination ── */
+var plansState = { page: 1, search: '', status: '', sort: 'created_at', dir: 'desc' };
+var plansDebounce = null;
+
+document.getElementById('plan-search').addEventListener('input', function() {
+  clearTimeout(plansDebounce);
+  plansDebounce = setTimeout(function() {
+    plansState.search = document.getElementById('plan-search').value.trim();
+    plansState.page = 1;
+    loadPlans();
+  }, 300);
+});
+
+document.getElementById('plan-status-filter').addEventListener('change', function() {
+  plansState.status = this.value;
+  plansState.page = 1;
+  loadPlans();
+});
+
+document.getElementById('plan-sort').addEventListener('change', function() {
+  var parts = this.value.split(':');
+  plansState.sort = parts[0];
+  plansState.dir = parts[1];
+  plansState.page = 1;
+  loadPlans();
+});
+
+document.getElementById('plans-prev').addEventListener('click', function() {
+  if (plansState.page > 1) { plansState.page--; loadPlans(); }
+});
+document.getElementById('plans-next').addEventListener('click', function() {
+  plansState.page++;
+  loadPlans();
+});
+
+function loadPlans() {
+  var params = new URLSearchParams({
+    page: plansState.page,
+    sort: plansState.sort,
+    dir: plansState.dir,
+  });
+  if (plansState.search) params.set('search', plansState.search);
+  if (plansState.status) params.set('status', plansState.status);
+
+  fetch('/api/admin/plans?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      renderPlansTable(data.plans);
+      document.getElementById('plans-info').textContent = data.total + ' total plans';
+      document.getElementById('plans-page-info').textContent = 'Page ' + data.page + ' of ' + data.pages;
+      document.getElementById('plans-prev').disabled = data.page <= 1;
+      document.getElementById('plans-next').disabled = data.page >= data.pages;
+      plansState.page = data.page;
+    })
+    .catch(function(e) { console.error('Plans load error:', e); });
+}
+
+function renderPlansTable(plans) {
+  var tbody = document.getElementById('plans-tbody');
+  if (!plans.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-crab-sand-dim opacity-40">No plans found</td></tr>';
+    return;
+  }
+  var html = '';
+  plans.forEach(function(p) {
+    var status = p.status || 'voting';
+    var d = p.created_at ? new Date(p.created_at) : null;
+    var dateStr = d ? d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+    html += '<tr>'
+      + '<td class="font-medium"><a href="/plan/' + esc(p.plan_id) + '" class="hover:text-crab-coral transition-colors">' + esc(p.title || '') + '</a></td>'
+      + '<td class="text-crab-sand-dim text-xs">' + esc(p.organizer_name || '') + '</td>'
+      + '<td><span class="badge-status badge-' + esc(status) + '">' + esc(status.charAt(0).toUpperCase() + status.slice(1)) + '</span></td>'
+      + '<td class="text-center">' + (p.member_count || 0) + '</td>'
+      + '<td class="text-center">' + (p.dest_count || 0) + '</td>'
+      + '<td class="text-center">' + (p.msg_count || 0) + '</td>'
+      + '<td class="text-center">' + (p.vote_count || 0) + '</td>'
+      + '<td class="text-xs"><a href="/to/' + esc(p.invite_token) + '" class="text-crab-coral hover:underline">/to/' + esc(p.invite_token) + '</a></td>'
+      + '<td class="text-xs text-crab-sand-dim whitespace-nowrap">' + dateStr + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* ── HTML escape helper ── */
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
 }
 </script>
 {% endblock %}

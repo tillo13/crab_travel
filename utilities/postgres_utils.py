@@ -2601,6 +2601,297 @@ def get_watch_history(watch_id, limit=50):
 
 # ── LLM Telemetry ─────────────────────────────────────────────
 
+# ── Trip Summary Functions ─────────────────────────────────────
+
+def get_trip_summary(plan_id):
+    """Build a comprehensive trip summary: watches grouped by member with cost breakdowns."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Get all watches with member info
+        cursor.execute("""
+            SELECT w.*, m.display_name, m.pk_id as member_pk_id,
+                   COALESCE(u.full_name, m.display_name) as member_name,
+                   m.home_airport
+            FROM crab.member_watches w
+            JOIN crab.plan_members m ON m.pk_id = w.member_id
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE w.plan_id = %s
+            ORDER BY m.joined_at, w.watch_type
+        """, (plan_id,))
+        watches = [dict(r) for r in cursor.fetchall()]
+
+        # Get member count
+        cursor.execute("SELECT COUNT(*) as cnt FROM crab.plan_members WHERE plan_id = %s", (plan_id,))
+        member_count = cursor.fetchone()['cnt']
+
+        # Group watches by member
+        members = {}
+        flights_total = 0
+        hotels_total = 0
+        booked_count = 0
+
+        for w in watches:
+            mid = w['member_pk_id']
+            if mid not in members:
+                members[mid] = {
+                    'name': w['member_name'],
+                    'home_airport': w.get('home_airport'),
+                    'flights': [],
+                    'hotels': [],
+                    'flight_cost': 0,
+                    'hotel_cost': 0,
+                    'total_cost': 0,
+                }
+            price = float(w.get('best_price_usd') or w.get('last_price_usd') or 0)
+            booked_price = None
+            confirmation = None
+            if w.get('data') and isinstance(w['data'], dict):
+                booked_price = w['data'].get('booked_price')
+                confirmation = w['data'].get('confirmation')
+            # Use booked_price if available, else best/last price
+            effective_price = float(booked_price) if booked_price is not None else price
+
+            watch_info = {
+                'pk_id': w['pk_id'],
+                'watch_type': w['watch_type'],
+                'origin': w.get('origin'),
+                'destination': w['destination'],
+                'checkin': w.get('checkin'),
+                'checkout': w.get('checkout'),
+                'status': w['status'],
+                'price': effective_price,
+                'deep_link': w.get('deep_link'),
+                'confirmation': confirmation,
+                'data': w.get('data', {}),
+            }
+
+            if w['watch_type'] == 'flight':
+                members[mid]['flights'].append(watch_info)
+                members[mid]['flight_cost'] += effective_price
+                flights_total += effective_price
+            else:
+                members[mid]['hotels'].append(watch_info)
+                members[mid]['hotel_cost'] += effective_price
+                hotels_total += effective_price
+
+            if w['status'] == 'booked':
+                booked_count += 1
+
+            members[mid]['total_cost'] = members[mid]['flight_cost'] + members[mid]['hotel_cost']
+
+        grand_total = flights_total + hotels_total
+        per_person = grand_total / member_count if member_count > 0 else 0
+
+        return {
+            'members': members,
+            'member_count': member_count,
+            'booked_count': booked_count,
+            'total_watches': len(watches),
+            'flights_total': round(flights_total, 2),
+            'hotels_total': round(hotels_total, 2),
+            'grand_total': round(grand_total, 2),
+            'per_person': round(per_person, 2),
+        }
+    except Exception as e:
+        logger.error(f"Get trip summary failed: {e}")
+        return {
+            'members': {}, 'member_count': 0, 'booked_count': 0, 'total_watches': 0,
+            'flights_total': 0, 'hotels_total': 0, 'grand_total': 0, 'per_person': 0,
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_itinerary_items(plan_id):
+    """Get all itinerary items for a plan, ordered by date and time."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT i.*, m.display_name as added_by_name
+            FROM crab.itinerary_items i
+            LEFT JOIN crab.plan_members m ON m.pk_id = i.added_by
+            WHERE i.plan_id = %s
+            ORDER BY i.scheduled_date, i.scheduled_time NULLS LAST
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get itinerary items failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def insert_itinerary_item(plan_id, title, category, scheduled_date, scheduled_time=None,
+                          duration_minutes=None, location=None, url=None, notes=None, added_by=None):
+    """Insert a new itinerary item."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.itinerary_items
+                (plan_id, title, category, scheduled_date, scheduled_time,
+                 duration_minutes, location, url, notes, added_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (plan_id, title, category, scheduled_date, scheduled_time,
+              duration_minutes, location, url, notes, added_by))
+        row = cursor.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Insert itinerary item failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def delete_itinerary_item(item_id):
+    """Delete an itinerary item by item_id (UUID)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crab.itinerary_items WHERE item_id = %s", (item_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Delete itinerary item failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_expenses(plan_id):
+    """Get all expenses for a plan with member names joined."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT e.*, COALESCE(u.full_name, m.display_name) as paid_by_name
+            FROM crab.expenses e
+            JOIN crab.plan_members m ON m.pk_id = e.paid_by
+            LEFT JOIN crab.users u ON u.pk_id = m.user_id
+            WHERE e.plan_id = %s
+            ORDER BY e.expense_date DESC, e.created_at DESC
+        """, (plan_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Get expenses failed: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def insert_expense(plan_id, paid_by, title, amount, category='other', split_type='equal', split_among=None):
+    """Insert an expense record."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            INSERT INTO crab.expenses (plan_id, paid_by, title, amount, category, split_type, split_among)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (plan_id, paid_by, title, amount, category, split_type,
+              psycopg2.extras.Json(split_among) if split_among else psycopg2.extras.Json([])))
+        row = cursor.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Insert expense failed: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_trip_cost_summary(plan_id):
+    """Aggregate all booked watch prices + expenses into totals."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Watch costs (booked items)
+        cursor.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN watch_type = 'flight' THEN COALESCE(best_price_usd, last_price_usd, 0) END), 0) as flights_total,
+                COALESCE(SUM(CASE WHEN watch_type != 'flight' THEN COALESCE(best_price_usd, last_price_usd, 0) END), 0) as hotels_total,
+                COALESCE(SUM(COALESCE(best_price_usd, last_price_usd, 0)), 0) as watches_total
+            FROM crab.member_watches
+            WHERE plan_id = %s AND status = 'booked'
+        """, (plan_id,))
+        watch_totals = dict(cursor.fetchone())
+
+        # Expense costs
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as expenses_total
+            FROM crab.expenses WHERE plan_id = %s
+        """, (plan_id,))
+        expense_totals = dict(cursor.fetchone())
+
+        # Member count
+        cursor.execute("SELECT COUNT(*) as cnt FROM crab.plan_members WHERE plan_id = %s", (plan_id,))
+        member_count = cursor.fetchone()['cnt']
+
+        grand_total = float(watch_totals['watches_total']) + float(expense_totals['expenses_total'])
+        return {
+            'flights_total': float(watch_totals['flights_total']),
+            'hotels_total': float(watch_totals['hotels_total']),
+            'watches_total': float(watch_totals['watches_total']),
+            'expenses_total': float(expense_totals['expenses_total']),
+            'grand_total': grand_total,
+            'per_person': round(grand_total / member_count, 2) if member_count > 0 else 0,
+            'member_count': member_count,
+        }
+    except Exception as e:
+        logger.error(f"Get trip cost summary failed: {e}")
+        return {
+            'flights_total': 0, 'hotels_total': 0, 'watches_total': 0,
+            'expenses_total': 0, 'grand_total': 0, 'per_person': 0, 'member_count': 0,
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def log_llm_call(backend, model=None, prompt_length=0, response_length=0,
                  duration_ms=0, success=True, error_message=None, caller=None,
                  error_type=None, status_code=None):

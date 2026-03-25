@@ -390,6 +390,62 @@ Sent from crab.travel/contact
         return jsonify({'error': str(e)}), 500
 
 
+# ── Trip Summary routes ──────────────────────────────────────
+
+@app.route('/plan/<plan_id>/summary')
+def trip_summary(plan_id):
+    from utilities.postgres_utils import get_trip_summary, get_itinerary_items, get_expenses
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return render_template('404.html'), 404
+    # Allow unauthenticated access for bot trips
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return redirect(url_for('login'))
+    summary = get_trip_summary(plan_id)
+    itinerary = get_itinerary_items(plan_id)
+    expenses = get_expenses(plan_id)
+    return render_template('trip_summary.html',
+        plan=plan, summary=summary, itinerary=itinerary, expenses=expenses)
+
+
+@app.route('/api/plan/<plan_id>/itinerary', methods=['POST'])
+@api_auth_required
+def api_add_itinerary_item(plan_id):
+    from utilities.postgres_utils import insert_itinerary_item
+    data = request.get_json()
+    if not data or not data.get('title') or not data.get('scheduled_date'):
+        return jsonify({'error': 'title and scheduled_date are required'}), 400
+    item = insert_itinerary_item(
+        plan_id=plan_id,
+        title=data['title'],
+        category=data.get('category', 'activity'),
+        scheduled_date=data['scheduled_date'],
+        scheduled_time=data.get('scheduled_time'),
+        duration_minutes=data.get('duration_minutes'),
+        location=data.get('location'),
+        url=data.get('url'),
+        notes=data.get('notes'),
+        added_by=data.get('added_by'),
+    )
+    if item:
+        # Convert non-serializable types
+        for k, v in item.items():
+            if hasattr(v, 'isoformat'):
+                item[k] = v.isoformat()
+        return jsonify({'success': True, 'item': item})
+    return jsonify({'error': 'Failed to add item'}), 500
+
+
+@app.route('/api/plan/<plan_id>/itinerary/<item_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_itinerary_item(plan_id, item_id):
+    from utilities.postgres_utils import delete_itinerary_item
+    success = delete_itinerary_item(item_id)
+    return jsonify({'success': success})
+
+
 # ── Admin routes ─────────────────────────────────────────────
 
 @app.route('/admin')
@@ -402,6 +458,48 @@ def admin_panel():
     data = get_admin_dashboard_data()
     data['mimic_active'] = '_real_uid' in session
     return render_template('admin.html', active_page='admin', **data)
+
+
+@app.route('/api/admin/users')
+@api_auth_required
+def api_admin_users():
+    from utilities.admin_utils import is_admin, get_admin_users
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    result = get_admin_users(
+        search=request.args.get('search'),
+        page=request.args.get('page', 1, type=int),
+        per_page=request.args.get('per_page', 50, type=int),
+        sort_by=request.args.get('sort', 'created_at'),
+        sort_dir=request.args.get('dir', 'desc'),
+    )
+    for u in result['users']:
+        for k in ('created_at', 'updated_at'):
+            if u.get(k):
+                u[k] = u[k].isoformat()
+    return jsonify(result)
+
+
+@app.route('/api/admin/plans')
+@api_auth_required
+def api_admin_plans():
+    from utilities.admin_utils import is_admin, get_admin_plans
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    result = get_admin_plans(
+        search=request.args.get('search'),
+        status=request.args.get('status'),
+        page=request.args.get('page', 1, type=int),
+        per_page=request.args.get('per_page', 50, type=int),
+        sort_by=request.args.get('sort', 'created_at'),
+        sort_dir=request.args.get('dir', 'desc'),
+    )
+    for p in result['plans']:
+        if p.get('created_at'):
+            p['created_at'] = p['created_at'].isoformat()
+    return jsonify(result)
 
 
 @app.route('/admin/mimic', methods=['GET', 'POST'])
@@ -1791,7 +1889,7 @@ def api_update_stage(plan_id):
         return jsonify({'error': 'Only the organizer can change the stage'}), 403
     data = request.get_json() or {}
     stage = data.get('stage')
-    if stage not in ('voting', 'planning', 'locked'):
+    if stage not in ('voting', 'planning', 'locked', 'booked', 'completed'):
         return jsonify({'error': 'Invalid stage'}), 400
     update_plan_stage(plan_id, stage)
     return jsonify({'success': True, 'stage': stage})
@@ -1871,7 +1969,16 @@ def api_update_watch_status(plan_id, watch_id):
     success = update_watch_status(watch_id, new_status,
                                   booked_price=booked_price,
                                   confirmation=confirmation)
-    return jsonify({'success': success})
+    # Auto-transition plan to 'booked' when ALL watches are booked
+    plan_auto_booked = False
+    if success and new_status == 'booked':
+        from utilities.postgres_utils import get_watches_for_plan
+        all_watches = get_watches_for_plan(plan_id)
+        if all_watches and all(w['status'] == 'booked' for w in all_watches):
+            update_plan_stage(plan_id, 'booked')
+            plan_auto_booked = True
+            logger.info(f"All watches booked — plan {plan_id} auto-transitioned to 'booked'")
+    return jsonify({'success': success, 'plan_booked': plan_auto_booked})
 
 
 @app.route('/api/plan/<plan_id>/watches/<int:watch_id>/history')

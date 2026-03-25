@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Trip Summary — {{ plan.title }} | crab.travel{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  {# ── Header ─────────────────────────────────────────────── #}
+  <div>
+    <a href="/invite/{{ plan.invite_token }}" class="inline-flex items-center gap-1 text-xs text-crab-sand-dim hover:text-crab-coral transition-colors mb-3">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      Back to trip
+    </a>
+    <h1 class="text-3xl md:text-4xl font-display text-crab-sand">{{ plan.title }}</h1>
+    <div class="flex flex-wrap items-center gap-2 mt-2 text-sm text-crab-sand-dim">
+      {% if plan.locked_destination or plan.destination %}
+        <span>{{ plan.locked_destination or plan.destination }}</span>
+        <span class="opacity-30">·</span>
+      {% endif %}
+      {% if plan.locked_start_date and plan.locked_end_date %}
+        <span>{{ plan.locked_start_date.strftime('%b %d') }} – {{ plan.locked_end_date.strftime('%b %d, %Y') }}</span>
+        <span class="opacity-30">·</span>
+      {% elif plan.start_date and plan.end_date %}
+        <span>{{ plan.start_date.strftime('%b %d') }} – {{ plan.end_date.strftime('%b %d, %Y') }}</span>
+        <span class="opacity-30">·</span>
+      {% endif %}
+      <span>{{ summary.member_count }} member{{ 's' if summary.member_count != 1 }}</span>
+    </div>
+    {% if plan.status == 'booked' %}
+      <div class="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-crab-teal/15 border border-crab-teal/30 rounded-full text-xs font-semibold text-crab-teal">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        Fully Booked
+      </div>
+    {% elif plan.status == 'completed' %}
+      <div class="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-crab-coral/15 border border-crab-coral/30 rounded-full text-xs font-semibold text-crab-coral">
+        Completed
+      </div>
+    {% else %}
+      <div class="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-xs font-semibold text-crab-sand-dim">
+        {{ plan.status|title }}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ── Cost Overview Cards ────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-4 text-center">
+      <div class="text-2xl md:text-3xl font-display text-crab-sand">${{ '{:,.0f}'.format(summary.grand_total) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">Total Cost</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-4 text-center">
+      <div class="text-2xl md:text-3xl font-display text-crab-sand">${{ '{:,.0f}'.format(summary.flights_total) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">Flights</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-4 text-center">
+      <div class="text-2xl md:text-3xl font-display text-crab-sand">${{ '{:,.0f}'.format(summary.hotels_total) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">Hotels</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-4 text-center">
+      <div class="text-2xl md:text-3xl font-display text-crab-teal">${{ '{:,.0f}'.format(summary.per_person) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">Per Person</div>
+    </div>
+  </div>
+
+  {# ── Flights Section ────────────────────────────────────── #}
+  {% set has_flights = [] %}
+  {% for mid, m in summary.members.items() %}{% if m.flights %}{% if has_flights.append(1) %}{% endif %}{% endif %}{% endfor %}
+  {% if has_flights %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6">
+      <h2 class="font-display text-lg text-crab-sand flex items-center gap-2">
+        <span>Flights</span>
+      </h2>
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for mid, m in summary.members.items() %}
+        {% for f in m.flights %}
+        <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-full bg-crab-coral/20 flex items-center justify-center text-xs font-bold text-crab-coral shrink-0">
+              {{ m.name[:2]|upper }}
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+              <div class="text-xs text-crab-sand-dim">
+                {{ f.origin or '???' }} &rarr; {{ f.destination }}
+                {% if f.checkin %} · {{ f.checkin.strftime('%b %d') if f.checkin is not string else f.checkin }}{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="text-sm font-semibold text-crab-sand">${{ '{:,.0f}'.format(f.price) }}</div>
+            {% if f.status == 'booked' %}
+              <div class="flex items-center gap-1 text-crab-teal">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                {% if f.confirmation %}
+                  <span class="text-xs font-mono">{{ f.confirmation }}</span>
+                {% endif %}
+              </div>
+            {% else %}
+              <span class="text-xs text-crab-sand-dim px-2 py-0.5 bg-white/5 rounded">{{ f.status }}</span>
+            {% endif %}
+            {% if f.deep_link %}
+              <a href="{{ f.deep_link }}" target="_blank" rel="noopener" class="text-crab-coral hover:text-crab-coral-light transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Hotels Section ─────────────────────────────────────── #}
+  {% set has_hotels = [] %}
+  {% for mid, m in summary.members.items() %}{% if m.hotels %}{% if has_hotels.append(1) %}{% endif %}{% endif %}{% endfor %}
+  {% if has_hotels %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6">
+      <h2 class="font-display text-lg text-crab-sand flex items-center gap-2">
+        <span>Hotels</span>
+      </h2>
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for mid, m in summary.members.items() %}
+        {% for h in m.hotels %}
+        <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-full bg-crab-teal/20 flex items-center justify-center text-xs font-bold text-crab-teal shrink-0">
+              {{ m.name[:2]|upper }}
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+              <div class="text-xs text-crab-sand-dim">
+                {{ h.destination }}
+                {% if h.checkin and h.checkout %}
+                  · {{ h.checkin.strftime('%b %d') if h.checkin is not string else h.checkin }} – {{ h.checkout.strftime('%b %d') if h.checkout is not string else h.checkout }}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="text-sm font-semibold text-crab-sand">${{ '{:,.0f}'.format(h.price) }}</div>
+            {% if h.status == 'booked' %}
+              <div class="flex items-center gap-1 text-crab-teal">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                {% if h.confirmation %}
+                  <span class="text-xs font-mono">{{ h.confirmation }}</span>
+                {% endif %}
+              </div>
+            {% else %}
+              <span class="text-xs text-crab-sand-dim px-2 py-0.5 bg-white/5 rounded">{{ h.status }}</span>
+            {% endif %}
+            {% if h.deep_link %}
+              <a href="{{ h.deep_link }}" target="_blank" rel="noopener" class="text-crab-coral hover:text-crab-coral-light transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Itinerary Section ──────────────────────────────────── #}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6 flex items-center justify-between">
+      <h2 class="font-display text-lg text-crab-sand">Itinerary</h2>
+    </div>
+    {% if itinerary %}
+      <div class="divide-y divide-white/5">
+        {% set current_date = namespace(value=None) %}
+        {% for item in itinerary %}
+          {% set item_date = item.scheduled_date %}
+          {% if item_date != current_date.value %}
+            {% set current_date.value = item_date %}
+            <div class="px-5 py-2.5 bg-white/[0.02]">
+              <div class="text-xs font-semibold text-crab-coral uppercase tracking-wide">
+                {% if item_date %}
+                  {{ item_date.strftime('%A, %b %d') if item_date is not string else item_date }}
+                {% else %}
+                  Unscheduled
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+          <div class="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors group">
+            <div class="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-sm shrink-0 mt-0.5">
+              {% if item.category == 'flight' %}
+                <span>&#9992;</span>
+              {% elif item.category == 'dining' or item.category == 'food' %}
+                <span>&#127860;</span>
+              {% elif item.category == 'activity' %}
+                <span>&#9917;</span>
+              {% elif item.category == 'music' or item.category == 'entertainment' %}
+                <span>&#127925;</span>
+              {% elif item.category == 'outdoors' or item.category == 'hiking' %}
+                <span>&#9968;</span>
+              {% elif item.category == 'transport' %}
+                <span>&#128663;</span>
+              {% else %}
+                <span>&#128197;</span>
+              {% endif %}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-crab-sand">{{ item.title }}</div>
+              <div class="flex flex-wrap items-center gap-2 text-xs text-crab-sand-dim mt-0.5">
+                {% if item.scheduled_time %}
+                  <span>{{ item.scheduled_time.strftime('%I:%M %p') if item.scheduled_time is not string else item.scheduled_time }}</span>
+                {% endif %}
+                {% if item.duration_minutes %}
+                  <span>· {{ item.duration_minutes }} min</span>
+                {% endif %}
+                {% if item.location %}
+                  <span>· {{ item.location }}</span>
+                {% endif %}
+              </div>
+              {% if item.notes %}
+                <div class="text-xs text-crab-sand-dim/70 mt-1">{{ item.notes }}</div>
+              {% endif %}
+            </div>
+            {% if item.url %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener" class="text-crab-coral hover:text-crab-coral-light transition-colors opacity-0 group-hover:opacity-100 shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              </a>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="px-5 py-8 text-center">
+        <div class="text-crab-sand-dim text-sm">No itinerary items yet</div>
+        <div class="text-xs text-crab-sand-dim/60 mt-1">Itinerary will be generated when all members have booked</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ── Per-Person Cost Breakdown ──────────────────────────── #}
+  {% if summary.members %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6">
+      <h2 class="font-display text-lg text-crab-sand">Cost Breakdown</h2>
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for mid, m in summary.members.items() %}
+      <div class="px-5 py-3 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-8 h-8 rounded-full bg-crab-coral/20 flex items-center justify-center text-xs font-bold text-crab-coral shrink-0">
+            {{ m.name[:2]|upper }}
+          </div>
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+            <div class="text-xs text-crab-sand-dim">
+              {% if m.flight_cost > 0 %}Flight ${{ '{:,.0f}'.format(m.flight_cost) }}{% endif %}
+              {% if m.flight_cost > 0 and m.hotel_cost > 0 %} + {% endif %}
+              {% if m.hotel_cost > 0 %}Hotel ${{ '{:,.0f}'.format(m.hotel_cost) }}{% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="text-sm font-bold text-crab-sand shrink-0">${{ '{:,.0f}'.format(m.total_cost) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="px-5 py-3 border-t border-white/10 flex items-center justify-between bg-white/[0.02]">
+      <div class="text-sm font-semibold text-crab-sand">Grand Total</div>
+      <div class="text-lg font-display text-crab-teal">${{ '{:,.0f}'.format(summary.grand_total) }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Expenses Section ───────────────────────────────────── #}
+  {% if expenses %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6">
+      <h2 class="font-display text-lg text-crab-sand">Shared Expenses</h2>
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for exp in expenses %}
+      <div class="px-5 py-3 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-crab-sand">{{ exp.title }}</div>
+          <div class="text-xs text-crab-sand-dim">
+            Paid by {{ exp.paid_by_name }}
+            {% if exp.category %} · {{ exp.category|title }}{% endif %}
+            {% if exp.split_type %} · Split: {{ exp.split_type }}{% endif %}
+          </div>
+        </div>
+        <div class="text-sm font-semibold text-crab-sand shrink-0">${{ '{:,.0f}'.format(exp.amount) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
