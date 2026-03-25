@@ -38,7 +38,7 @@ DAILY_CAPS = {
     'groq': 500,                 # 1K RPD per model, but shared key RPM limits real throughput
     'groq-kimi': 500,            # same — cap at 500 to leave room for user-triggered calls
     'groq-qwen': 500,            # same
-    'groq-gptoss': 500,          # same
+    'groq-gptoss': 140,          # 1K RPD but only 200K TPD — ~150 calls max at ~1.3K tok/call
 
     # ── Tier 2: Moderate (fill gaps when Tier 1 throttled) ──
     'gemini': 18,                # 20 req/day for 2.5 Flash free tier (confirmed 2026-03-24) — leave 2 for user calls

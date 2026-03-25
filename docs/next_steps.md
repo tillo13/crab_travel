@@ -247,9 +247,9 @@ Upgraded logging so we can actually diagnose failures instead of guessing.
 - **Grok** — 95% in kindness, should improve to ~90% now with 120s timeout.
 - **DeepSeek** — 86% in kindness, should improve similarly.
 
-**Needs investigation:**
-- **Groq (all 4 models)** — 10-23% success in crab. All 4 share ONE API key with a 30 RPM pool. With 5-min cron the volume should drop enough. If still bad, reduce to 2 Groq models instead of 4.
-- **Gemini** — 36% in kindness, 1% in crab. Getting "quota exceeded" errors. The free tier quota may have been further reduced. Check the Google AI Studio dashboard for current limits.
+**Investigated and fixed (2026-03-24):**
+- **Groq (all 4 models)** — Confirmed via API headers: all 4 have 1K RPD. The 429s were RPM contention from concurrent crawls, not daily limits. With 5-min cron + 4s spacing, should be fine. **BUT `gpt-oss-120b` has a 200K tokens/day limit** (~150 calls at our avg prompt size) so cap reduced from 500 → 140.
+- **Gemini** — Confirmed via API: free tier is now **20 req/day** for gemini-2.5-flash (was 250). Cap reduced from 200 → 18. Error message: `limit: 20, model: gemini-2.5-flash, quota: GenerateRequestsPerDayPerProjectPerModel-FreeTier`.
 - **OpenRouter** — 26% in kindness, 0% in crab. Getting 402 Payment Required AND 429s. The :free models have a 50/day limit without credits. **Action: buy $10 OpenRouter credits to unlock 1K/day, or remove.**
 - **Mistral** — 90% in kindness (low volume eval), 0% in crab (hammered). At 2 RPM it can only handle ~2,880/day max. With the spacing at 60s it should work now — just very slowly.
 
