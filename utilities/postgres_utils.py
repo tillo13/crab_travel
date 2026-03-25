@@ -65,9 +65,17 @@ class PooledConnection:
     def close(self):
         if self._conn:
             try:
+                # Always rollback before returning — prevents "idle in transaction (aborted)" leaks
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
                 self._pool.putconn(self._conn)
             except Exception:
-                pass
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
             self._conn = None
 
     def __getattr__(self, name):
