@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -42,9 +43,10 @@ def _get_connection_pool():
             host = f"{db_socket_dir}/{creds['connection_name']}"
         else:
             host = creds['host']
-        # Budget: 50 max_connections shared across 8+ apps on db-f1-micro
+        # Budget: 50 max_connections shared across 12 apps on kumori Cloud SQL
+        # Crab gets 4 max (not the heaviest app — Galactica gets 8)
         pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1, maxconn=3,
+            minconn=1, maxconn=4,
             dbname=creds['dbname'], user=creds['user'],
             password=creds['password'], host=host
         )
@@ -83,6 +85,29 @@ def get_db_connection():
     pool = _get_connection_pool()
     conn = pool.getconn()
     return PooledConnection(conn, pool)
+
+
+@contextmanager
+def db_cursor(dict_cursor=True, commit=False):
+    """Context manager for database operations — guarantees connection returns to pool.
+    Usage:
+        with db_cursor() as cur:
+            cur.execute("SELECT ...")
+            rows = cur.fetchall()
+        # connection auto-returned, auto-rolled-back on error
+    """
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if dict_cursor else conn.cursor()
+    try:
+        yield cur
+        if commit:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 # ── Schema + Tables ──────────────────────────────────────────
