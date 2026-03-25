@@ -2539,15 +2539,30 @@ def update_watch_price(watch_id, price_usd, deep_link=None, data=None, source='u
             conn.close()
 
 
-def update_watch_status(watch_id, status):
+def update_watch_status(watch_id, status, booked_price=None, confirmation=None):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE crab.member_watches SET status = %s WHERE pk_id = %s
-        """, (status, watch_id))
+        # Store booking details in the JSONB data column when marking booked
+        if status == 'booked' and (booked_price or confirmation):
+            import json as _json
+            booking_data = {}
+            if booked_price is not None:
+                booking_data['booked_price'] = float(booked_price)
+            if confirmation:
+                booking_data['confirmation'] = confirmation
+            booking_data['booked_at'] = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE crab.member_watches
+                SET status = %s, data = COALESCE(data, '{}'::jsonb) || %s::jsonb
+                WHERE pk_id = %s
+            """, (status, _json.dumps(booking_data), watch_id))
+        else:
+            cursor.execute("""
+                UPDATE crab.member_watches SET status = %s WHERE pk_id = %s
+            """, (status, watch_id))
         conn.commit()
         return cursor.rowcount > 0
     except Exception as e:

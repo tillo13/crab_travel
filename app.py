@@ -1133,6 +1133,7 @@ def invite_page(invite_token):
         watches_data = []
         for w in watches:
             history = get_watch_history(w['pk_id'], limit=20)
+            watch_data = w.get('data') or {}
             watches_data.append({
                 'pk_id': w['pk_id'], 'member_id': w['member_id'],
                 'member_name': w['member_name'], 'watch_type': w['watch_type'],
@@ -1143,6 +1144,8 @@ def invite_page(invite_token):
                 'deep_link': w.get('deep_link'),
                 'last_checked': w['last_checked_at'].isoformat() if w.get('last_checked_at') else None,
                 'history': [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history],
+                'booked_price': watch_data.get('booked_price'),
+                'confirmation': watch_data.get('confirmation'),
             })
         watches_json = json.dumps(watches_data, default=_default_ser)
 
@@ -1822,7 +1825,12 @@ def api_update_watch_status(plan_id, watch_id):
     new_status = data.get('status') if data else None
     if new_status not in ('active', 'paused', 'booked'):
         return jsonify({'error': 'Invalid status'}), 400
-    success = update_watch_status(watch_id, new_status)
+    # Capture optional booking details
+    booked_price = data.get('booked_price') if data else None
+    confirmation = data.get('confirmation') if data else None
+    success = update_watch_status(watch_id, new_status,
+                                  booked_price=booked_price,
+                                  confirmation=confirmation)
     return jsonify({'success': success})
 
 

@@ -456,6 +456,35 @@
     </div>
   </div>
 
+  <!-- Mark Booked Modal -->
+  <div id="mark-booked-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBookedModal()"></div>
+    <div class="relative bg-crab-navy border border-white/10 rounded-2xl max-w-xs w-full p-5 shadow-2xl">
+      <button onclick="closeBookedModal()" class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl">&times;</button>
+      <h3 id="booked-modal-label" class="text-sm font-display mb-4">Mark as booked</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-crab-sand-dim block mb-1">Price paid (optional)</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-crab-sand-dim text-sm">$</span>
+            <input id="booked-price-input" type="number" step="0.01" min="0" placeholder="0.00"
+              class="w-full pl-7 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-crab-sand placeholder:text-crab-sand-dim/40 focus:outline-none focus:border-crab-teal/50">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-crab-sand-dim block mb-1">Confirmation # (optional)</label>
+          <input id="booked-conf-input" type="text" placeholder="e.g. ABC123"
+            class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-crab-sand placeholder:text-crab-sand-dim/40 focus:outline-none focus:border-crab-teal/50">
+        </div>
+        <button id="booked-submit-btn" onclick="submitMarkBooked()"
+          class="w-full py-2 rounded-lg bg-crab-teal text-white text-sm font-medium hover:bg-crab-teal/80 transition-colors">
+          Confirm Booked
+        </button>
+        <p class="text-[10px] text-crab-sand-dim text-center">Both fields are optional — just click confirm to mark it done</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Member Detail Modal -->
   <div id="member-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeMemberModal()"></div>
@@ -1857,14 +1886,82 @@ function renderWatches() {
   });
 
   var memberIds = Object.keys(byMember);
-  if (countEl) countEl.textContent = _watchesData.length + ' active';
 
-  var html = '<div class="space-y-4">';
+  // Compute booking progress
+  var totalFlights = 0, bookedFlights = 0, totalHotels = 0, bookedHotels = 0;
+  _watchesData.forEach(function(w) {
+    if (w.watch_type === 'flight') { totalFlights++; if (w.status === 'booked') bookedFlights++; }
+    else { totalHotels++; if (w.status === 'booked') bookedHotels++; }
+  });
+  var totalWatches = totalFlights + totalHotels;
+  var bookedWatches = bookedFlights + bookedHotels;
+  var allBooked = totalWatches > 0 && bookedWatches === totalWatches;
+
+  if (countEl) {
+    countEl.textContent = allBooked ? 'All booked!' : bookedWatches + '/' + totalWatches + ' booked';
+  }
+
+  // Progress bar + stats
+  var html = '';
+
+  // All-booked celebration
+  if (allBooked) {
+    html += '<div class="text-center py-4 mb-4 bg-crab-teal/10 border border-crab-teal/30 rounded-xl">';
+    html += '<div class="text-2xl mb-1">🎉</div>';
+    html += '<div class="text-sm font-display text-crab-teal">Everyone\'s booked!</div>';
+    html += '<div class="text-xs text-crab-sand-dim mt-1">All flights and hotels are confirmed</div>';
+    html += '</div>';
+  } else {
+    // Progress bars
+    html += '<div class="mb-5 space-y-3">';
+
+    if (totalFlights > 0) {
+      var flightPct = Math.round((bookedFlights / totalFlights) * 100);
+      html += '<div>';
+      html += '<div class="flex justify-between items-center mb-1">';
+      html += '<span class="text-xs font-medium text-crab-sand-dim">✈️ Flights</span>';
+      html += '<span class="text-xs font-bold ' + (bookedFlights === totalFlights ? 'text-crab-teal' : 'text-crab-sand') + '">' + bookedFlights + '/' + totalFlights + '</span>';
+      html += '</div>';
+      html += '<div class="h-2 bg-white/5 rounded-full overflow-hidden">';
+      html += '<div class="h-full rounded-full transition-all duration-500 ' + (bookedFlights === totalFlights ? 'bg-crab-teal' : 'bg-crab-coral') + '" style="width:' + flightPct + '%"></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    if (totalHotels > 0) {
+      var hotelPct = Math.round((bookedHotels / totalHotels) * 100);
+      html += '<div>';
+      html += '<div class="flex justify-between items-center mb-1">';
+      html += '<span class="text-xs font-medium text-crab-sand-dim">🏨 Hotels</span>';
+      html += '<span class="text-xs font-bold ' + (bookedHotels === totalHotels ? 'text-crab-teal' : 'text-crab-sand') + '">' + bookedHotels + '/' + totalHotels + '</span>';
+      html += '</div>';
+      html += '<div class="h-2 bg-white/5 rounded-full overflow-hidden">';
+      html += '<div class="h-full rounded-full transition-all duration-500 ' + (bookedHotels === totalHotels ? 'bg-crab-teal' : 'bg-crab-coral') + '" style="width:' + hotelPct + '%"></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  // Member cards
+  html += '<div class="space-y-4">';
   memberIds.forEach(function(mid) {
     var m = byMember[mid];
-    html += '<div class="bg-white/[0.03] border border-white/6 rounded-xl p-4">';
-    html += '<div class="flex items-center gap-2 mb-3">';
+    var memberBooked = m.watches.filter(function(w) { return w.status === 'booked'; }).length;
+    var memberTotal = m.watches.length;
+    var memberDone = memberBooked === memberTotal;
+
+    html += '<div class="bg-white/[0.03] border border-white/6 rounded-xl p-4' + (memberDone ? ' border-crab-teal/20' : '') + '">';
+    html += '<div class="flex items-center justify-between mb-3">';
+    html += '<div class="flex items-center gap-2">';
     html += '<span class="text-sm font-medium text-crab-sand">' + escapeHtml(m.name) + '</span>';
+    if (memberDone) {
+      html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal font-medium">All booked ✓</span>';
+    } else {
+      html += '<span class="text-[10px] text-crab-sand-dim">' + memberBooked + '/' + memberTotal + '</span>';
+    }
+    html += '</div>';
     html += '</div>';
     html += '<div class="space-y-2">';
     m.watches.forEach(function(w) {
@@ -1879,7 +1976,9 @@ function renderWatches() {
 function renderWatchRow(w) {
   var statusBadge = '';
   if (w.status === 'booked') {
-    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal">Booked</span>';
+    var bookedLabel = 'Booked';
+    if (w.booked_price) bookedLabel += ' · $' + w.booked_price.toFixed(0);
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal">' + bookedLabel + '</span>';
   } else if (w.status === 'paused') {
     statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-crab-sand-dim">Paused</span>';
   } else {
@@ -1919,7 +2018,7 @@ function renderWatchRow(w) {
 
   var markBookedBtn = '';
   if (w.status === 'active' && !NEEDS_LOGIN) {
-    markBookedBtn = '<button onclick="markWatchBooked(' + w.pk_id + ')" class="px-2 py-1 rounded-lg text-[10px] border border-white/10 text-crab-sand-dim hover:text-crab-sand hover:border-white/20 transition-colors">Mark Booked</button>';
+    markBookedBtn = '<button onclick="openBookedModal(' + w.pk_id + ', \'' + escapeHtml(w.watch_type) + '\')" class="px-2 py-1 rounded-lg text-[10px] border border-white/10 text-crab-sand-dim hover:text-crab-sand hover:border-white/20 transition-colors">Mark Booked</button>';
   }
 
   var lastChecked = '';
@@ -1968,17 +2067,55 @@ function renderSparkline(history) {
   '</svg>';
 }
 
-function markWatchBooked(watchId) {
-  fetch('/api/plan/' + PLAN_ID + '/watches/' + watchId + '/status', {
+var _pendingBookWatchId = null;
+
+function openBookedModal(watchId, watchType) {
+  _pendingBookWatchId = watchId;
+  var modal = document.getElementById('mark-booked-modal');
+  var label = watchType === 'flight' ? 'flight' : 'hotel';
+  document.getElementById('booked-modal-label').textContent = 'Mark ' + label + ' as booked';
+  document.getElementById('booked-price-input').value = '';
+  document.getElementById('booked-conf-input').value = '';
+  modal.style.display = '';
+  setTimeout(function() { document.getElementById('booked-price-input').focus(); }, 100);
+}
+
+function closeBookedModal() {
+  document.getElementById('mark-booked-modal').style.display = 'none';
+  _pendingBookWatchId = null;
+}
+
+function submitMarkBooked() {
+  if (!_pendingBookWatchId) return;
+  var priceVal = document.getElementById('booked-price-input').value.trim();
+  var confVal = document.getElementById('booked-conf-input').value.trim();
+  var price = priceVal ? parseFloat(priceVal) : null;
+
+  var body = {status: 'booked'};
+  if (price && !isNaN(price)) body.booked_price = price;
+  if (confVal) body.confirmation = confVal;
+
+  var btn = document.getElementById('booked-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  fetch('/api/plan/' + PLAN_ID + '/watches/' + _pendingBookWatchId + '/status', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({status: 'booked'}),
+    body: JSON.stringify(body),
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.success) {
-      // Update local data and re-render
-      _watchesData.forEach(function(w) { if (w.pk_id === watchId) w.status = 'booked'; });
+      _watchesData.forEach(function(w) {
+        if (w.pk_id === _pendingBookWatchId) {
+          w.status = 'booked';
+          if (price) w.booked_price = price;
+        }
+      });
       renderWatches();
+      closeBookedModal();
     }
+    btn.disabled = false;
+    btn.textContent = 'Confirm Booked';
   });
 }
 
