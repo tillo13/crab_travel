@@ -76,14 +76,17 @@ AUTH_ENABLED = google_auth is not None
 
 @app.before_request
 def check_apikey_auth():
-    """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing)."""
+    """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing).
+    Sets session inline — no redirect needed, the request proceeds with auth."""
     if 'apikey' not in request.args:
         return
+    if session.get('user'):
+        return  # Already authed
     apikey = request.args.get('apikey')
     try:
         expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
     except Exception:
-        return  # Secret not configured — silently ignore
+        return
     if not expected or apikey != expected:
         return
     user_id = request.args.get('user_id', type=int)
@@ -97,18 +100,6 @@ def check_apikey_auth():
     session['user'] = user_data
     session.modified = True
     logger.info(f"apikey auth: logged in as user {user_id}")
-    # Strip apikey from URL and redirect — use make_response to ensure session cookie is set
-    from urllib.parse import urlencode, parse_qs, urlparse, urlunparse
-    parsed = urlparse(request.url)
-    params = parse_qs(parsed.query, keep_blank_values=True)
-    params.pop('apikey', None)
-    params.pop('user_id', None)
-    clean_path = parsed.path
-    qs = urlencode(params, doseq=True)
-    if qs:
-        clean_path += '?' + qs
-    resp = redirect(clean_path)
-    return resp
 
 
 def login_required(f):
