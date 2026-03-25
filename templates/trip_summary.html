@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Trip Summary — {{ plan.title }} | crab.travel{% endblock %}
+{% block title %}Trip Summary — {{ plan.title|replace('[BOT] ', '') }} | crab.travel{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6">
@@ -11,7 +11,7 @@
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       Back to trip
     </a>
-    <h1 class="text-3xl md:text-4xl font-display text-crab-sand">{{ plan.title }}</h1>
+    <h1 class="text-3xl md:text-4xl font-display text-crab-sand">{{ plan.title|replace('[BOT] ', '') }}</h1>
     <div class="flex flex-wrap items-center gap-2 mt-2 text-sm text-crab-sand-dim">
       {% if plan.locked_destination or plan.destination %}
         <span>{{ plan.locked_destination or plan.destination }}</span>
@@ -78,10 +78,10 @@
         <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-8 h-8 rounded-full bg-crab-coral/20 flex items-center justify-center text-xs font-bold text-crab-coral shrink-0">
-              {{ m.name[:2]|upper }}
+              {{ (m.name|replace('[BOT] ', ''))[:2]|upper }}
             </div>
             <div class="min-w-0">
-              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name|replace('[BOT] ', '') }}</div>
               <div class="text-xs text-crab-sand-dim">
                 {{ f.origin or '???' }} &rarr; {{ f.destination }}
                 {% if f.checkin %} · {{ f.checkin.strftime('%b %d') if f.checkin is not string else f.checkin }}{% endif %}
@@ -129,10 +129,10 @@
         <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-8 h-8 rounded-full bg-crab-teal/20 flex items-center justify-center text-xs font-bold text-crab-teal shrink-0">
-              {{ m.name[:2]|upper }}
+              {{ (m.name|replace('[BOT] ', ''))[:2]|upper }}
             </div>
             <div class="min-w-0">
-              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+              <div class="text-sm font-medium text-crab-sand truncate">{{ m.name|replace('[BOT] ', '') }}</div>
               <div class="text-xs text-crab-sand-dim">
                 {{ h.destination }}
                 {% if h.checkin and h.checkout %}
@@ -250,10 +250,10 @@
       <div class="px-5 py-3 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-8 h-8 rounded-full bg-crab-coral/20 flex items-center justify-center text-xs font-bold text-crab-coral shrink-0">
-            {{ m.name[:2]|upper }}
+            {{ (m.name|replace('[BOT] ', ''))[:2]|upper }}
           </div>
           <div class="min-w-0">
-            <div class="text-sm font-medium text-crab-sand truncate">{{ m.name }}</div>
+            <div class="text-sm font-medium text-crab-sand truncate">{{ m.name|replace('[BOT] ', '') }}</div>
             <div class="text-xs text-crab-sand-dim">
               {% if m.flight_cost > 0 %}Flight ${{ '{:,.0f}'.format(m.flight_cost) }}{% endif %}
               {% if m.flight_cost > 0 and m.hotel_cost > 0 %} + {% endif %}
