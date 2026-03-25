@@ -65,6 +65,7 @@
 <div class="flex gap-2 mb-4">
   <button id="filter-all" onclick="setFilter('all')" class="filter-tab active">All</button>
   <button id="filter-active" onclick="setFilter('active')" class="filter-tab">Active</button>
+  <button id="filter-booked" onclick="setFilter('booked')" class="filter-tab">Booked</button>
   <button id="filter-complete" onclick="setFilter('complete')" class="filter-tab">Completed</button>
 </div>
 
@@ -80,6 +81,16 @@
       <div class="text-sm text-crab-sand-dim">No active trips right now...</div>
     </div>
   </div>
+</div>
+
+<!-- Booked Trips (fully booked, ready to go) -->
+<div class="mb-6" id="booked-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Booked</span>
+    <span class="text-xs text-crab-teal font-sans">ready to travel</span>
+    <span id="booked-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="booked-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
 </div>
 
 <!-- Completed Trips -->
@@ -141,9 +152,10 @@ function renderBoard(data) {
   document.getElementById('stat-destinations').textContent = allDests.size;
   document.getElementById('stat-crabs').textContent = totalCrabs;
 
-  // Split runs into active and completed
+  // Split runs into active, booked, and completed
   const activeRuns = validRuns.filter(r => r.status === 'running');
-  const completedRuns = validRuns.filter(r => r.status !== 'running');
+  const bookedRuns = validRuns.filter(r => r.status !== 'running' && (r.plan_status === 'booked' || r.plan_status === 'completed'));
+  const completedRuns = validRuns.filter(r => r.status !== 'running' && r.plan_status !== 'booked' && r.plan_status !== 'completed');
 
   // Render active trips
   const activeBoard = document.getElementById('active-trips');
@@ -154,6 +166,17 @@ function renderBoard(data) {
     activeBoard.innerHTML = activeRuns.map(r => renderTripCard(r, true)).join('');
   } else {
     activeBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No active trips right now — next crawl coming soon...</div></div>';
+  }
+
+  // Render booked trips
+  const bookedBoard = document.getElementById('booked-trips');
+  const bookedCountEl = document.getElementById('booked-count');
+  if (bookedCountEl) bookedCountEl.textContent = bookedRuns.length > 0 ? `(${bookedRuns.length})` : '';
+
+  if (bookedRuns.length > 0) {
+    bookedBoard.innerHTML = bookedRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    bookedBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No fully booked trips yet — watch them come together...</div></div>';
   }
 
   // Render completed trips
@@ -196,12 +219,13 @@ function renderBoard(data) {
 
 function renderTripCard(r, isActive) {
   const isRunning = r.status === 'running';
-  const badgeClass = r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
+  const isBooked = r.plan_status === 'booked' || r.plan_status === 'completed';
+  const badgeClass = isBooked ? 'badge-passed' : r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
   const title = (r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip')).replace('[BOT] ', '');
   const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
   const vibe = r.trip_vibe || '';
   const size = r.trip_group_size || '?';
-  const statusLabel = r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
+  const statusLabel = isBooked ? 'booked' : r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
   const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
 
   let duration = '';
@@ -241,7 +265,8 @@ function renderTripCard(r, isActive) {
       <span>${size} crabs ${phaseInfo}</span>
       <span>${duration} &middot; ${timeAgo}</span>
     </div>
-    ${progressBar}`;
+    ${progressBar}
+    ${isBooked && r.plan_id ? '<div class="mt-2"><a href="/plan/' + r.plan_id + '/summary" class="inline-block text-xs font-medium px-3 py-1 rounded-lg bg-crab-teal/15 text-crab-teal border border-crab-teal/20 hover:bg-crab-teal/25 transition-colors" style="text-decoration:none;">View Trip Summary →</a></div>' : ''}`;
 
   if (linkUrl) {
     return `<a href="${linkUrl}" class="trip-card block ${isRunning ? 'is-running' : ''} hover:bg-white/5 dark:hover:bg-white/5" style="text-decoration:none;color:inherit;">${cardContent}</a>`;

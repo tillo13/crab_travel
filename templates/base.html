@@ -401,8 +401,8 @@
     }
     function updateThemeIcons() {
       var isDark = document.documentElement.classList.contains('dark');
-      document.getElementById('sun-icon').style.display = isDark ? 'none' : 'block';
-      document.getElementById('moon-icon').style.display = isDark ? 'block' : 'none';
+      document.getElementById('sun-icon').style.display = isDark ? 'block' : 'none';
+      document.getElementById('moon-icon').style.display = isDark ? 'none' : 'block';
     }
     updateThemeIcons();
     document.addEventListener('click', function(e) {

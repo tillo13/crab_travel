@@ -776,8 +776,20 @@ def live_page():
     Pre-fetches initial data so page renders instantly (no blank flash)."""
     import json as _json
     try:
-        from utilities.postgres_utils import get_bot_runs, get_bot_events
+        from utilities.postgres_utils import get_bot_runs, get_bot_events, get_db_connection
+        import psycopg2.extras as _extras
         runs = get_bot_runs(limit=50)
+        # Bulk lookup plan statuses
+        _plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
+        _plan_statuses = {}
+        if _plan_ids:
+            try:
+                _c = get_db_connection(); _cr = _c.cursor(cursor_factory=_extras.RealDictCursor)
+                _cr.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (_plan_ids,))
+                _plan_statuses = {str(r['plan_id']): r['status'] for r in _cr.fetchall()}
+                _cr.close(); _c.close()
+            except Exception:
+                pass
         for r in runs:
             for k in ('started_at', 'finished_at'):
                 if r.get(k):
@@ -792,6 +804,7 @@ def live_page():
             r['trip_group_size'] = summary.get('group_size', 0)
             r['trip_vibe'] = summary.get('vibe', '')
             r['invite_token'] = summary.get('invite_token', '')
+            r['plan_status'] = _plan_statuses.get(r.get('plan_id'), None)
         events = []
         if runs:
             active_runs = [r for r in runs if r['status'] == 'running']
@@ -828,6 +841,20 @@ def api_live_status():
     from utilities.postgres_utils import get_bot_runs, get_bot_events
 
     runs = get_bot_runs(limit=50)
+    # Look up plan statuses in bulk for booked detection
+    plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
+    plan_statuses = {}
+    if plan_ids:
+        try:
+            from utilities.postgres_utils import get_db_connection
+            import psycopg2.extras as _extras
+            _conn = get_db_connection()
+            _cur = _conn.cursor(cursor_factory=_extras.RealDictCursor)
+            _cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (plan_ids,))
+            plan_statuses = {str(r['plan_id']): r['status'] for r in _cur.fetchall()}
+            _cur.close(); _conn.close()
+        except Exception:
+            pass
     # Serialize datetimes + extract summary info
     for r in runs:
         for k in ('started_at', 'finished_at'):
@@ -844,6 +871,7 @@ def api_live_status():
         r['trip_group_size'] = summary.get('group_size', 0)
         r['trip_vibe'] = summary.get('vibe', '')
         r['invite_token'] = summary.get('invite_token', '')
+        r['plan_status'] = plan_statuses.get(r.get('plan_id'), None)
 
     # Get events — prefer active run, fall back to most recent runs
     events = []
