@@ -95,15 +95,20 @@ def check_apikey_auth():
         return
     session.permanent = True
     session['user'] = user_data
+    session.modified = True
     logger.info(f"apikey auth: logged in as user {user_id}")
-    # Strip apikey from URL and redirect
+    # Strip apikey from URL and redirect — use make_response to ensure session cookie is set
     from urllib.parse import urlencode, parse_qs, urlparse, urlunparse
     parsed = urlparse(request.url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop('apikey', None)
     params.pop('user_id', None)
-    clean_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
-    return redirect(clean_url)
+    clean_path = parsed.path
+    qs = urlencode(params, doseq=True)
+    if qs:
+        clean_path += '?' + qs
+    resp = redirect(clean_path)
+    return resp
 
 
 def login_required(f):
