@@ -1184,8 +1184,24 @@ Pick 2 main destinations and 1 extra that a member might suggest. Be wildly vari
         }
 
 
+def _pick_trip_destiny():
+    """Randomly decide how far a trip goes — mirrors real human behavior.
+    ~45% stall at voting (group never decides)
+    ~30% reach charting/locked (destination picked, shopping for deals)
+    ~25% make it to booked (the wins)
+    """
+    roll = random.random()
+    if roll < 0.45:
+        return 'voting'
+    elif roll < 0.75:
+        return 'locked'
+    else:
+        return 'booked'
+
+
 def build_random_trip(base_url, bot_secret):
-    """Generate a fully random trip and run it through the quick pipeline."""
+    """Generate a fully random trip and run it through the pipeline.
+    Each trip gets a random 'destiny' — how far it progresses, just like real humans."""
     from utilities.postgres_utils import insert_bot_run
 
     group_size = random.choice([2, 3, 5, 8, 10, 15, 20, 30, 50, 75, 100])
@@ -1268,6 +1284,10 @@ def build_random_trip(base_url, bot_secret):
         result.fail(f"Create failed: {data}")
         return False
 
+    # Decide this trip's destiny — how far it'll go, just like real humans
+    destiny = _pick_trip_destiny()
+    log.info(f"  🎯 Trip destiny: {destiny}")
+
     # Pace the phases so trips stay "active" on /live for minutes, not seconds.
     # With 5-min cron, 1-2 trips overlap = always something live.
     PACE = 5  # seconds between phases
@@ -1290,7 +1310,25 @@ def build_random_trip(base_url, bot_secret):
     phase_chat(ctx)
     time.sleep(PACE)
 
-    # ── Lock, Search, Watches — test EVERYTHING ──
+    # Voting-destiny trips stop here — group never decided
+    if destiny == 'voting':
+        log.info(f"  🗳️  Trip stalls at voting (group couldn't decide)")
+        from utilities.postgres_utils import update_bot_run
+        update_bot_run(ctx.run_id,
+                       status='passed',
+                       finished_at='NOW()',
+                       summary={
+                           'title': trip_data['title'],
+                           'destinations': all_dests,
+                           'group_size': group_size,
+                           'vibe': trip_data['group_vibes'],
+                           'invite_token': ctx.invite_token,
+                           'plan_id': ctx.plan_id,
+                       })
+        log.info(f"  🦀 Trip done (voting): \"{trip_data['title']}\" — {group_size} crabs")
+        return True
+
+    # ── Lock, Search, Watches — trips that made it past voting ──
     phase_lock_search(ctx)
     time.sleep(PACE)
     phase_watch_create(ctx)
@@ -1302,6 +1340,21 @@ def build_random_trip(base_url, bot_secret):
 
     # ── Stop ──
     phase_stop(ctx)
+
+    # Charting-destiny trips end at 'locked' — found deals but never pulled the trigger
+    # Booked-destiny trips get promoted to 'booked' — the wins
+    if destiny == 'booked' and ctx.plan_id:
+        try:
+            from utilities.postgres_utils import get_db_connection
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s", (ctx.plan_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            log.info(f"  ✈️  Trip promoted to BOOKED!")
+        except Exception as e:
+            log.warning(f"  ⚠️  Failed to promote to booked: {e}")
 
     # Finalize
     from utilities.postgres_utils import update_bot_run
@@ -1317,8 +1370,192 @@ def build_random_trip(base_url, bot_secret):
                        'plan_id': ctx.plan_id,
                    })
 
-    log.info(f"  🦀 Trip complete: \"{trip_data['title']}\" — {group_size} crabs, plan {ctx.plan_id}")
+    log.info(f"  🦀 Trip done ({destiny}): \"{trip_data['title']}\" — {group_size} crabs, plan {ctx.plan_id}")
     return True
+
+
+def nurture_past_trips(base_url, bot_secret, max_trips=5):
+    """Revisit past bot trips and breathe life into them — like real humans checking in.
+
+    Each cron run, pick a handful of non-booked bot trips and use a free LLM to
+    decide what a real human would do: nudge voters, ask about dates, comment on
+    deals, prod the organizer, advance the trip stage, etc.
+    """
+    from utilities.postgres_utils import get_db_connection
+    from utilities.llm_router import generate as llm_generate
+    import psycopg2.extras
+
+    log.info(f"\n  🌱 Nurturing past trips...")
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Find bot trips that aren't booked yet — candidates for nurture
+        cur.execute("""
+            SELECT p.plan_id, p.title, p.status, p.created_at,
+                   p.start_date, p.end_date, p.destination,
+                   (SELECT COUNT(*) FROM crab.plan_members pm WHERE pm.plan_id = p.plan_id) as member_count,
+                   (SELECT COUNT(*) FROM crab.messages m WHERE m.plan_id = p.plan_id) as msg_count,
+                   (SELECT COUNT(*) FROM crab.votes v
+                    JOIN crab.destination_suggestions ds ON ds.suggestion_id = v.suggestion_id
+                    WHERE ds.plan_id = p.plan_id) as vote_count
+            FROM crab.plans p
+            WHERE p.title LIKE '[BOT]%%'
+              AND p.status NOT IN ('booked', 'completed')
+            ORDER BY RANDOM()
+            LIMIT %s
+        """, (max_trips,))
+        trips = cur.fetchall()
+
+        if not trips:
+            log.info("  No trips to nurture")
+            cur.close(); conn.close()
+            return
+
+        # Get bot members for each trip so we can post as them
+        for trip in trips:
+            cur.execute("""
+                SELECT pm.user_id, u.display_name, u.google_id
+                FROM crab.plan_members pm
+                JOIN crab.users u ON u.user_id = pm.user_id
+                WHERE pm.plan_id = %s AND u.display_name LIKE '[BOT]%%'
+                ORDER BY pm.joined_at
+                LIMIT 10
+            """, (trip['plan_id'],))
+            trip['members'] = cur.fetchall()
+
+            # Get last few chat messages for context
+            cur.execute("""
+                SELECT m.content, u.display_name, m.created_at
+                FROM crab.messages m
+                JOIN crab.users u ON u.user_id = m.user_id
+                WHERE m.plan_id = %s AND m.parent_id IS NULL
+                ORDER BY m.created_at DESC
+                LIMIT 5
+            """, (trip['plan_id'],))
+            trip['recent_messages'] = cur.fetchall()
+
+        cur.close()
+        conn.close()
+    except Exception as e:
+        log.warning(f"  ⚠️ Failed to load trips for nurture: {e}")
+        return
+
+    # For each trip, ask the LLM what a real human would do
+    bot = BotSession(base_url, bot_secret)
+    nurtured = 0
+
+    for trip in trips:
+        if not trip['members']:
+            continue
+
+        title = trip['title'].replace('[BOT] ', '')
+        status = trip['status'] or 'planning'
+        member_names = [m['display_name'].replace('[BOT] ', '') for m in trip['members']]
+        organizer = member_names[0] if member_names else 'Unknown'
+        recent_chat = '\n'.join([
+            f"  {m['display_name'].replace('[BOT] ', '')}: {m['content']}"
+            for m in reversed(trip['recent_messages'] or [])
+        ]) or '  (no recent messages)'
+
+        days_old = (date.today() - trip['created_at'].date()).days if trip.get('created_at') else 0
+        trip_dates = ''
+        if trip.get('start_date'):
+            days_until = (trip['start_date'] - date.today()).days if hasattr(trip['start_date'], 'toordinal') else '?'
+            trip_dates = f"Trip dates: {trip['start_date']} to {trip['end_date']} ({days_until} days away)"
+
+        prompt = f"""You're simulating realistic group trip chat. A trip "{title}" has {trip['member_count']} members.
+Status: {status} | Created {days_old} days ago | {trip['vote_count']} votes cast | {trip['msg_count']} messages total
+{trip_dates}
+Destination: {trip.get('destination') or 'not yet decided'}
+Members: {', '.join(member_names[:8])}
+
+Recent chat:
+{recent_chat}
+
+Based on the trip status and context, write 1-2 short, natural chat messages that a real member would post right now.
+Pick different members (not just the organizer). Messages should feel human — casual, with personality.
+
+Examples by status:
+- voting: "Hey has everyone voted yet? We need to lock this down" / "I changed my vote to Kyoto, those pics sold me"
+- planning: "So are we actually doing this or...?" / "I found cheap flights if we go in June!"
+- locked: "Ok flights are looking $380 round trip, should I book?" / "Who still needs a hotel room?"
+
+Respond in JSON only:
+[{{"member": "FirstName LastName", "message": "the chat message"}}]
+
+Pick from these members ONLY: {', '.join(member_names[:8])}
+Keep messages under 120 chars. Be casual and realistic. Sometimes be pushy, sometimes excited, sometimes uncertain."""
+
+        try:
+            text, backend = llm_generate(prompt, max_tokens=300, temperature=1.0)
+            if not text:
+                continue
+
+            # Parse JSON
+            if '```' in text:
+                text = text.split('```')[1]
+                if text.startswith('json'):
+                    text = text[4:]
+            messages = json.loads(text.strip())
+            if not isinstance(messages, list):
+                continue
+
+            # Post messages as the appropriate bot members
+            posted = 0
+            for msg_data in messages[:2]:  # max 2 messages per trip per nurture
+                member_name = msg_data.get('member', '')
+                content = msg_data.get('message', '').strip()
+                if not content or not member_name:
+                    continue
+
+                # Find the matching bot member
+                matching = [m for m in trip['members']
+                            if member_name.lower() in m['display_name'].lower()]
+                if not matching:
+                    matching = [trip['members'][random.randint(0, len(trip['members']) - 1)]]
+
+                member = matching[0]
+                persona = {'db_id': member['user_id'], 'name': member['display_name']}
+
+                try:
+                    bot.login_as(persona)
+                    resp = bot.post(f'/api/plan/{trip["plan_id"]}/messages', {'content': content})
+                    if resp.status_code == 200 and resp.json().get('success'):
+                        posted += 1
+                        log.info(f"    💬 {member['display_name'].replace('[BOT] ', '')}: {content[:60]}...")
+                except Exception as e:
+                    log.warning(f"    ⚠️ Failed to post as {member['display_name']}: {e}")
+
+            # Occasionally advance trip status (like a real organizer deciding to move forward)
+            if posted > 0 and status in ('planning', 'voting') and random.random() < 0.15:
+                # 15% chance the organizer decides to advance the trip
+                next_status = 'voting' if status == 'planning' else 'locked'
+                try:
+                    organizer_member = trip['members'][0]
+                    bot.login_as({'db_id': organizer_member['user_id'], 'name': organizer_member['display_name']})
+                    resp = bot.post(f'/api/plan/{trip["plan_id"]}/stage', {'stage': next_status})
+                    if resp.status_code == 200:
+                        log.info(f"    📈 Trip advanced: {status} → {next_status}")
+                        # Post a message about it
+                        advance_msgs = {
+                            'voting': "Alright everyone, let's vote! Time to pick a destination.",
+                            'locked': "Ok I'm locking this in — let's start looking at flights and hotels!",
+                        }
+                        bot.post(f'/api/plan/{trip["plan_id"]}/messages',
+                                 {'content': advance_msgs.get(next_status, 'Moving this forward!')})
+                except Exception as e:
+                    log.warning(f"    ⚠️ Failed to advance trip: {e}")
+
+            if posted > 0:
+                nurtured += 1
+
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning(f"    ⚠️ Nurture failed for {title}: {e}")
+            continue
+
+    log.info(f"  🌱 Nurtured {nurtured}/{len(trips)} trips")
 
 
 def crawl_forever(base_url, bot_secret, interval=300, max_concurrent=5):

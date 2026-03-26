@@ -2442,13 +2442,15 @@ def task_crawl():
 
         import subprocess
         cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.abspath(__file__))
-        # Run one quick random trip (no AI research to keep it fast + cheap)
+        # Run one random trip + nurture past trips (all in one subprocess)
         subprocess.Popen(
             ['python3', '-c',
              'import sys; sys.path.insert(0,"."); '
-             'from dev.trip_bots import build_random_trip; '
+             'from dev.trip_bots import build_random_trip, nurture_past_trips; '
              'from utilities.google_auth_utils import get_secret; '
-             'build_random_trip("https://crab.travel", get_secret("CRAB_BOT_SECRET"))'],
+             's = get_secret("CRAB_BOT_SECRET"); '
+             'build_random_trip("https://crab.travel", s); '
+             'nurture_past_trips("https://crab.travel", s, max_trips=5)'],
             cwd=cwd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
