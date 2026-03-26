@@ -1258,14 +1258,23 @@ def _auto_login_demo_viewer(plan):
         logger.warning(f"Demo viewer auto-login failed: {e}")
 
 
-DEMO_INVITE_TOKEN = 'qL6zhRAI'
+DEMO_TRIPS = {
+    'booked':   {'token': 'qL6zhRAI', 'label': 'Booked Trip'},
+    'voting':   {'token': 'xL2aRt-k', 'label': 'Voting Stage'},
+    'planning': {'token': 'TpPeETPm', 'label': 'Planning Stage'},
+}
+DEMO_DEFAULT_STAGE = 'booked'
 
 @app.route('/demo')
-def demo_mode():
-    """Switch to Judy Tunaboat and redirect to the demo trip.
+@app.route('/demo/<stage>')
+def demo_mode(stage=None):
+    """Switch to Judy Tunaboat and redirect to a demo trip.
+    /demo → booked trip, /demo/voting → voting stage, /demo/planning → planning stage.
     Stashes the real user so they auto-restore when navigating away."""
+    stage = stage or request.args.get('stage', DEMO_DEFAULT_STAGE)
+    trip = DEMO_TRIPS.get(stage, DEMO_TRIPS[DEMO_DEFAULT_STAGE])
+
     try:
-        # Stash real user (or None if anonymous)
         real_user = session.get('user')
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -1283,11 +1292,12 @@ def demo_mode():
                 'picture': judy['picture_url'],
             }
             session['_demo_viewer'] = True
+            session['_demo_stage'] = stage
             session.permanent = True
             session.modified = True
     except Exception as e:
         logger.warning(f"Demo mode switch failed: {e}")
-    return redirect(f'/to/{DEMO_INVITE_TOKEN}')
+    return redirect(f'/to/{trip["token"]}')
 
 
 @app.route('/to/<invite_token>')
@@ -1442,6 +1452,7 @@ def invite_page(invite_token):
         members_detail_json=members_detail_json,
         viewing_as=viewing_as,
         booked_summary=booked_summary,
+        demo_stage=session.get('_demo_stage'),
     )
 
 
@@ -2721,8 +2732,18 @@ def task_seed_demo_viewer():
                 VALUES (%s, %s, 'Scottsdale, AZ', 'ready')
             """, (demo_plan_id, judy_id))
 
-        # Also ensure demo trip status is 'booked'
+        # Ensure demo trip statuses match their stage
         cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s AND status != 'booked'", (demo_plan_id,))
+        # Set voting demo trip status
+        cur.execute("""
+            UPDATE crab.plans SET status = 'voting', locked_destination = NULL
+            WHERE invite_token = 'xL2aRt-k'
+        """)
+        # Set planning demo trip status
+        cur.execute("""
+            UPDATE crab.plans SET status = 'planning'
+            WHERE invite_token = 'TpPeETPm'
+        """)
 
         # 1c. Seed destination card data for ALL destinations on demo trip
         demo_cards = {

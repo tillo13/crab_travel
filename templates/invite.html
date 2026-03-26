@@ -313,11 +313,19 @@
   {% endif %}
 
   {% if viewing_as %}
-  <!-- Demo viewer banner -->
+  <!-- Demo viewer banner + stage switcher -->
   <div class="text-center mb-4 animate-in">
-    <div class="inline-flex items-center gap-2 bg-crab-coral/10 border border-crab-coral/20 rounded-full px-5 py-2 text-sm font-medium text-crab-coral">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-      Viewing as <span class="font-bold">{{ viewing_as }}</span>
+    <div class="inline-flex flex-col sm:flex-row items-center gap-2">
+      <div class="inline-flex items-center gap-2 bg-crab-coral/10 border border-crab-coral/20 rounded-full px-5 py-2 text-sm font-medium text-crab-coral">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        Viewing as <span class="font-bold">{{ viewing_as }}</span>
+      </div>
+      <div class="inline-flex items-center gap-1 bg-crab-card/60 border border-white/8 rounded-full px-2 py-1 text-xs">
+        <span class="text-crab-sand-dim px-1">Demo:</span>
+        <a href="/demo/voting" class="px-3 py-1 rounded-full transition-colors {% if demo_stage == 'voting' %}bg-crab-coral/20 text-crab-coral font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Voting</a>
+        <a href="/demo/planning" class="px-3 py-1 rounded-full transition-colors {% if demo_stage == 'planning' %}bg-amber-400/20 text-amber-400 font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Planning</a>
+        <a href="/demo/booked" class="px-3 py-1 rounded-full transition-colors {% if demo_stage in ('booked', none) %}bg-green-400/20 text-green-400 font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Booked</a>
+      </div>
     </div>
   </div>
   {% endif %}
