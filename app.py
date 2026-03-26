@@ -1322,6 +1322,11 @@ def invite_page(invite_token):
             })
         watches_json = json.dumps(watches_data, default=_default_ser)
 
+    # Show "Viewing as" banner for demo viewer (apikey-authed user on demo trip)
+    viewing_as = None
+    if user and is_member and 'apikey' in request.args:
+        viewing_as = user.get('name', 'Demo User')
+
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
         vote_tallies=vote_tallies, my_votes=my_votes,
@@ -1337,6 +1342,7 @@ def invite_page(invite_token):
         calendar_json=calendar_json if not (user is None and not is_bot_trip) else '{}',
         watches_json=watches_json,
         members_detail_json=members_detail_json,
+        viewing_as=viewing_as,
     )
 
 
@@ -2574,6 +2580,76 @@ def sms_inbound():
 
     # Always return valid TwiML
     return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
+
+
+# ── Demo viewer seed ──────────────────────────────────────────
+
+DEMO_PLAN_ID = '25438c20-0bb3-4137-9f5f-2ebdbeb0010b'
+DEMO_VIEWER_GOOGLE_ID = 'demo_viewer_alex_t'
+
+@app.route('/tasks/seed-demo-viewer')
+def task_seed_demo_viewer():
+    """One-time task: create 'Alex T.' demo viewer with availability on the demo trip."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # 1. Upsert Alex T. user
+        cur.execute("""
+            INSERT INTO crab.users (google_id, email, full_name, picture_url, home_airport)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (google_id) DO UPDATE SET
+                full_name = EXCLUDED.full_name,
+                home_airport = EXCLUDED.home_airport,
+                updated_at = NOW()
+            RETURNING pk_id
+        """, (DEMO_VIEWER_GOOGLE_ID, 'alex.t@demo.crab.travel', 'Alex T.', None, 'SEA'))
+        alex_id = cur.fetchone()['pk_id']
+
+        # 2. Add as member of demo trip (skip if already exists)
+        cur.execute("""
+            SELECT pk_id FROM crab.plan_members
+            WHERE plan_id = %s AND user_id = %s
+        """, (DEMO_PLAN_ID, alex_id))
+        member = cur.fetchone()
+        if not member:
+            from utilities.invite_utils import generate_token
+            cur.execute("""
+                INSERT INTO crab.plan_members (plan_id, user_id, display_name, email, member_token, role, home_airport, is_flexible)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING pk_id
+            """, (DEMO_PLAN_ID, alex_id, 'Alex T.', 'alex.t@demo.crab.travel',
+                  generate_token(), 'member', 'SEA', False))
+            member = cur.fetchone()
+
+        # 3. Add tentative dates (May 19-24, covering the demo trip window)
+        cur.execute("DELETE FROM crab.member_tentative_dates WHERE plan_id = %s AND user_id = %s", (DEMO_PLAN_ID, alex_id))
+        # Ideal dates: May 20-23 (matches the trip exactly)
+        cur.execute("""
+            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+            VALUES (%s, %s, '2026-05-20', '2026-05-23', 'ideal')
+        """, (DEMO_PLAN_ID, alex_id))
+        # If-needed buffer: May 19 and May 24
+        cur.execute("""
+            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+            VALUES (%s, %s, '2026-05-19', '2026-05-19', 'works')
+        """, (DEMO_PLAN_ID, alex_id))
+        cur.execute("""
+            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+            VALUES (%s, %s, '2026-05-24', '2026-05-24', 'works')
+        """, (DEMO_PLAN_ID, alex_id))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info(f"✅ Demo viewer Alex T. seeded (user_id={alex_id})")
+        return jsonify({'success': True, 'user_id': alex_id, 'member_id': member['pk_id']})
+    except Exception as e:
+        logger.error(f"❌ Seed demo viewer failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ── Warmup ────────────────────────────────────────────────────
