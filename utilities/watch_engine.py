@@ -394,6 +394,10 @@ def _update_recommendation(watch_id, recommendation):
 
 def _send_alert(watch, old_price, new_price, deep_link=None):
     """Send price drop notification via email and/or SMS."""
+    member_name = watch.get('member_name', 'Traveler')
+    if '[BOT]' in member_name:
+        logger.info(f"Watch alert skipped for bot member {member_name}")
+        return
     try:
         from utilities.gmail_utils import send_simple_email
         from utilities.sms_utils import send_sms
