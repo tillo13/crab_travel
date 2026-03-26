@@ -853,23 +853,22 @@ def api_admin_speed_test():
 @app.route('/live')
 def live_page():
     """Public page — anyone can watch the crabs crawl.
-    Pre-fetches initial data so page renders instantly (no blank flash)."""
+    Pre-fetches initial data so page renders instantly (no blank flash).
+    Uses a SINGLE db connection to avoid pool exhaustion."""
     import json as _json
     try:
-        from utilities.postgres_utils import get_bot_runs, get_bot_events, get_db_connection
-        import psycopg2.extras as _extras
-        runs = get_bot_runs(limit=50)
-        # Bulk lookup plan statuses
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT 50")
+        runs = [dict(r) for r in cur.fetchall()]
+
         _plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
         _plan_statuses = {}
         if _plan_ids:
-            try:
-                _c = get_db_connection(); _cr = _c.cursor(cursor_factory=_extras.RealDictCursor)
-                _cr.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (_plan_ids,))
-                _plan_statuses = {str(r['plan_id']): r['status'] for r in _cr.fetchall()}
-                _cr.close(); _c.close()
-            except Exception:
-                pass
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (_plan_ids,))
+            _plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
+
         for r in runs:
             for k in ('started_at', 'finished_at'):
                 if r.get(k):
@@ -885,20 +884,27 @@ def live_page():
             r['trip_vibe'] = summary.get('vibe', '')
             r['invite_token'] = summary.get('invite_token', '')
             r['plan_status'] = _plan_statuses.get(r.get('plan_id'), None)
+
         events = []
         if runs:
             active_runs = [r for r in runs if r['status'] == 'running']
             target_runs = active_runs[:3] if active_runs else runs[:3]
-            for run in target_runs:
-                run_events = get_bot_events(run['run_id'], limit=50)
-                for e in run_events:
+            target_ids = [r['run_id'] for r in target_runs]
+            if target_ids:
+                cur.execute("""
+                    SELECT * FROM crab.bot_events
+                    WHERE run_id = ANY(%s::uuid[])
+                    ORDER BY event_id DESC LIMIT 200
+                """, (target_ids,))
+                events = [dict(e) for e in cur.fetchall()]
+                for e in events:
                     if e.get('created_at'):
                         e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
                     if e.get('run_id'):
                         e['run_id'] = str(e['run_id'])
-                events.extend(run_events)
-            events.sort(key=lambda e: e.get('created_at', ''), reverse=True)
-            events = events[:200]
+
+        cur.close()
+        conn.close()
         initial_data = _json.dumps({'runs': runs, 'events': events})
     except Exception:
         initial_data = None
@@ -917,60 +923,67 @@ def admin_bots():
 
 @app.route('/api/live/status')
 def api_live_status():
-    """Public endpoint — bot run status for the /live page."""
-    from utilities.postgres_utils import get_bot_runs, get_bot_events
+    """Public endpoint — bot run status for the /live page.
+    Uses a SINGLE db connection to avoid pool exhaustion from 3-sec polling."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    runs = get_bot_runs(limit=50)
-    # Look up plan statuses in bulk for booked detection
-    plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
-    plan_statuses = {}
-    if plan_ids:
-        try:
-            from utilities.postgres_utils import get_db_connection
-            import psycopg2.extras as _extras
-            _conn = get_db_connection()
-            _cur = _conn.cursor(cursor_factory=_extras.RealDictCursor)
-            _cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (plan_ids,))
-            plan_statuses = {str(r['plan_id']): r['status'] for r in _cur.fetchall()}
-            _cur.close(); _conn.close()
-        except Exception:
-            pass
-    # Serialize datetimes + extract summary info
-    for r in runs:
-        for k in ('started_at', 'finished_at'):
-            if r.get(k):
-                r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
-        if r.get('plan_id'):
-            r['plan_id'] = str(r['plan_id'])
-        if r.get('run_id'):
-            r['run_id'] = str(r['run_id'])
-        # Extract trip info from summary for the departures board
-        summary = r.get('summary') or {}
-        r['trip_title'] = summary.get('title', '')
-        r['trip_destinations'] = summary.get('destinations', [])
-        r['trip_group_size'] = summary.get('group_size', 0)
-        r['trip_vibe'] = summary.get('vibe', '')
-        r['invite_token'] = summary.get('invite_token', '')
-        r['plan_status'] = plan_statuses.get(r.get('plan_id'), None)
+        # 1) Bot runs
+        cur.execute("""
+            SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT 50
+        """)
+        runs = [dict(r) for r in cur.fetchall()]
 
-    # Get events — prefer active run, fall back to most recent runs
-    events = []
-    if runs:
-        active_runs = [r for r in runs if r['status'] == 'running']
-        target_runs = active_runs[:3] if active_runs else runs[:3]
-        for run in target_runs:
-            run_events = get_bot_events(run['run_id'], limit=50)
-            for e in run_events:
-                if e.get('created_at'):
-                    e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
-                if e.get('run_id'):
-                    e['run_id'] = str(e['run_id'])
-            events.extend(run_events)
-        # Sort by created_at descending, limit to 200
-        events.sort(key=lambda e: e.get('created_at', ''), reverse=True)
-        events = events[:200]
+        # 2) Plan statuses (single query, same connection)
+        plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
+        plan_statuses = {}
+        if plan_ids:
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (plan_ids,))
+            plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
 
-    return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
+        # 3) Serialize + extract summary info
+        for r in runs:
+            for k in ('started_at', 'finished_at'):
+                if r.get(k):
+                    r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
+            if r.get('plan_id'):
+                r['plan_id'] = str(r['plan_id'])
+            if r.get('run_id'):
+                r['run_id'] = str(r['run_id'])
+            summary = r.get('summary') or {}
+            r['trip_title'] = summary.get('title', '')
+            r['trip_destinations'] = summary.get('destinations', [])
+            r['trip_group_size'] = summary.get('group_size', 0)
+            r['trip_vibe'] = summary.get('vibe', '')
+            r['invite_token'] = summary.get('invite_token', '')
+            r['plan_status'] = plan_statuses.get(r.get('plan_id'), None)
+
+        # 4) Events (same connection)
+        events = []
+        if runs:
+            active_runs = [r for r in runs if r['status'] == 'running']
+            target_runs = active_runs[:3] if active_runs else runs[:3]
+            target_ids = [r['run_id'] for r in target_runs]
+            if target_ids:
+                cur.execute("""
+                    SELECT * FROM crab.bot_events
+                    WHERE run_id = ANY(%s::uuid[])
+                    ORDER BY event_id DESC LIMIT 200
+                """, (target_ids,))
+                events = [dict(e) for e in cur.fetchall()]
+                for e in events:
+                    if e.get('created_at'):
+                        e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+                    if e.get('run_id'):
+                        e['run_id'] = str(e['run_id'])
+
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
+    except Exception as e:
+        logger.error(f"Live status API failed: {e}")
+        return jsonify({'success': False, 'error': 'temporarily unavailable'}), 503
 
 
 @app.route('/api/admin/bots/run', methods=['POST'])
@@ -2455,7 +2468,7 @@ def task_crawl():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        # Prune old bot plans (keep last 100 — the more the merrier)
+        # Prune old bot plans (keep last 100, never prune booked trips)
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -2463,6 +2476,7 @@ def task_crawl():
                 DELETE FROM crab.plans WHERE plan_id IN (
                     SELECT plan_id FROM crab.plans
                     WHERE title LIKE '[BOT]%%'
+                      AND status NOT IN ('booked', 'completed')
                     ORDER BY created_at DESC
                     OFFSET 100
                 )

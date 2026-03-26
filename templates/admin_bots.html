@@ -240,7 +240,7 @@ function renderBoard(data) {
 
   // Manage polling — always poll (crabs are always crawling)
   if (!pollInterval) {
-    pollInterval = setInterval(pollStatus, 3000);
+    pollInterval = setInterval(pollStatus, 10000);
   }
 }
 
@@ -329,6 +329,6 @@ function applyFilter() {
 // Render server-side data immediately (no blank flash), then start polling
 if (_initialData) renderBoard(_initialData);
 else pollStatus();
-pollInterval = setInterval(pollStatus, 3000);
+pollInterval = setInterval(pollStatus, 10000);
 </script>
 {% endblock %}
