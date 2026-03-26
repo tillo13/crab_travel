@@ -1416,6 +1416,15 @@ def invite_page(invite_token):
     if user and is_member and (session.get('_demo_viewer') or is_bot_trip):
         viewing_as = user.get('name', 'Demo User')
 
+    # Booked trip summary stats (for header display)
+    booked_summary = None
+    if plan.get('status') in ('locked', 'booked') or plan.get('locked_destination'):
+        try:
+            from utilities.postgres_utils import get_trip_summary
+            booked_summary = get_trip_summary(plan['plan_id'])
+        except Exception:
+            pass
+
     return render_template('invite.html',
         plan=plan, destinations=destinations, members=members,
         vote_tallies=vote_tallies, my_votes=my_votes,
@@ -1432,6 +1441,7 @@ def invite_page(invite_token):
         watches_json=watches_json,
         members_detail_json=members_detail_json,
         viewing_as=viewing_as,
+        booked_summary=booked_summary,
     )
 
 
@@ -2698,6 +2708,29 @@ def task_seed_demo_viewer():
             RETURNING pk_id
         """, (DEMO_VIEWER_GOOGLE_ID, 'judy@tunaboat.crab.travel', DEMO_VIEWER_NAME, None, 'SEA'))
         judy_id = cur.fetchone()['pk_id']
+
+        # 1b. Ensure Scottsdale AZ is in the demo trip's destination suggestions
+        demo_plan_id = '25438c20-0bb3-4137-9f5f-2ebdbeb0010b'
+        cur.execute("""
+            SELECT pk_id FROM crab.destination_suggestions
+            WHERE plan_id = %s AND destination_name = 'Scottsdale, AZ'
+        """, (demo_plan_id,))
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO crab.destination_suggestions
+                    (plan_id, destination_name, suggested_by, status, research_data)
+                VALUES (%s, 'Scottsdale, AZ', %s, 'ready', %s)
+            """, (demo_plan_id, judy_id, json.dumps({
+                'summary': 'Sun-drenched desert paradise with world-class golf, spa resorts, and stunning Sonoran Desert landscapes. Perfect for groups who want poolside relaxation mixed with hiking, Jeep tours, and incredible Southwestern cuisine.',
+                'highlights': ['Old Town Scottsdale nightlife & galleries', 'Camelback Mountain sunrise hike', 'Desert Botanical Garden', 'Championship golf courses', 'Spa & resort pool days'],
+                'best_for': ['Golf lovers', 'Foodies', 'Spa seekers', 'Desert adventurers'],
+                'avg_daily_cost': '$180-350/person',
+                'weather': 'Sunny, 90-105°F in May',
+                'getting_there': 'PHX airport, 15min drive',
+            })))
+
+        # Also ensure demo trip status is 'booked'
+        cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s AND status != 'booked'", (demo_plan_id,))
 
         # 2. Reset any plans Judy currently owns back to a bot user
         cur.execute("""
