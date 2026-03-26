@@ -70,7 +70,7 @@
 <div class="about-section">
   <h2 class="font-display">What crab.travel does</h2>
   <p>crab.travel is a <strong>group trip coordination platform</strong>. One person creates a trip and shares a link. Everyone who opens the link fills out their preferences — budget, interests, travel style, dietary needs, dates that work and dates that don't. No app to download, no account required.</p>
-  <p>Once people start joining, the AI goes to work. For each destination on the table, it generates a researched card — real hotels with prices, real activities with specific names and locations, real restaurants, upcoming events and festivals during your travel window. Each card gets a compatibility score based on how well it matches the group's collective preferences and budget.</p>
+  <p>Once people start joining, CrabAI goes to work. For each destination on the table, it generates a researched card — real hotels with prices, real activities with specific names and locations, real restaurants, upcoming events and festivals during your travel window. Each card gets a compatibility score based on how well it matches the group's collective preferences and budget.</p>
   <p>Members vote on destinations using a rank-order system (#1, #2, #3) so the organizer gets real signal, not just thumbs-up noise. A shared availability calendar shows everyone's dates overlaid with color coding — green for "ideal," amber for "if needed," red for "can't go." The organizer can see at a glance which week works for the most people without asking anyone individually.</p>
   <p>Behind the scenes, we run real travel searches across multiple providers (Duffel, LiteAPI, Viator, Travelpayouts) for flights, hotels, and activities. Results stream in as they arrive and include deep links to booking partners. We track price history so we can tell you when something gets cheaper.</p>
 </div>
@@ -80,7 +80,7 @@
   <h2 class="font-display">What makes this different</h2>
   <p>This is not another travel booking site. Expedia, Kayak, and Google Flights are great at finding a flight for one person who already knows where they're going and when. They're useless for 15 people who haven't agreed on anything yet.</p>
   <p>It's not another group chat app. WhatsApp and iMessage are great for conversations. They're terrible for decisions. Important information gets buried, nobody tracks who said what, and there's no structure to move from "talking about it" to "booked."</p>
-  <p>crab.travel is a <strong>coordination layer</strong> that sits between the conversation and the booking. The AI does the research. The platform handles the voting, the dates, the preferences, and the logistics. People make the final calls. Nobody has to be the spreadsheet person.</p>
+  <p>crab.travel is a <strong>coordination layer</strong> that sits between the conversation and the booking. CrabAI does the research. The platform handles the voting, the dates, the preferences, and the logistics. People make the final calls. Nobody has to be the spreadsheet person.</p>
 
   <div class="mt-6 bg-white/[0.02] border border-white/6 rounded-xl p-5">
     <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-3">The real competition</p>
@@ -90,7 +90,7 @@
     </div>
     <div class="comp-row">
       <span class="comp-label">Group text for destination ideas</span>
-      <span class="comp-us">AI-researched destination cards with real activities, events, and prices</span>
+      <span class="comp-us">CrabAI-researched destination cards with real activities, events, and prices</span>
     </div>
     <div class="comp-row">
       <span class="comp-label">Spreadsheet for dates and budgets</span>
@@ -110,7 +110,7 @@
     </div>
     <div class="comp-row" style="border-bottom:none;">
       <span class="comp-label">"Check your email, I sent the updated costs"</span>
-      <span class="comp-us">Coming soon: per-person cost breakdown with Venmo/Zelle links</span>
+      <span class="comp-us">Per-person expense tracking with who-owes-who balances — live now</span>
     </div>
   </div>
 </div>
@@ -120,22 +120,22 @@
   <h2 class="font-display">How it works under the hood</h2>
   <p><strong>CrabAI</strong> is our proprietary AI system purpose-built for group travel coordination — destination research, recommendation generation, preference aggregation, and compatibility scoring. It's not a chatbot bolted onto a travel site; CrabAI is the research engine that powers every destination card and recommendation.</p>
   <p>Travel data comes from <strong>four real API providers</strong> running in parallel: Duffel for flexible flights, Travelpayouts for global deals, LiteAPI for hotels across multiple sources, and Viator (the world's largest activities marketplace) for tours and experiences. Results are deduplicated, priced, and linked to booking partners. We earn affiliate commission when someone books — that's the core revenue model.</p>
-  <p>The preference engine aggregates everyone's inputs into a group profile: budget overlap (the range that works for everyone), shared interests, combined dietary needs, accessibility requirements. This profile drives the AI's recommendations. A group of foodie hikers on a moderate budget gets different results than a party crew with a luxury budget — because they should.</p>
+  <p>The preference engine aggregates everyone's inputs into a group profile: budget overlap (the range that works for everyone), shared interests, combined dietary needs, accessibility requirements. This profile drives CrabAI's recommendations. A group of foodie hikers on a moderate budget gets different results than a party crew with a luxury budget — because they should.</p>
   <p>Everything runs on <strong>Google Cloud Platform</strong> (App Engine + Cloud SQL) with a Flask backend. The invite system works without authentication — members participate via a unique token, no account required. Authenticated users get extras like Google Calendar sync and persistent profiles across trips.</p>
 </div>
 
 <!-- Where We Are Now -->
 <div class="about-section">
   <h2 class="font-display">Where we are right now</h2>
-  <p>crab.travel is live and functional for the core loop: <strong>create a trip, invite people, collect preferences, research destinations, vote, and search for flights and hotels.</strong> That's Stage 1 — the foundation that proves the coordination engine works.</p>
-  <p>What's coming next is the stuff that turns it from a voting tool into the thing that fully replaces the spreadsheet: per-person cost tracking, day-by-day itinerary building, room assignments, flight tracking, price drop alerts, SMS voting for the people who won't open a browser, and email digests for the lurkers who need a weekly nudge to stay engaged.</p>
+  <p>crab.travel is live and functional for the full group coordination loop: <strong>create a trip, invite people, collect preferences, research destinations with CrabAI, vote, search for flights and hotels, monitor prices with daily watches, track expenses with who-owes-who balances, and experience it all through interactive demo trips.</strong> That's Stage 1 — and it's complete.</p>
+  <p>What's coming next is the stuff that makes the trip itself effortless: day-by-day itinerary building with CrabAI-generated plans, room assignments, flight tracking, SMS voting for the people who won't open a browser, price drop text alerts, and settlement links to Venmo/Zelle.</p>
   <p>The full breakdown of what's shipped, what's next, and what's on the long-term horizon is on our <a href="/roadmap" class="text-crab-coral hover:underline font-semibold">public roadmap</a>. Every section has a comment thread — we're building this in the open and your feedback directly shapes what gets built next.</p>
 </div>
 
 <!-- The Bigger Picture -->
 <div class="about-section">
   <h2 class="font-display">The bigger picture</h2>
-  <p>Group trips are the starting point, not the destination. The same engine that coordinates 15 friends going to Nashville — preference matching, calendar aggregation, AI-powered recommendations, group decision-making — can coordinate a lot of other shared experiences. Corporate offsites, family reunions, bachelor parties, girls' weekends, annual guys' trips. Anywhere a group of people needs to agree on where, when, and what to do.</p>
+  <p>Group trips are the starting point, not the destination. The same engine that coordinates 15 friends going to Nashville — preference matching, calendar aggregation, CrabAI-powered recommendations, group decision-making — can coordinate a lot of other shared experiences. Corporate offsites, family reunions, bachelor parties, girls' weekends, annual guys' trips. Anywhere a group of people needs to agree on where, when, and what to do.</p>
   <p>Right now we're focused on making group trips work perfectly. The <a href="/roadmap" class="text-crab-coral hover:underline font-semibold">roadmap</a> has the details on what's next.</p>
 </div>
 
