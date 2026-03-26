@@ -335,14 +335,20 @@
     {% if plan.group_vibes %}
     <div class="mt-3"><span class="text-xs bg-crab-coral/10 text-crab-coral px-3 py-1 rounded-full font-medium">{{ plan.group_vibes }}</span></div>
     {% endif %}
+    {% if stage in ('locked', 'booked') %}
+    <p class="text-xs text-crab-sand-dim mt-4 max-w-md mx-auto opacity-60">This trip is confirmed! Browse the details below.</p>
+    {% else %}
     <p class="text-xs text-crab-sand-dim mt-4 max-w-md mx-auto opacity-60">Scroll down to see the destinations being considered.</p>
+    {% endif %}
 
-    <!-- Stage indicator -->
+    <!-- Stage indicator — override to 'booked' if plan says so OR if locked_destination is set -->
     {% set stage = plan.status or 'planning' %}
+    {% if plan.locked_destination and stage not in ('locked', 'booked') %}{% set stage = 'locked' %}{% endif %}
     <div class="mt-4 inline-flex items-center gap-2 bg-crab-card/40 border border-white/6 rounded-full px-4 py-1.5">
-      {% if stage == 'locked' %}
-        <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-        <span class="text-xs font-medium text-green-400">Booked</span>
+      {% if stage in ('locked', 'booked') %}
+        <span class="w-2 h-2 rounded-full bg-green-400"></span>
+        <span class="text-xs font-medium text-green-400">{% if stage == 'booked' %}Booked{% else %}Locked In{% endif %}</span>
+        <span class="text-xs text-crab-sand-dim">— trip confirmed!</span>
       {% elif stage == 'planning' %}
         <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
         <span class="text-xs font-medium text-amber-400">Planning</span>
@@ -524,8 +530,8 @@
   </div>
   {% endif %}
 
-  <!-- Update Your Info (collapsible, expanded by default) -->
-  <div class="mb-4 animate-in stagger-1" id="details-section">
+  <!-- Update Your Info (collapsible — hidden for demo viewers on booked trips) -->
+  <div class="mb-4 animate-in stagger-1 {% if viewing_as and stage in ('locked', 'booked') %}hidden{% endif %}" id="details-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDetails()">
         <div class="flex items-center gap-2">
@@ -640,7 +646,7 @@
         </div>
       </div>
       <div id="dest-body" class="p-4 md:p-6">
-        {% if not needs_login %}
+        {% if not needs_login and stage not in ('locked', 'booked') %}
         <div class="flex gap-2 mb-4">
           <input type="text" id="suggest-input" class="input-field flex-1" placeholder="Suggest a destination... (e.g. Nashville, Lisbon)" onkeydown="if(event.key==='Enter'){suggestDestination()}">
           <button onclick="suggestDestination()" class="px-4 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors">Add</button>
