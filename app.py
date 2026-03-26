@@ -3059,6 +3059,29 @@ def task_seed_booked_trips():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+        # First, fix existing booked plans that still have $0/active watches
+        cur.execute("""
+            SELECT w.pk_id, w.watch_type FROM crab.member_watches w
+            JOIN crab.plans p ON p.plan_id = w.plan_id
+            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
+              AND w.status = 'active' AND COALESCE(w.best_price_usd, 0) = 0
+        """)
+        stale_watches = cur.fetchall()
+        import random as _rnd
+        for w in stale_watches:
+            price = _rnd.randint(180, 650) if w['watch_type'] == 'flight' else _rnd.randint(120, 400)
+            conf = f"CRAB{_rnd.randint(100000, 999999)}"
+            cur.execute("""
+                UPDATE crab.member_watches
+                SET status = 'booked', best_price_usd = %s, last_price_usd = %s,
+                    best_price_at = NOW(), last_checked_at = NOW(),
+                    data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
+                        || jsonb_build_object('confirmation', %s)
+                WHERE pk_id = %s
+            """, (price, price, str(price), conf, w['pk_id']))
+        if stale_watches:
+            logger.info(f"Fixed {len(stale_watches)} stale watches on existing booked plans")
+
         # Find bot-generated plans at 'locked' status that have bot_runs with 'passed'
         cur.execute("""
             SELECT p.plan_id, p.title, p.status
@@ -3073,7 +3096,30 @@ def task_seed_booked_trips():
         promoted = []
         for plan in candidates:
             cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s", (plan['plan_id'],))
-            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title']})
+
+            # Seed realistic prices on all watches and mark them booked
+            cur.execute("""
+                SELECT pk_id, watch_type FROM crab.member_watches
+                WHERE plan_id = %s AND status = 'active'
+            """, (plan['plan_id'],))
+            watches = cur.fetchall()
+            for w in watches:
+                if w['watch_type'] == 'flight':
+                    price = _rnd.randint(180, 650)
+                else:
+                    price = _rnd.randint(120, 400)
+                conf = f"CRAB{_rnd.randint(100000, 999999)}"
+                cur.execute("""
+                    UPDATE crab.member_watches
+                    SET status = 'booked',
+                        best_price_usd = %s, last_price_usd = %s,
+                        best_price_at = NOW(), last_checked_at = NOW(),
+                        data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
+                            || jsonb_build_object('confirmation', %s)
+                    WHERE pk_id = %s
+                """, (price, price, str(price), conf, w['pk_id']))
+
+            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title'], 'watches_booked': len(watches)})
 
         conn.commit()
         cur.close()
