@@ -2839,20 +2839,23 @@ def task_seed_demo_viewer():
         cur.execute("SELECT user_id FROM crab.plan_members WHERE plan_id = %s AND user_id IS NOT NULL LIMIT 12", (demo_plan_id,))
         voter_ids = [r['user_id'] for r in cur.fetchall()]
 
-        import random
+        # Clear and re-seed all votes for demo trip destinations
+        cur.execute("DELETE FROM crab.votes WHERE plan_id = %s AND target_type = 'destination'", (demo_plan_id,))
+
+        vote_weights = {
+            'Scottsdale, AZ': [1,1,1,1,1,1,2,2,3],
+            'Sagano, Japan': [1,1,2,2,2,3,3,4],
+            'Salvador, Brazil': [1,2,2,3,3,3,4],
+            'Lapland, Finland': [2,3,3,4,4],
+        }
         for dest_name, sug_id in demo_dests.items():
-            # Check if votes exist
-            cur.execute("SELECT COUNT(*) as cnt FROM crab.votes WHERE plan_id = %s AND target_id = %s", (demo_plan_id, str(sug_id)))
-            if cur.fetchone()['cnt'] == 0 and voter_ids:
-                # Seed votes: Scottsdale gets most #1s (winner), others get spread
-                vote_weights = {'Scottsdale, AZ': [1,1,1,1,1,2,2,3], 'Sagano, Japan': [1,1,2,2,2,3,3], 'Salvador, Brazil': [1,2,2,3,3,4], 'Lapland, Finland': [2,3,3,4]}
-                ranks = vote_weights.get(dest_name, [2,3])
-                for i, uid in enumerate(voter_ids[:len(ranks)]):
-                    cur.execute("""
-                        INSERT INTO crab.votes (plan_id, user_id, target_type, target_id, vote)
-                        VALUES (%s, %s, 'destination', %s, %s)
-                        ON CONFLICT (plan_id, user_id, target_type, target_id) DO NOTHING
-                    """, (demo_plan_id, uid, str(sug_id), ranks[i]))
+            ranks = vote_weights.get(dest_name, [2,3])
+            for i, uid in enumerate(voter_ids[:len(ranks)]):
+                cur.execute("""
+                    INSERT INTO crab.votes (plan_id, user_id, target_type, target_id, vote)
+                    VALUES (%s, %s, 'destination', %s, %s)
+                    ON CONFLICT (plan_id, user_id, target_type, target_id) DO NOTHING
+                """, (demo_plan_id, uid, str(sug_id), ranks[i]))
 
         # 2. Reset any plans Judy currently owns back to a bot user
         cur.execute("""
