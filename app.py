@@ -436,8 +436,58 @@ def trip_summary(plan_id):
     summary = get_trip_summary(plan_id)
     itinerary = get_itinerary_items(plan_id)
     expenses = get_expenses(plan_id)
+
+    # Compute "who owes who" balances from expenses
+    balances = []
+    if expenses and summary.get('member_count', 0) > 0:
+        member_count = summary['member_count']
+        # Track how much each person paid vs their fair share
+        paid_by = {}  # member_name -> total paid
+        for exp in expenses:
+            name = (exp.get('paid_by_name') or '').replace('[BOT] ', '')
+            paid_by[name] = paid_by.get(name, 0) + float(exp.get('amount', 0))
+        total_expenses = sum(paid_by.values())
+        fair_share = total_expenses / member_count
+
+        # People who paid more than their share are owed money
+        creditors = []  # (name, amount_owed_to_them)
+        debtors = []    # (name, amount_they_owe)
+        for name, paid in paid_by.items():
+            diff = paid - fair_share
+            if diff > 1:  # they overpaid — they're owed money
+                creditors.append([name, diff])
+            elif diff < -1:  # they underpaid — they owe
+                debtors.append([name, -diff])
+        # Everyone who didn't pay anything owes their fair share
+        all_member_names = set()
+        for mid, m in summary.get('members', {}).items():
+            clean = m['name'].replace('[BOT] ', '')
+            all_member_names.add(clean)
+        for name in all_member_names:
+            if name not in paid_by:
+                debtors.append([name, fair_share])
+
+        # Match debtors to creditors (simplified: greedy)
+        creditors.sort(key=lambda x: -x[1])
+        debtors.sort(key=lambda x: -x[1])
+        for debtor_name, debt in debtors:
+            remaining = debt
+            for cred in creditors:
+                if remaining <= 0.50:
+                    break
+                if cred[1] <= 0.50:
+                    continue
+                payment = min(remaining, cred[1])
+                balances.append({
+                    'from_name': debtor_name,
+                    'to_name': cred[0],
+                    'amount': round(payment, 0),
+                })
+                cred[1] -= payment
+                remaining -= payment
+
     return render_template('trip_summary.html',
-        plan=plan, summary=summary, itinerary=itinerary, expenses=expenses)
+        plan=plan, summary=summary, itinerary=itinerary, expenses=expenses, balances=balances)
 
 
 @app.route('/api/plan/<plan_id>/itinerary', methods=['POST'])
@@ -2942,6 +2992,34 @@ def task_seed_demo_viewer():
             joined += 1
 
         # (Chat messages are seeded via /tasks/seed-demo-chat which uses the LLM router)
+
+        # Seed expenses on the booked demo trip
+        cur.execute("SELECT COUNT(*) as cnt FROM crab.expenses WHERE plan_id = %s", (demo_plan_id,))
+        if cur.fetchone()['cnt'] == 0:
+            # Get some member pk_ids for paid_by
+            cur.execute("""
+                SELECT pk_id, display_name FROM crab.plan_members
+                WHERE plan_id = %s AND user_id IS NOT NULL
+                ORDER BY joined_at LIMIT 12
+            """, (demo_plan_id,))
+            demo_members = cur.fetchall()
+            member_map = {m['display_name'].replace('[BOT] ', ''): m['pk_id'] for m in demo_members}
+
+            # Pick a few members to be the ones who front money
+            payers = list(member_map.items())[:5]
+            demo_expenses = [
+                (payers[0][1], 'Hotel — The Scott Resort (3 nights)', 1971, 'lodging'),
+                (payers[1][1], 'Desert Jeep Tour (12 people)', 480, 'activity'),
+                (payers[2][1], 'Costco run — drinks, snacks, sunscreen', 215, 'food'),
+                (payers[3][1], 'D-backs tickets (12 seats, Section 130)', 600, 'tickets'),
+                (payers[0][1], 'Dinner reservation deposit — Citizen Public House', 350, 'food'),
+                (payers[4][1], 'SUV rental (Turo, 4 days)', 320, 'transport'),
+            ]
+            for paid_by_id, title, amount, category in demo_expenses:
+                cur.execute("""
+                    INSERT INTO crab.expenses (plan_id, paid_by, title, amount, category, split_type)
+                    VALUES (%s, %s, %s, %s, %s, 'equal')
+                """, (demo_plan_id, paid_by_id, title, amount, category))
 
         conn.commit()
         cur.close()

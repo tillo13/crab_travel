@@ -272,24 +272,56 @@
   </div>
   {% endif %}
 
-  {# ── Expenses Section ───────────────────────────────────── #}
+  {# ── Shared Expenses + Who Owes Who ──────────────────────── #}
   {% if expenses %}
   <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
-    <div class="px-5 py-4 border-b border-white/6">
+    <div class="px-5 py-4 border-b border-white/6 flex items-center justify-between">
       <h2 class="font-display text-lg text-crab-sand">Shared Expenses</h2>
+      <div class="text-xs text-crab-sand-dim">{{ expenses|length }} expense{{ 's' if expenses|length != 1 }}</div>
     </div>
     <div class="divide-y divide-white/5">
       {% for exp in expenses %}
-      <div class="px-5 py-3 flex items-center justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-sm font-medium text-crab-sand">{{ exp.title }}</div>
-          <div class="text-xs text-crab-sand-dim">
-            Paid by {{ exp.paid_by_name }}
-            {% if exp.category %} · {{ exp.category|title }}{% endif %}
-            {% if exp.split_type %} · Split: {{ exp.split_type }}{% endif %}
+      <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-sm shrink-0">
+            {% if exp.category == 'lodging' %}&#127968;{% elif exp.category == 'activity' %}&#127923;{% elif exp.category == 'food' %}&#127860;{% elif exp.category == 'transport' %}&#128663;{% elif exp.category == 'tickets' %}&#127915;{% else %}&#128176;{% endif %}
+          </div>
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-crab-sand">{{ exp.title }}</div>
+            <div class="text-xs text-crab-sand-dim">
+              Paid by <span class="text-crab-coral font-medium">{{ exp.paid_by_name|replace('[BOT] ', '') }}</span>
+              {% if exp.category %} · {{ exp.category|title }}{% endif %}
+              · Split {{ exp.split_type }}
+            </div>
           </div>
         </div>
         <div class="text-sm font-semibold text-crab-sand shrink-0">${{ '{:,.0f}'.format(exp.amount) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="px-5 py-3 border-t border-white/10 flex items-center justify-between bg-white/[0.02]">
+      <div class="text-sm font-semibold text-crab-sand">Total Shared Expenses</div>
+      <div class="text-lg font-display text-crab-coral">${{ '{:,.0f}'.format(expenses|sum(attribute='amount')) }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Who Owes Who ──────────────────────────────────────── #}
+  {% if balances %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/6">
+      <h2 class="font-display text-lg text-crab-sand">Who Owes Who</h2>
+      <p class="text-xs text-crab-sand-dim mt-0.5">Based on shared expenses, split evenly across {{ summary.member_count }} members</p>
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for b in balances %}
+      <div class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center gap-2 min-w-0 text-sm">
+          <span class="font-medium text-crab-sand">{{ b.from_name }}</span>
+          <span class="text-crab-sand-dim">&rarr;</span>
+          <span class="font-medium text-crab-teal">{{ b.to_name }}</span>
+        </div>
+        <div class="text-sm font-bold text-crab-coral shrink-0">${{ '{:,.0f}'.format(b.amount) }}</div>
       </div>
       {% endfor %}
     </div>

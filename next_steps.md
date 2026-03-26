@@ -33,10 +33,49 @@
 
 ---
 
+## BLOCKER: SMS / Twilio A2P Campaign
+
+**Status: IN_PROGRESS — waiting on carrier approval (submitted 2026-03-25)**
+
+This is the #1 blocker before showing Adam. SMS notifications are the killer feature that makes crab.travel feel real — price drop alerts to your phone, chat messages as texts, vote reminders via SMS. Without it, everything stays web-only and the "meet users where they are" promise falls flat.
+
+### What's Done
+- **Phone number**: `+1 (425) 600-CRAB` (425-600-2722) — active, SMS-capable
+- **Business verification**: TILLO CONSULTING LLC — **twilio-approved**
+- **Customer profile**: `BUf5cd2668261710eff4bb1c97eea9bf10` — **twilio-approved**
+- **A2P Trust Product**: `BU7406bb09eaf450c62a6fc4f40019fb1b` — **twilio-approved** (policy: "A2P Messaging: Local - Business")
+- **Messaging Service**: `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` — "Low Volume Mixed A2P" — `us_app_to_person_registered: true`
+- **A2P Campaign**: `QE2c6890da8086d771620e9b13fadeba0b` — **IN_PROGRESS**
+  - Use case: LOW_VOLUME
+  - Opt-in flow: web form on profile page + START keyword
+  - Message samples: chat forwarding, vote reminders, trip status updates
+  - All compliance text (opt-in/opt-out/help) properly configured
+- **SMS code in app**: `utilities/sms_utils.py` fully built — send_sms(), inbound webhook at `/api/sms/inbound`
+- **Notification preferences**: per-user channel (email/SMS/both) + frequency (real-time/daily/weekly/off) already in DB
+
+### What's Blocking
+- **Error 30034** on all outbound SMS — carrier-level filtering because campaign_id is still `null` (not yet assigned by TCR/carriers)
+- Typical approval: 24-48 hours, sometimes up to 1 week
+- **Nothing to do on our end** — just wait
+
+### What Happens When Approved
+- `campaign_id` gets assigned, carriers whitelist the number
+- All existing SMS code starts working immediately — no deploy needed
+- Price drop alerts, chat-to-SMS bridge, vote reminders all go live
+- Test by sending to 425-246-1275
+
+### Note: Failed Brand Registration
+- `BN9925256294a428e50c9d8624fc58b5f1` was accidentally created with the wrong A2P profile (error 30794). It's stuck in FAILED state and can't be deleted via API. It does NOT affect the existing campaign (`QE2c68...`) which uses a different brand (`BN05299cc8c46ebf46b61fb87fb11d6ff9`). If it causes issues later, delete it from the Twilio console: console.twilio.com → Messaging → Trust Center → Brands.
+
+---
+
 ## Remaining — Prioritized
 
+### BEFORE ADAM DEMO
+- **SMS working** — wait for A2P campaign approval, then test. This is the demo moment: "watch your phone" → SMS arrives with trip update.
+- **Expense tracking UI** — DB + CRUD exist, no frontend. Add form on trip summary (who paid, amount, category) + per-person balances. This is the "spreadsheet killer" moment.
+
 ### High Impact (Next Session)
-- **Expense tracking UI** — DB + CRUD exist, no frontend. Add form on trip summary (who paid, amount, category) + per-person balances.
 - **Itinerary editor** — 21 items exist on demo trip but no add/edit/reorder UI. Add "Add item" button, drag-and-drop.
 - **Auto-generate itinerary via AI** — when all watches booked, LLM generates day-by-day plan from flight times + hotel + destination research.
 
@@ -60,7 +99,7 @@
 | Xotelo | N/A | **Removed** — needs RapidAPI auth |
 | LiteAPI | $0 (sandbox) | Hotel fallback |
 | LLM Router | $0 (free tier round-robin) | 15+ backends, **confirmed working** |
-| Twilio | ~$0.01/msg | Alert delivery |
+| Twilio | ~$0.01/msg | A2P campaign IN_PROGRESS — waiting on carrier approval |
 
 ---
 
