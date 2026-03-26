@@ -2744,6 +2744,22 @@ def task_seed_demo_viewer():
                     VALUES (%s, %s, %s, %s, 'ideal')
                 """, (plan_id, judy_id, dates['earliest'], dates['latest']))
 
+            # Add a blackout range too (a few days before the trip window)
+            cur.execute("""
+                SELECT MIN(date_start) as earliest FROM crab.member_tentative_dates
+                WHERE plan_id = %s AND user_id != %s
+            """, (plan_id, judy_id))
+            trip_start = cur.fetchone()
+            if trip_start and trip_start['earliest']:
+                from datetime import timedelta
+                blk_end = trip_start['earliest'] - timedelta(days=1)
+                blk_start = blk_end - timedelta(days=3)
+                cur.execute("""
+                    INSERT INTO crab.member_blackouts (plan_id, user_id, blackout_start, blackout_end)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (plan_id, judy_id, blk_start, blk_end))
+
             joined += 1
 
         conn.commit()

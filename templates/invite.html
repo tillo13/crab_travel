@@ -529,11 +529,11 @@
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDetails()">
         <div class="flex items-center gap-2">
-          <svg id="details-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <svg id="details-chevron" class="w-4 h-4 chat-toggle {% if viewing_as %}collapsed{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           <span class="text-sm font-display">✏️ {% if is_member %}Update Your Info{% else %}Join {{ plan.title|replace('[BOT] ', '') }}{% endif %}</span>
         </div>
       </div>
-      <div id="details-body" class="p-6 md:p-8">
+      <div id="details-body" class="p-6 md:p-8" {% if viewing_as %}style="display:none"{% endif %}>
         <div class="mb-5">
           <label class="block text-sm font-medium mb-1.5">Where are you based?</label>
           <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. Seattle, Phoenix, JFK, 90210" value="{{ member_airport or '' }}">
