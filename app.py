@@ -109,6 +109,28 @@ def check_apikey_auth():
     logger.info(f"apikey auth: logged in as user {user_id}")
 
 
+@app.before_request
+def check_demo_exit():
+    """When a demo viewer navigates to a non-demo page, restore their real session."""
+    if '_demo_stashed_user' not in session:
+        return
+    # Stay in demo mode for bot trips, invite pages, summary pages, static, and API calls
+    path = request.path
+    if (path.startswith('/to/') or path.startswith('/plan/') or
+        path.startswith('/api/') or path.startswith('/static/') or
+        path.startswith('/demo') or path.startswith('/_ah/')):
+        return
+    # Leaving demo — restore real user
+    real_user = session.pop('_demo_stashed_user', None)
+    session.pop('_demo_viewer', None)
+    if real_user:
+        session['user'] = real_user
+    else:
+        session.pop('user', None)
+    session.modified = True
+    logger.info(f"Demo exit: restored real user on {path}")
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -1234,6 +1256,38 @@ def _auto_login_demo_viewer(plan):
             logger.info(f"Auto-login demo viewer: {judy['full_name']} (user_id={judy['pk_id']})")
     except Exception as e:
         logger.warning(f"Demo viewer auto-login failed: {e}")
+
+
+DEMO_INVITE_TOKEN = 'qL6zhRAI'
+
+@app.route('/demo')
+def demo_mode():
+    """Switch to Judy Tunaboat and redirect to the demo trip.
+    Stashes the real user so they auto-restore when navigating away."""
+    try:
+        # Stash real user (or None if anonymous)
+        real_user = session.get('user')
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT pk_id, email, full_name, picture_url FROM crab.users WHERE google_id = %s",
+                    (DEMO_VIEWER_GOOGLE_ID,))
+        judy = cur.fetchone()
+        cur.close()
+        conn.close()
+        if judy:
+            session['_demo_stashed_user'] = real_user
+            session['user'] = {
+                'id': judy['pk_id'],
+                'email': judy['email'],
+                'name': judy['full_name'],
+                'picture': judy['picture_url'],
+            }
+            session['_demo_viewer'] = True
+            session.permanent = True
+            session.modified = True
+    except Exception as e:
+        logger.warning(f"Demo mode switch failed: {e}")
+    return redirect(f'/to/{DEMO_INVITE_TOKEN}')
 
 
 @app.route('/to/<invite_token>')
