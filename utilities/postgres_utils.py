@@ -44,9 +44,9 @@ def _get_connection_pool():
         else:
             host = creds['host']
         # Budget: 50 max_connections shared across 12 apps on kumori Cloud SQL
-        # Crab gets 4 max (not the heaviest app — Galactica gets 8)
+        # Crab gets 6 max (active app with bots + watches + users)
         pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1, maxconn=4,
+            minconn=1, maxconn=6,
             dbname=creds['dbname'], user=creds['user'],
             password=creds['password'], host=host,
             connect_timeout=10,
@@ -93,7 +93,20 @@ class PooledConnection:
 
 def get_db_connection():
     pool = _get_connection_pool()
-    conn = pool.getconn()
+    try:
+        conn = pool.getconn()
+    except psycopg2.pool.PoolError:
+        # Pool corrupted (all connections permanently "checked out" after startup failures).
+        # Nuke and recreate it.
+        logger.warning("⚠️ Pool exhausted — recreating connection pool")
+        with _pool_lock:
+            try:
+                pool.closeall()
+            except Exception:
+                pass
+            _connection_pools.pop(GCP_PROJECT_ID, None)
+        pool = _get_connection_pool()
+        conn = pool.getconn()
     return PooledConnection(conn, pool)
 
 

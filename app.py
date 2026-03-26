@@ -85,9 +85,11 @@ def check_apikey_auth():
     apikey = request.args.get('apikey')
     try:
         expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
-    except Exception:
+    except Exception as e:
+        logger.warning(f"apikey auth: secret lookup failed: {e}")
         return
     if not expected or apikey != expected:
+        logger.warning(f"apikey auth: key mismatch (expected={expected is not None})")
         return
     user_id = request.args.get('user_id', type=int)
     if not user_id:
@@ -95,9 +97,11 @@ def check_apikey_auth():
     try:
         from utilities.admin_utils import _get_user_session_data
         user_data = _get_user_session_data(user_id)
-    except Exception:
-        return  # Pool exhausted or DB error — fail gracefully, don't crash the request
+    except Exception as e:
+        logger.warning(f"apikey auth: user lookup failed: {e}")
+        return
     if not user_data:
+        logger.warning(f"apikey auth: user {user_id} not found")
         return
     session.permanent = True
     session['user'] = user_data
@@ -811,7 +815,7 @@ def live_page():
         events = []
         if runs:
             active_runs = [r for r in runs if r['status'] == 'running']
-            target_runs = active_runs if active_runs else runs[:3]
+            target_runs = active_runs[:3] if active_runs else runs[:3]
             for run in target_runs:
                 run_events = get_bot_events(run['run_id'], limit=50)
                 for e in run_events:
@@ -880,7 +884,7 @@ def api_live_status():
     events = []
     if runs:
         active_runs = [r for r in runs if r['status'] == 'running']
-        target_runs = active_runs if active_runs else runs[:3]
+        target_runs = active_runs[:3] if active_runs else runs[:3]
         for run in target_runs:
             run_events = get_bot_events(run['run_id'], limit=50)
             for e in run_events:
@@ -2253,6 +2257,23 @@ def task_crawl():
     if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
         return 'Forbidden', 403
     try:
+        # Auto-fail bot runs stuck in "running" for > 1 hour
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE crab.bot_runs SET status='failed', finished_at=NOW()
+                WHERE status='running' AND started_at < NOW() - INTERVAL '1 hour'
+            """)
+            stuck = cur.rowcount
+            if stuck:
+                logger.info(f"🧹 Auto-failed {stuck} stuck bot runs")
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Stuck run cleanup failed: {e}")
+
         import subprocess
         cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.abspath(__file__))
         # Run one quick random trip (no AI research to keep it fast + cheap)
@@ -2553,6 +2574,24 @@ def sms_inbound():
 
     # Always return valid TwiML
     return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
+
+
+# ── Warmup ────────────────────────────────────────────────────
+
+@app.route('/_ah/warmup')
+def warmup():
+    """App Engine warmup handler — pre-test the DB pool so first real requests don't fail."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
+        conn.close()
+        logger.info("✅ Warmup: DB pool healthy")
+        return 'ok', 200
+    except Exception as e:
+        logger.error(f"❌ Warmup: DB pool test failed: {e}")
+        return f'pool error: {e}', 500
 
 
 # ── Run ──────────────────────────────────────────────────────

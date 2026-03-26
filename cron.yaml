@@ -1,7 +1,7 @@
 cron:
 - description: "Crab Crawlers — run a random bot trip"
   url: /tasks/crawl
-  schedule: every 15 minutes
+  schedule: every 30 minutes
   timezone: America/Los_Angeles
 
 - description: "Refresh global deals cache from all travel APIs"
@@ -11,5 +11,5 @@ cron:
 
 - description: "Check member price watches — prioritized by departure date"
   url: /tasks/check-watches
-  schedule: every 6 hours
+  schedule: every 8 hours
   timezone: America/Los_Angeles

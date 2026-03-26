@@ -1,6 +1,9 @@
 runtime: python312
 entrypoint: gunicorn -b :$PORT --timeout 120 --workers 1 --threads 2 app:app
 
+inbound_services:
+  - warmup
+
 instance_class: F1
 
 automatic_scaling:
