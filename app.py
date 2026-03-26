@@ -3059,28 +3059,169 @@ def task_seed_booked_trips():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        # First, fix existing booked plans that still have $0/active watches
-        cur.execute("""
-            SELECT w.pk_id, w.watch_type FROM crab.member_watches w
-            JOIN crab.plans p ON p.plan_id = w.plan_id
-            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
-              AND w.status = 'active' AND COALESCE(w.best_price_usd, 0) = 0
-        """)
-        stale_watches = cur.fetchall()
         import random as _rnd
-        for w in stale_watches:
-            price = _rnd.randint(180, 650) if w['watch_type'] == 'flight' else _rnd.randint(120, 400)
-            conf = f"CRAB{_rnd.randint(100000, 999999)}"
+        from datetime import timedelta
+
+        def _humanize_watches(cur, plan_id):
+            """Seed realistic prices + varied dates on watches for a plan.
+            Real humans fly in/out on different days and don't all stay the full trip."""
+            # Get trip date range
+            cur.execute("SELECT start_date, end_date FROM crab.plans WHERE plan_id = %s", (plan_id,))
+            plan_row = cur.fetchone()
+            trip_start = plan_row['start_date'] if plan_row and plan_row.get('start_date') else None
+            trip_end = plan_row['end_date'] if plan_row and plan_row.get('end_date') else None
+            trip_days = (trip_end - trip_start).days if trip_start and trip_end else 3
+
             cur.execute("""
-                UPDATE crab.member_watches
-                SET status = 'booked', best_price_usd = %s, last_price_usd = %s,
-                    best_price_at = NOW(), last_checked_at = NOW(),
-                    data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
-                        || jsonb_build_object('confirmation', %s)
-                WHERE pk_id = %s
-            """, (price, price, str(price), conf, w['pk_id']))
-        if stale_watches:
-            logger.info(f"Fixed {len(stale_watches)} stale watches on existing booked plans")
+                SELECT pk_id, watch_type, checkin, checkout
+                FROM crab.member_watches WHERE plan_id = %s
+            """, (plan_id,))
+            watches = cur.fetchall()
+            for w in watches:
+                is_flight = w['watch_type'] == 'flight'
+                price = _rnd.randint(180, 650) if is_flight else _rnd.randint(120, 400)
+                conf = f"CRAB{_rnd.randint(100000, 999999)}"
+
+                # Randomize dates — most arrive on time, some early/late, some leave early
+                new_checkin = w['checkin']
+                new_checkout = w['checkout']
+                if trip_start and trip_end and trip_days >= 3:
+                    roll = _rnd.random()
+                    if is_flight:
+                        # Flights: arrival date varies
+                        if roll < 0.15:
+                            # 15% arrive a day early
+                            new_checkin = trip_start - timedelta(days=1)
+                        elif roll < 0.30:
+                            # 15% arrive a day late (miss day 1)
+                            new_checkin = trip_start + timedelta(days=1)
+                        # Departure: some leave early
+                        roll2 = _rnd.random()
+                        if roll2 < 0.20:
+                            # 20% leave a day early
+                            new_checkout = trip_end - timedelta(days=1)
+                        elif roll2 < 0.30:
+                            # 10% stay an extra day
+                            new_checkout = trip_end + timedelta(days=1)
+                    else:
+                        # Hotels: check-in/out varies more
+                        if roll < 0.20:
+                            new_checkin = trip_start - timedelta(days=1)
+                        elif roll < 0.35:
+                            new_checkin = trip_start + timedelta(days=1)
+                        roll2 = _rnd.random()
+                        if roll2 < 0.25:
+                            new_checkout = trip_end - timedelta(days=1)
+                        elif roll2 < 0.35:
+                            new_checkout = trip_end + timedelta(days=1)
+                        # 10% only stay half the trip
+                        if _rnd.random() < 0.10 and trip_days >= 4:
+                            mid = trip_start + timedelta(days=trip_days // 2)
+                            if _rnd.random() < 0.5:
+                                new_checkout = mid  # leaves at halfway
+                            else:
+                                new_checkin = mid   # arrives at halfway
+
+                cur.execute("""
+                    UPDATE crab.member_watches
+                    SET status = 'booked',
+                        best_price_usd = %s, last_price_usd = %s,
+                        best_price_at = NOW(), last_checked_at = NOW(),
+                        checkin = COALESCE(%s, checkin),
+                        checkout = COALESCE(%s, checkout),
+                        data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
+                            || jsonb_build_object('confirmation', %s)
+                    WHERE pk_id = %s
+                """, (price, price, new_checkin, new_checkout, str(price), conf, w['pk_id']))
+            return len(watches)
+
+        # First, fix existing booked plans that still have uniform dates or $0 watches
+        cur.execute("""
+            SELECT DISTINCT p.plan_id FROM crab.plans p
+            JOIN crab.member_watches w ON w.plan_id = p.plan_id
+            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
+              AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0)
+        """)
+        stale_plans = [r['plan_id'] for r in cur.fetchall()]
+        stale_fixed = 0
+        for pid in stale_plans:
+            stale_fixed += _humanize_watches(cur, pid)
+        if stale_fixed:
+            logger.info(f"Humanized {stale_fixed} watches on {len(stale_plans)} existing booked plans")
+
+        # Also re-humanize ALL booked bot plans (randomize dates even if prices exist)
+        cur.execute("""
+            SELECT DISTINCT p.plan_id FROM crab.plans p
+            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
+        """)
+        all_booked = [r['plan_id'] for r in cur.fetchall()]
+        for pid in all_booked:
+            if pid not in stale_plans:
+                _humanize_watches(cur, pid)
+
+        # Seed itineraries on booked plans that don't have one yet
+        itineraries_added = 0
+        for pid in all_booked:
+            cur.execute("SELECT COUNT(*) as cnt FROM crab.itinerary_items WHERE plan_id = %s", (pid,))
+            if cur.fetchone()['cnt'] > 0:
+                continue  # already has itinerary
+            # Get trip info for LLM prompt
+            cur.execute("""
+                SELECT p.title, p.destination, p.start_date, p.end_date
+                FROM crab.plans p WHERE p.plan_id = %s
+            """, (pid,))
+            pinfo = cur.fetchone()
+            if not pinfo or not pinfo.get('start_date') or not pinfo.get('destination'):
+                continue
+            dest = pinfo['destination']
+            trip_title = (pinfo['title'] or '').replace('[BOT] ', '')
+            s_date = pinfo['start_date']
+            e_date = pinfo['end_date']
+            num_days = (e_date - s_date).days if s_date and e_date else 3
+
+            try:
+                from utilities.llm_router import generate as llm_generate
+                prompt = f"""Generate a {num_days}-day itinerary for a group trip to {dest}. Trip: "{trip_title}", {s_date} to {e_date}.
+
+For each day, create 3-5 items. Respond in JSON only — an array of objects:
+[{{"day": 1, "time": "09:00", "title": "item title", "category": "activity|food|transport|culture|nightlife|relaxation", "duration": minutes, "location": "specific place name", "notes": "brief note"}}]
+
+Be specific — use real place names, real restaurants, real activities for {dest}. Mix categories. Day 1 should start with arrival/check-in. Last day should end with checkout/departure. Keep it realistic and fun."""
+
+                text, backend = llm_generate(prompt, max_tokens=1500, temperature=0.9)
+                if not text:
+                    continue
+                import json as _json
+                if '```' in text:
+                    text = text.split('```')[1]
+                    if text.startswith('json'):
+                        text = text[4:]
+                items = _json.loads(text.strip())
+                if not isinstance(items, list):
+                    continue
+
+                for item in items:
+                    day_num = item.get('day', 1)
+                    sched_date = s_date + timedelta(days=day_num - 1)
+                    cur.execute("""
+                        INSERT INTO crab.itinerary_items
+                            (plan_id, title, category, scheduled_date, scheduled_time,
+                             duration_minutes, location, notes)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        pid,
+                        item.get('title', 'Activity')[:200],
+                        item.get('category', 'activity')[:30],
+                        sched_date,
+                        item.get('time'),
+                        item.get('duration'),
+                        item.get('location', '')[:200],
+                        item.get('notes', '')[:500],
+                    ))
+                itineraries_added += 1
+                logger.info(f"  📅 Itinerary seeded for {trip_title}: {len(items)} items")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Itinerary generation failed for {pid}: {e}")
 
         # Find bot-generated plans at 'locked' status that have bot_runs with 'passed'
         cur.execute("""
@@ -3096,36 +3237,15 @@ def task_seed_booked_trips():
         promoted = []
         for plan in candidates:
             cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s", (plan['plan_id'],))
-
-            # Seed realistic prices on all watches and mark them booked
-            cur.execute("""
-                SELECT pk_id, watch_type FROM crab.member_watches
-                WHERE plan_id = %s AND status = 'active'
-            """, (plan['plan_id'],))
-            watches = cur.fetchall()
-            for w in watches:
-                if w['watch_type'] == 'flight':
-                    price = _rnd.randint(180, 650)
-                else:
-                    price = _rnd.randint(120, 400)
-                conf = f"CRAB{_rnd.randint(100000, 999999)}"
-                cur.execute("""
-                    UPDATE crab.member_watches
-                    SET status = 'booked',
-                        best_price_usd = %s, last_price_usd = %s,
-                        best_price_at = NOW(), last_checked_at = NOW(),
-                        data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
-                            || jsonb_build_object('confirmation', %s)
-                    WHERE pk_id = %s
-                """, (price, price, str(price), conf, w['pk_id']))
-
-            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title'], 'watches_booked': len(watches)})
+            n = _humanize_watches(cur, plan['plan_id'])
+            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title'], 'watches_booked': n})
 
         conn.commit()
         cur.close()
         conn.close()
 
-        return jsonify({'success': True, 'promoted': promoted, 'count': len(promoted)})
+        return jsonify({'success': True, 'promoted': promoted, 'count': len(promoted),
+                        'stale_fixed': stale_fixed, 'itineraries_added': itineraries_added})
     except Exception as e:
         logger.error(f"Seed booked trips failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

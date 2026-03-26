@@ -111,7 +111,7 @@ class TravelpayoutsAdapter(TravelAdapter):
                 pass
 
         path = f"{origin}{depart_str}{destination}{ret_str}{passengers}"
-        return f"https://tp.media/r?marker={MARKER}&trs=331046&p=4114&u=https%3A%2F%2Fwww.aviasales.com%2Fsearch%2F{path}"
+        return f"https://www.aviasales.com/search/{path}?marker={MARKER}"
 
     # ── Hotels ────────────────────────────────────────────────
 
@@ -200,7 +200,6 @@ class TravelpayoutsAdapter(TravelAdapter):
         from urllib.parse import quote
         dest_encoded = quote(destination)
         return (
-            f"https://tp.media/r?marker={MARKER}&trs=331046&p=4176"
-            f"&u=https%3A%2F%2Fwww.hotellook.com%2Fhotels%3Fdestination%3D{dest_encoded}"
-            f"%26checkIn%3D{checkin}%26checkOut%3D{checkout}%26adultsCount%3D{guests}"
+            f"https://www.hotellook.com/hotels?destination={dest_encoded}"
+            f"&checkIn={checkin}&checkOut={checkout}&adultsCount={guests}&marker={MARKER}"
         )
