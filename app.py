@@ -2724,6 +2724,136 @@ def task_seed_demo_viewer():
         # Also ensure demo trip status is 'booked'
         cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s AND status != 'booked'", (demo_plan_id,))
 
+        # 1c. Seed destination card data for ALL destinations on demo trip
+        demo_cards = {
+            'Salvador, Brazil': {
+                'card': {
+                    'summary': 'Vibrant Afro-Brazilian culture meets stunning tropical beaches in Salvador, Bahia. The historic Pelourinho district is a UNESCO World Heritage Site with colorful colonial architecture, incredible street food, and live music on every corner. Perfect for groups who love culture, dancing, and beach days.',
+                    'highlights': ['Pelourinho historic district', 'Beaches: Porto da Barra & Farol da Barra', 'Afro-Brazilian cuisine & acarajé', 'Capoeira & live samba'],
+                    'best_dates': 'Year-round tropical weather. Carnival (February) is legendary but crowded. May-June ideal for smaller crowds.',
+                    'weather_note': 'Tropical — 77-86°F year-round, brief afternoon showers. Pack light layers and sunscreen.',
+                    'estimated_total_per_person': '$1,200-2,000',
+                    'compatibility_score': 78,
+                    'concerns': ['Language barrier (Portuguese)', 'Petty theft in tourist areas'],
+                    'stays': [
+                        {'name': 'Fera Palace Hotel', 'price_hint': '$$', 'description': 'Art deco landmark overlooking the Bay of All Saints. Rooftop pool with panoramic views.', 'location': 'Pelourinho'},
+                        {'name': 'Vila Galé Salvador', 'price_hint': '$$', 'description': 'Beachfront resort with all-inclusive option, perfect for groups who want pool + beach access.', 'location': 'Ondina Beach'},
+                        {'name': 'Casa do Amarelindo', 'price_hint': '$$$', 'description': 'Boutique pousada in a restored colonial mansion. Intimate rooftop terrace and homemade breakfast.', 'location': 'Santo Antônio'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Pelourinho Walking Tour', 'category': 'culture', 'price_hint': '$', 'description': 'Wander the cobblestone streets of this UNESCO district — churches, street art, and live drumming.', 'group_vibe': 'chill'},
+                        {'name': 'Capoeira Class', 'category': 'activity', 'price_hint': '$', 'description': 'Learn the Afro-Brazilian martial art/dance from local masters. No experience needed.', 'group_vibe': 'active'},
+                        {'name': 'Mercado Modelo', 'category': 'culture', 'price_hint': 'Free', 'description': 'Iconic market for crafts, souvenirs, and local snacks. Haggling encouraged.', 'group_vibe': 'chill'},
+                        {'name': 'Sunset at Farol da Barra', 'category': 'activity', 'price_hint': 'Free', 'description': 'Watch the sun set from the lighthouse point — Salvador\'s most iconic sunset spot.', 'group_vibe': 'chill'},
+                        {'name': 'Baiana Cooking Class', 'category': 'food', 'price_hint': '$$', 'description': 'Learn to make moqueca, acarajé, and other Bahian dishes with a local chef.', 'group_vibe': 'chill'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Restaurante Paraíso Tropical', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Best moqueca in Salvador — rich seafood stew with dendê oil and coconut milk.'},
+                        {'name': 'Acarajé da Dinha', 'category': 'street_food', 'price_hint': '$', 'description': 'Legendary street-side acarajé (black-eyed pea fritters stuffed with shrimp and vatapá).'},
+                        {'name': 'Bar Ulisses', 'category': 'bar', 'price_hint': '$', 'description': 'No-frills locals bar in Pelourinho. Cold beer, friendly crowd, and occasional live forró music.'},
+                    ],
+                    'upcoming_events': [],
+                },
+                'research': {'status': 'complete'},
+            },
+            'Lapland, Finland': {
+                'card': {
+                    'summary': 'Arctic wilderness at its most magical — Northern Lights, husky sledding, ice hotels, and endless snow-covered forests. Lapland is a once-in-a-lifetime group adventure for those who want something truly different. Summer offers midnight sun and hiking; winter is pure frozen wonderland.',
+                    'highlights': ['Northern Lights viewing', 'Husky & reindeer sledding', 'Glass igloo stays', 'Arctic sauna + ice swimming'],
+                    'best_dates': 'December-March for snow & Northern Lights. June-August for midnight sun. September for fall colors + early auroras.',
+                    'weather_note': 'Winter: -4 to -22°F. Bring serious layers. Summer: 50-70°F with 24hr daylight.',
+                    'estimated_total_per_person': '$2,500-4,000',
+                    'compatibility_score': 72,
+                    'concerns': ['Extreme cold requires proper gear', 'Remote location — limited nightlife', 'Expensive region'],
+                    'stays': [
+                        {'name': 'Arctic TreeHouse Hotel', 'price_hint': '$$$', 'description': 'Glass-walled suites perched in the treetops — watch the Northern Lights from bed.', 'location': 'Rovaniemi'},
+                        {'name': 'Kakslauttanen Arctic Resort', 'price_hint': '$$$', 'description': 'Famous glass igloos and log cabins. Group-friendly with shared saunas and dining.', 'location': 'Saariselkä'},
+                        {'name': 'Wilderness Hotel Muotka', 'price_hint': '$$', 'description': 'Cozy aurora cabins on a frozen lake. Includes guided husky safaris.', 'location': 'Inari'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Husky Safari', 'category': 'activity', 'price_hint': '$$', 'description': 'Mush your own team of huskies across frozen landscapes. 2-4 hour options available.', 'group_vibe': 'active'},
+                        {'name': 'Northern Lights Hunt', 'category': 'activity', 'price_hint': '$$', 'description': 'Guided snowmobile or bus chase across the tundra to find clear skies for aurora viewing.', 'group_vibe': 'adventurous'},
+                        {'name': 'Ice Swimming & Sauna', 'category': 'activity', 'price_hint': '$', 'description': 'Traditional Finnish experience: hot sauna then plunge into a hole cut in a frozen lake.', 'group_vibe': 'active'},
+                        {'name': 'Reindeer Farm Visit', 'category': 'culture', 'price_hint': '$', 'description': 'Meet Sámi reindeer herders, learn about indigenous culture, and take a reindeer sleigh ride.', 'group_vibe': 'chill'},
+                        {'name': 'Snowmobile Safari', 'category': 'activity', 'price_hint': '$$', 'description': 'Rip across frozen lakes and through snowy forests at speed. Helmets and suits provided.', 'group_vibe': 'adventurous'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Nili Restaurant', 'category': 'restaurant', 'price_hint': '$$$', 'description': 'Lappish fine dining — reindeer, Arctic char, cloudberries. Atmospheric log cabin setting.'},
+                        {'name': 'Café & Bar 21', 'category': 'bar', 'price_hint': '$$', 'description': 'Warm craft cocktails after a cold day. Try the cloudberry gin and tonic.'},
+                        {'name': 'Kotahovi', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Eat in a traditional Lappish kota (tent) around an open fire. Salmon cooked on cedar planks.'},
+                    ],
+                    'upcoming_events': [],
+                },
+                'research': {'status': 'complete'},
+            },
+            'Scottsdale, AZ': {
+                'card': {
+                    'summary': 'Sun-drenched desert paradise with world-class golf, spa resorts, and stunning Sonoran Desert landscapes. Old Town Scottsdale has a walkable nightlife and gallery scene, while the surrounding desert offers hiking, Jeep tours, and hot air balloon rides. Perfect for groups who want poolside relaxation mixed with adventure.',
+                    'highlights': ['Old Town nightlife & galleries', 'Camelback Mountain hike', 'Desert Botanical Garden', 'Championship golf courses', 'Spa & resort pool days'],
+                    'best_dates': 'October-April for ideal weather (70-85°F). May gets hot. Summer is 105°F+ but resort prices drop 50%.',
+                    'weather_note': 'May: 90-100°F, sunny, low humidity. Perfect pool weather. Mornings ideal for hiking.',
+                    'estimated_total_per_person': '$1,800-3,000',
+                    'compatibility_score': 91,
+                    'concerns': ['Hot in summer months', 'Need a car for some activities'],
+                    'stays': [
+                        {'name': 'The Scott Resort & Spa', 'price_hint': '$$', 'description': 'Stylish mid-century modern resort steps from Old Town. Two pools, great restaurant, walkable.', 'location': 'Old Town'},
+                        {'name': 'Mountain Shadows', 'price_hint': '$$$', 'description': 'Sleek boutique resort at the base of Camelback Mountain. Infinity pool with sunset views.', 'location': 'Paradise Valley'},
+                        {'name': 'Hotel Valley Ho', 'price_hint': '$$', 'description': 'Retro-chic landmark with massive pool scene and OH Pool bar. Walking distance to everything.', 'location': 'Old Town'},
+                        {'name': 'Civana Wellness Resort', 'price_hint': '$$$', 'description': 'Full wellness resort with yoga, meditation, spa, and farm-to-table dining. Desert serenity.', 'location': 'Carefree'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Camelback Mountain Sunrise Hike', 'category': 'activity', 'price_hint': 'Free', 'description': 'Iconic scramble with 360° views of the Valley. Go at sunrise to beat the heat.', 'group_vibe': 'active'},
+                        {'name': 'Old Town Gallery Walk', 'category': 'culture', 'price_hint': 'Free', 'description': 'Thursday night art walks through 100+ galleries. Wine, art, and people-watching.', 'group_vibe': 'chill'},
+                        {'name': 'Desert Jeep Tour', 'category': 'activity', 'price_hint': '$$', 'description': 'Off-road through the Sonoran Desert — saguaros, coyotes, and stunning red rock formations.', 'group_vibe': 'adventurous'},
+                        {'name': 'Hot Air Balloon Ride', 'category': 'activity', 'price_hint': '$$$', 'description': 'Float over the desert at sunrise. Includes champagne toast on landing.', 'group_vibe': 'chill'},
+                        {'name': 'Topgolf Scottsdale', 'category': 'activity', 'price_hint': '$$', 'description': 'Multi-level driving range with games, food, and drinks. Great group activity day or night.', 'group_vibe': 'active'},
+                        {'name': 'Salt River Tubing', 'category': 'activity', 'price_hint': '$', 'description': 'Float down the Salt River on inner tubes with coolers. Classic Arizona group activity.', 'group_vibe': 'chill'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Citizen Public House', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Craft cocktails and elevated pub food. Try the pork belly and smoked salmon flatbread.'},
+                        {'name': 'Diego Pops', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Colorful modern Mexican with an Instagram-worthy patio. Great margaritas and street tacos.'},
+                        {'name': 'The Montauk', 'category': 'bar', 'price_hint': '$$', 'description': 'Rooftop bar in Old Town with fire pits, string lights, and craft cocktails. Perfect for groups.'},
+                        {'name': 'Hash Kitchen', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Brunch destination with a DIY Bloody Mary bar. Weekend wait is worth it.'},
+                    ],
+                    'upcoming_events': [
+                        {'name': 'Scottsdale ArtWalk', 'date': 'Every Thursday', 'description': 'Free weekly gallery walk through the Arts District. Wine and live music at most galleries.'},
+                    ],
+                },
+                'research': {'status': 'complete'},
+            },
+        }
+
+        # Update each destination's card data
+        for dest_name, dest_data in demo_cards.items():
+            cur.execute("""
+                UPDATE crab.destination_suggestions
+                SET destination_data = %s
+                WHERE plan_id = %s AND destination_name = %s AND (destination_data IS NULL OR destination_data->'card'->>'summary' = '' OR destination_data->'card'->>'summary' IS NULL)
+            """, (psycopg2.extras.Json(dest_data), demo_plan_id, dest_name))
+
+        # Add votes for destinations that don't have them (Salvador, Lapland, Scottsdale)
+        cur.execute("SELECT suggestion_id, destination_name FROM crab.destination_suggestions WHERE plan_id = %s", (demo_plan_id,))
+        demo_dests = {r['destination_name']: r['suggestion_id'] for r in cur.fetchall()}
+
+        # Get some member user_ids to create votes from
+        cur.execute("SELECT user_id FROM crab.plan_members WHERE plan_id = %s AND user_id IS NOT NULL LIMIT 12", (demo_plan_id,))
+        voter_ids = [r['user_id'] for r in cur.fetchall()]
+
+        import random
+        for dest_name, sug_id in demo_dests.items():
+            # Check if votes exist
+            cur.execute("SELECT COUNT(*) as cnt FROM crab.votes WHERE plan_id = %s AND target_id = %s", (demo_plan_id, str(sug_id)))
+            if cur.fetchone()['cnt'] == 0 and voter_ids:
+                # Seed votes: Scottsdale gets most #1s (winner), others get spread
+                vote_weights = {'Scottsdale, AZ': [1,1,1,1,1,2,2,3], 'Sagano, Japan': [1,1,2,2,2,3,3], 'Salvador, Brazil': [1,2,2,3,3,4], 'Lapland, Finland': [2,3,3,4]}
+                ranks = vote_weights.get(dest_name, [2,3])
+                for i, uid in enumerate(voter_ids[:len(ranks)]):
+                    cur.execute("""
+                        INSERT INTO crab.votes (plan_id, user_id, target_type, target_id, vote)
+                        VALUES (%s, %s, 'destination', %s, %s)
+                        ON CONFLICT (plan_id, user_id, target_type, target_id) DO NOTHING
+                    """, (demo_plan_id, uid, str(sug_id), ranks[i]))
+
         # 2. Reset any plans Judy currently owns back to a bot user
         cur.execute("""
             UPDATE crab.plans SET organizer_id = (
