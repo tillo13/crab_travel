@@ -55,37 +55,94 @@
 
 ## BLOCKER: SMS / Twilio A2P Campaign
 
-**Status: IN_PROGRESS — waiting on carrier approval (submitted 2026-03-25)**
+**Status: NOT APPROVED. Still error 30034. Waiting on carrier approval.**
 
-This is the #1 blocker before showing Adam. SMS notifications are the killer feature that makes crab.travel feel real — price drop alerts to your phone, chat messages as texts, vote reminders via SMS. Without it, everything stays web-only and the "meet users where they are" promise falls flat.
+**Submitted:** 2026-03-25 (resubmitted)
+**Last checked:** 2026-03-26 at 5:49 PM PT. Still failing. Error 30034 (carrier filtering).
+**Days waiting:** 1 day since resubmission. Typical approval: 1-7 business days.
 
-### What's Done
-- **Phone number**: `+1 (425) 600-CRAB` (425-600-2722) — active, SMS-capable
-- **Business verification**: TILLO CONSULTING LLC — **twilio-approved**
-- **Customer profile**: `BUf5cd2668261710eff4bb1c97eea9bf10` — **twilio-approved**
-- **A2P Trust Product**: `BU7406bb09eaf450c62a6fc4f40019fb1b` — **twilio-approved** (policy: "A2P Messaging: Local - Business")
-- **Messaging Service**: `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` — "Low Volume Mixed A2P" — `us_app_to_person_registered: true`
-- **A2P Campaign**: `QE2c6890da8086d771620e9b13fadeba0b` — **IN_PROGRESS**
+This is the #1 thing to tell Adam and team about. When this clears, SMS goes live instantly with zero code changes. Price drop alerts to your phone, chat messages as texts, vote reminders via SMS. Everything is built and waiting.
+
+### How to Check If It's Approved (do this every session)
+
+Run this from the crab_travel project root:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, '.')
+from utilities.google_auth_utils import get_secret
+import requests
+
+account_sid = get_secret('CRAB_TWILIO_ACCOUNT_SID')
+auth_token = get_secret('CRAB_TWILIO_AUTH_TOKEN')
+
+# Step 1: Send a test SMS
+resp = requests.post(
+    f'https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json',
+    auth=(account_sid, auth_token),
+    data={
+        'MessagingServiceSid': 'MG4c8502a7ba7c8d229fd89e2d7b8c47cc',
+        'To': '+14252461275',
+        'Body': 'crab.travel SMS test. If you got this, A2P is APPROVED!'
+    }, timeout=15
+)
+msg = resp.json()
+msg_sid = msg.get('sid', '')
+print(f'Sent: {msg_sid} (status: {msg.get(\"status\")})')
+
+# Step 2: Wait and check delivery
+import time; time.sleep(5)
+resp2 = requests.get(
+    f'https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages/{msg_sid}.json',
+    auth=(account_sid, auth_token), timeout=15
+)
+d = resp2.json()
+status = d.get('status')
+error = d.get('error_code')
+
+if status == 'delivered':
+    print('SMS DELIVERED! A2P IS APPROVED! UPDATE NEXT_STEPS AND TELL ADAM!')
+elif error == 30034:
+    print(f'STILL BLOCKED. Error 30034. Campaign not approved yet. Keep waiting.')
+else:
+    print(f'Status: {status}, Error: {error}, Message: {d.get(\"error_message\",\"none\")}')
+"
+```
+
+**What SUCCESS looks like:**
+- Status changes from `undelivered` to `delivered`
+- Error code is `None` (not 30034)
+- You actually receive the text on your phone at 425-246-1275
+- When this happens: update this file, tell Adam, celebrate
+
+**What FAILURE still looks like (current state):**
+- API accepts the message (status: `accepted`, 201 response). This is misleading. It does NOT mean it worked.
+- After 3-5 seconds, status changes to `undelivered` with error_code `30034`
+- No text arrives on your phone
+- This means carriers are still filtering. Campaign not approved yet.
+
+### What's Built and Ready
+- **Phone number**: `+1 (425) 600-CRAB` (425-600-2722). Active, SMS-capable.
+- **Business verification**: TILLO CONSULTING LLC. Twilio-approved.
+- **Customer profile**: `BUf5cd2668261710eff4bb1c97eea9bf10`. Twilio-approved.
+- **A2P Trust Product**: `BU7406bb09eaf450c62a6fc4f40019fb1b`. Twilio-approved (policy: "A2P Messaging: Local - Business").
+- **Messaging Service**: `MG4c8502a7ba7c8d229fd89e2d7b8c47cc`. "Low Volume Mixed A2P". `us_app_to_person_registered: true`.
+- **A2P Campaign**: `QE2c6890da8086d771620e9b13fadeba0b`. IN_PROGRESS.
   - Use case: LOW_VOLUME
   - Opt-in flow: web form on profile page + START keyword
   - Message samples: chat forwarding, vote reminders, trip status updates
   - All compliance text (opt-in/opt-out/help) properly configured
-- **SMS code in app**: `utilities/sms_utils.py` fully built — send_sms(), inbound webhook at `/api/sms/inbound`
-- **Notification preferences**: per-user channel (email/SMS/both) + frequency (real-time/daily/weekly/off) already in DB
+- **SMS code in app**: `utilities/sms_utils.py` fully built. send_sms(), inbound webhook at `/api/sms/inbound`.
+- **Notification preferences**: per-user channel (email/SMS/both) + frequency (real-time/daily/weekly/off) already in DB.
 
-### What's Blocking
-- **Error 30034** on all outbound SMS — carrier-level filtering because campaign_id is still `null` (not yet assigned by TCR/carriers)
-- Typical approval: 24-48 hours, sometimes up to 1 week
-- **Nothing to do on our end** — just wait
-
-### What Happens When Approved
-- `campaign_id` gets assigned, carriers whitelist the number
-- All existing SMS code starts working immediately — no deploy needed
+### When It's Approved (zero code changes needed)
+- `campaign_id` gets assigned by TCR, carriers whitelist the number
+- All existing SMS code starts working immediately
 - Price drop alerts, chat-to-SMS bridge, vote reminders all go live
-- Test by sending to 425-246-1275
+- The demo moment for Adam: "watch your phone" then SMS arrives with a trip update
 
 ### Note: Failed Brand Registration
-- `BN9925256294a428e50c9d8624fc58b5f1` was accidentally created with the wrong A2P profile (error 30794). It's stuck in FAILED state and can't be deleted via API. It does NOT affect the existing campaign (`QE2c68...`) which uses a different brand (`BN05299cc8c46ebf46b61fb87fb11d6ff9`). If it causes issues later, delete it from the Twilio console: console.twilio.com → Messaging → Trust Center → Brands.
+`BN9925256294a428e50c9d8624fc58b5f1` was accidentally created with the wrong A2P profile (error 30794). It's stuck in FAILED state and can't be deleted via API. It does NOT affect the existing campaign (`QE2c68...`) which uses a different brand (`BN05299cc8c46ebf46b61fb87fb11d6ff9`). If it causes issues later, delete it from the Twilio console: console.twilio.com then Messaging then Trust Center then Brands.
 
 ---
 
