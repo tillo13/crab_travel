@@ -3031,6 +3031,44 @@ def task_seed_demo_viewer():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/tasks/seed-booked-trips')
+def task_seed_booked_trips():
+    """Promote a handful of bot-generated plans from 'locked' to 'booked' so /live has content."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+
+    TARGET_BOOKED = 5  # how many plans to promote
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Find bot-generated plans at 'locked' status that have bot_runs with 'passed'
+        cur.execute("""
+            SELECT p.plan_id, p.title, p.status
+            FROM crab.plans p
+            JOIN crab.bot_runs br ON br.plan_id = p.plan_id
+            WHERE p.status = 'locked' AND br.status = 'passed'
+            ORDER BY br.finished_at DESC
+            LIMIT %s
+        """, (TARGET_BOOKED,))
+        candidates = cur.fetchall()
+
+        promoted = []
+        for plan in candidates:
+            cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s", (plan['plan_id'],))
+            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title']})
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({'success': True, 'promoted': promoted, 'count': len(promoted)})
+    except Exception as e:
+        logger.error(f"Seed booked trips failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/tasks/seed-demo-chat')
 def task_seed_demo_chat():
     """Use the LLM router to generate fun chat messages for demo trips."""

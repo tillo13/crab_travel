@@ -68,8 +68,9 @@
 <div class="flex gap-2 mb-4">
   <button id="filter-all" onclick="setFilter('all')" class="filter-tab active">All</button>
   <button id="filter-active" onclick="setFilter('active')" class="filter-tab">Active</button>
+  <button id="filter-voting" onclick="setFilter('voting')" class="filter-tab">Voting</button>
+  <button id="filter-charting" onclick="setFilter('charting')" class="filter-tab">Charting</button>
   <button id="filter-booked" onclick="setFilter('booked')" class="filter-tab">Booked</button>
-  <button id="filter-complete" onclick="setFilter('complete')" class="filter-tab">Completed</button>
 </div>
 
 <!-- Active Trips -->
@@ -86,6 +87,26 @@
   </div>
 </div>
 
+<!-- Voting Trips (planning & voting stage) -->
+<div class="mb-6" id="voting-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Voting</span>
+    <span class="text-xs text-amber-400 font-sans">picking destinations</span>
+    <span id="voting-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="voting-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
+<!-- Charting Trips (locked, searching for deals) -->
+<div class="mb-6" id="charting-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Charting</span>
+    <span class="text-xs text-blue-400 font-sans">finding flights & hotels</span>
+    <span id="charting-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="charting-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
 <!-- Booked Trips (fully booked, ready to go) -->
 <div class="mb-6" id="booked-section">
   <h2 class="font-display text-xl mb-3 flex items-center gap-2">
@@ -94,15 +115,6 @@
     <span id="booked-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
   </h2>
   <div id="booked-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-</div>
-
-<!-- Completed Trips -->
-<div class="mb-6" id="completed-section">
-  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
-    <span>Completed</span>
-    <span id="completed-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
-  </h2>
-  <div id="completed-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
 </div>
 
 <!-- Live Activity Feed -->
@@ -155,10 +167,11 @@ function renderBoard(data) {
   document.getElementById('stat-destinations').textContent = allDests.size;
   document.getElementById('stat-crabs').textContent = totalCrabs;
 
-  // Split runs into active, booked, and completed
+  // Split runs into active, voting, charting, and booked
   const activeRuns = validRuns.filter(r => r.status === 'running');
   const bookedRuns = validRuns.filter(r => r.status !== 'running' && (r.plan_status === 'booked' || r.plan_status === 'completed'));
-  const completedRuns = validRuns.filter(r => r.status !== 'running' && r.plan_status !== 'booked' && r.plan_status !== 'completed');
+  const chartingRuns = validRuns.filter(r => r.status !== 'running' && r.plan_status === 'locked');
+  const votingRuns = validRuns.filter(r => r.status !== 'running' && !['booked', 'completed', 'locked'].includes(r.plan_status));
 
   // Render active trips
   const activeBoard = document.getElementById('active-trips');
@@ -171,6 +184,28 @@ function renderBoard(data) {
     activeBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No active trips right now — next crawl coming soon...</div></div>';
   }
 
+  // Render voting trips
+  const votingBoard = document.getElementById('voting-trips');
+  const votingCountEl = document.getElementById('voting-count');
+  if (votingCountEl) votingCountEl.textContent = votingRuns.length > 0 ? `(${votingRuns.length})` : '';
+
+  if (votingRuns.length > 0) {
+    votingBoard.innerHTML = votingRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    votingBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No trips in voting right now...</div></div>';
+  }
+
+  // Render charting trips
+  const chartingBoard = document.getElementById('charting-trips');
+  const chartingCountEl = document.getElementById('charting-count');
+  if (chartingCountEl) chartingCountEl.textContent = chartingRuns.length > 0 ? `(${chartingRuns.length})` : '';
+
+  if (chartingRuns.length > 0) {
+    chartingBoard.innerHTML = chartingRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    chartingBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No trips charting a course yet...</div></div>';
+  }
+
   // Render booked trips
   const bookedBoard = document.getElementById('booked-trips');
   const bookedCountEl = document.getElementById('booked-count');
@@ -180,17 +215,6 @@ function renderBoard(data) {
     bookedBoard.innerHTML = bookedRuns.map(r => renderTripCard(r, false)).join('');
   } else {
     bookedBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No fully booked trips yet — watch them come together...</div></div>';
-  }
-
-  // Render completed trips
-  const completedBoard = document.getElementById('completed-trips');
-  const completedCountEl = document.getElementById('completed-count');
-  if (completedCountEl) completedCountEl.textContent = completedRuns.length > 0 ? `(${completedRuns.length})` : '';
-
-  if (completedRuns.length > 0) {
-    completedBoard.innerHTML = completedRuns.map(r => renderTripCard(r, false)).join('');
-  } else {
-    completedBoard.innerHTML = '';
   }
 
   // Apply current filter
@@ -223,12 +247,13 @@ function renderBoard(data) {
 function renderTripCard(r, isActive) {
   const isRunning = r.status === 'running';
   const isBooked = r.plan_status === 'booked' || r.plan_status === 'completed';
-  const badgeClass = isBooked ? 'badge-passed' : r.status === 'passed' ? 'badge-passed' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
+  const isCharting = r.plan_status === 'locked';
+  const badgeClass = isBooked ? 'badge-passed' : isCharting ? 'badge-running' : r.status === 'passed' ? 'badge-warning' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
   const title = (r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip')).replace('[BOT] ', '');
   const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
   const vibe = r.trip_vibe || '';
   const size = r.trip_group_size || '?';
-  const statusLabel = isBooked ? 'booked' : r.status === 'passed' ? 'complete' : r.status === 'failed' ? 'failed' : r.status === 'running' ? 'in progress' : r.status;
+  const statusLabel = isBooked ? 'booked' : isCharting ? 'charting' : r.status === 'running' ? 'in progress' : r.status === 'failed' ? 'failed' : 'voting';
   const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
 
   let duration = '';
@@ -285,19 +310,19 @@ function setFilter(filter) {
 }
 
 function applyFilter() {
-  const activeEl = document.getElementById('active-section');
-  const completedEl = document.getElementById('completed-section');
-  if (!activeEl || !completedEl) return;
+  const sections = {
+    active: document.getElementById('active-section'),
+    voting: document.getElementById('voting-section'),
+    charting: document.getElementById('charting-section'),
+    booked: document.getElementById('booked-section'),
+  };
 
   if (currentFilter === 'all') {
-    activeEl.style.display = '';
-    completedEl.style.display = '';
-  } else if (currentFilter === 'active') {
-    activeEl.style.display = '';
-    completedEl.style.display = 'none';
+    Object.values(sections).forEach(el => { if (el) el.style.display = ''; });
   } else {
-    activeEl.style.display = 'none';
-    completedEl.style.display = '';
+    Object.entries(sections).forEach(([key, el]) => {
+      if (el) el.style.display = key === currentFilter ? '' : 'none';
+    });
   }
 }
 
