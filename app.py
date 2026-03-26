@@ -2654,8 +2654,8 @@ def task_seed_demo_viewer():
         for i, plan in enumerate(plans):
             plan_id = plan['plan_id']
 
-            # Make Judy the organizer of every 3rd plan (so demo visitors see organizer view)
-            if i % 3 == 0 and plan['organizer_id'] != judy_id:
+            # Make Judy the organizer of every 20th plan (so demo visitors occasionally see organizer view)
+            if i % 20 == 0 and plan['organizer_id'] != judy_id:
                 cur.execute("UPDATE crab.plans SET organizer_id = %s WHERE plan_id = %s", (judy_id, plan_id))
                 owned += 1
 
