@@ -73,16 +73,16 @@ This is the #1 blocker before showing Adam. SMS notifications are the killer fea
 
 ### BEFORE ADAM DEMO
 - **SMS working** — wait for A2P campaign approval, then test. This is the demo moment: "watch your phone" → SMS arrives with trip update.
-- **Expense tracking UI** — DB + CRUD exist, no frontend. Add form on trip summary (who paid, amount, category) + per-person balances. This is the "spreadsheet killer" moment.
+- **Expense tracking UI** — ~~DB + CRUD exist, no frontend~~ **DONE** — expenses seeded on demo trip, "who owes who" balances on trip summary. Next: add expense form for manual entry.
 
 ### High Impact (Next Session)
+- **Airbnb / vacation rental integration** — THIS IS THE BIG ONE. Large group trips (10+ people) always have one person fronting $3-5K for the Airbnb on their card. That single booking is the anchor expense that drives the entire "who owes who" flow. Airbnb integration isn't just another adapter — it's the expense tracking killer feature. The pain: one person books, then spends 3 months chasing 14 Venmo requests. The solution: crab.travel shows the booking, auto-splits it, and shows everyone exactly what they owe. Investigate Airbnb Affiliate API, VRBO/Vacasa alternatives. Show "Stays" as separate category from hotels. Group-optimized search: filter by guest count, bedrooms, shared spaces.
 - **Itinerary editor** — 21 items exist on demo trip but no add/edit/reorder UI. Add "Add item" button, drag-and-drop.
 - **Auto-generate itinerary via AI** — when all watches booked, LLM generates day-by-day plan from flight times + hotel + destination research.
 
 ### Medium Impact
 - **Amadeus flight integration** — free tier 2K searches/month, add as adapter
 - **Kiwi Tequila integration** — free for affiliates, good for multi-city/flexible routing
-- **Airbnb / vacation rental integration** — large groups need whole-home rentals. Investigate Airbnb Affiliate API, VRBO/Vacasa alternatives. Show "Stays" as separate category from hotels.
 
 ### Infrastructure
 - **Connection pool monitoring** — `/admin/pool` showing `pg_stat_activity`, per-app counts, leak detection
