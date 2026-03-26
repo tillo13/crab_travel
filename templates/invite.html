@@ -664,6 +664,16 @@
     </div>
   </div>
 
+  {% if viewing_as %}
+  {# CTA for demo viewers #}
+  <div class="text-center mt-10 py-8 border-t border-white/6">
+    <p class="text-crab-sand-dim text-sm mb-4">This is what your trip could look like. Ready to plan your own?</p>
+    <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+      Start your own trip
+    </a>
+  </div>
+  {% endif %}
+
 </div>
 
 <script>
