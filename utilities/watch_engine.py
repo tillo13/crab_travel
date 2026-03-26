@@ -22,8 +22,6 @@ from utilities.search_engine import _destination_iata
 from utilities.adapters.duffel import DuffelAdapter
 from utilities.adapters.liteapi import LiteAPIAdapter
 from utilities.adapters.travelpayouts import TravelpayoutsAdapter
-from utilities.adapters.xotelo import XoteloAdapter
-
 logger = logging.getLogger(__name__)
 
 
@@ -227,11 +225,12 @@ def _search_best_flight(origin, destination, checkin, checkout):
 
 def _search_best_hotel(destination, checkin, checkout):
     """Search adapters for the cheapest hotel in this destination.
-    Order: Xotelo (free, real prices) → Travelpayouts (free) → LiteAPI (sandbox).
+    Order: Travelpayouts (free) → LiteAPI (sandbox).
+    Xotelo removed — requires RapidAPI auth (not free).
     """
     best = None
 
-    for AdapterClass in [XoteloAdapter, TravelpayoutsAdapter, LiteAPIAdapter]:
+    for AdapterClass in [TravelpayoutsAdapter, LiteAPIAdapter]:
         try:
             adapter = AdapterClass()
             hotels = adapter.search_hotels(

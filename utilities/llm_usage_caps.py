@@ -72,7 +72,8 @@ _daily_counts = {}     # backend -> count (fast path)
 _count_date = None     # date of current counts
 _last_db_sync = 0      # timestamp of last DB sync
 _app_name = None       # set by init()
-_db_module = None      # set by init() — the project's postgres_utils or similar
+_db_write_fn = None    # set by init()
+_db_read_fn = None     # set by init()
 
 DB_SYNC_INTERVAL = 300  # Sync from DB every 5 minutes
 
@@ -92,10 +93,6 @@ def init(app_name, db_write_fn=None, db_read_fn=None):
     # Seed from DB on startup
     if db_read_fn:
         sync_from_db()
-
-
-_db_write_fn = None
-_db_read_fn = None
 
 
 def _reset_if_new_day():
