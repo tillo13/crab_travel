@@ -2941,6 +2941,82 @@ def task_seed_demo_viewer():
 
             joined += 1
 
+        # Seed fun chat messages on demo trips
+        demo_chats = {
+            'qL6zhRAI': [  # Booked Scottsdale trip
+                ('Leila Torres', "ok team, Scottsdale won the vote and I just booked everything. you're welcome."),
+                ('Jin Nakamura', "wait we're actually doing this?? I thought we were still debating Lapland"),
+                ('Priya Sharma', "Jin you voted for Scottsdale THREE times"),
+                ('Jin Nakamura', "...I was testing the voting system"),
+                ('Maya Chen', "has anyone been to Old Town? my coworker said the nightlife is unreal"),
+                ('Kofi Mensah', "can we talk about the $657 hotel for a sec. is that per night or per soul"),
+                ('Leila Torres', "per night lol but split across rooms it's like $165 each. there's a pool bar."),
+                ('Kofi Mensah', "sold. say no more."),
+                ('Rosa Martinez', "I'm bringing my own sunscreen supply. last trip to Arizona I turned into a lobster within 40 minutes"),
+                ('Wei Zhang', "Camelback Mountain at sunrise — who's in? we need to leave the hotel at like 5am"),
+                ('Hana Osei', "Wei I love you but absolutely not"),
+                ('Tom Rivera', "I'll go! also putting Salt River tubing on the itinerary, non-negotiable"),
+                (DEMO_VIEWER_NAME, "this trip is going to be incredible. I already looked up every taco place in Old Town"),
+                ('Priya Sharma', "Judy has her priorities straight"),
+                ('Chloe Park', "can someone explain how we have 12 people going to the desert in May and nobody mentioned it'll be 100 degrees"),
+                ('Leila Torres', "that's what the pool is for Chloe. and the air conditioning. and the frozen margaritas."),
+                ('Theo Kim', "I just want everyone to know I voted for Lapland and I'm still not over it"),
+                ('Maya Chen', "Theo you can build a snowman at the hotel ice machine"),
+            ],
+            'xL2aRt-k': [  # Voting trip
+                ('Amara Okafor', "ok I added Reykjavik, Marrakech, AND Luang Prabang. go big or go home"),
+                ('Ravi Patel', "these could not be more different destinations lmao"),
+                ('Amara Okafor', "that's the POINT ravi. variety is the spice of group travel"),
+                ('Sofia Reyes', "I'm voting Marrakech. I need tagine and a riad with a rooftop pool."),
+                ('Kenji Watanabe', "Luang Prabang is so underrated. night markets, temples, the Mekong at sunset..."),
+                ('Liam O\'Brien', "counterpoint: ICELAND. volcanos! hot springs! northern lights! also we can say we went to Iceland"),
+                (DEMO_VIEWER_NAME, "I'm torn between Marrakech and Luang Prabang honestly. both sound amazing"),
+                ('Ravi Patel', "whoever picks, can we please agree on a place with good wifi. I'm looking at you, Luang Prabang."),
+                ('Kenji Watanabe', "Ravi the whole point is to DISCONNECT"),
+                ('Ravi Patel', "the whole point is to post about it on instagram actually"),
+            ],
+            'TpPeETPm': [  # Planning trip
+                ('Elena Volkov', "alright the votes are in. looks like we're exploring the Andes!"),
+                ('Diego Santos', "USHUAIA!! the end of the world!! this is going to be legendary"),
+                ('Yuki Tanaka', "I've been researching flights and... brace yourselves"),
+                ('Aisha Ibrahim', "how bad"),
+                ('Yuki Tanaka', "like $1200 bad. but I found a routing through Santiago that's $890"),
+                ('Diego Santos', "queen behavior. book it."),
+                ('Nina Larsson', "what do we even pack for Patagonia in May? it's their autumn right?"),
+                ('Elena Volkov', "layers. so many layers. also waterproof everything."),
+                (DEMO_VIEWER_NAME, "I just looked at the glacier trek options and I'm already nervous-excited"),
+                ('Aisha Ibrahim', "same but like 80% nervous 20% excited"),
+                ('Diego Santos', "that ratio will flip once you see the mountains. trust."),
+            ],
+        }
+
+        for trip_token, messages in demo_chats.items():
+            # Get plan_id from token
+            cur.execute("SELECT plan_id FROM crab.plans WHERE invite_token = %s", (trip_token,))
+            trip_row = cur.fetchone()
+            if not trip_row:
+                continue
+            trip_plan_id = trip_row['plan_id']
+
+            # Check if messages already seeded (skip if chat has 10+ messages)
+            cur.execute("SELECT COUNT(*) as cnt FROM crab.messages WHERE plan_id = %s", (trip_plan_id,))
+            if cur.fetchone()['cnt'] >= 10:
+                continue
+
+            # Clear existing messages and seed fresh
+            cur.execute("DELETE FROM crab.messages WHERE plan_id = %s", (trip_plan_id,))
+
+            # Get member user_ids by display name
+            cur.execute("SELECT user_id, display_name FROM crab.plan_members WHERE plan_id = %s AND user_id IS NOT NULL", (trip_plan_id,))
+            name_to_uid = {r['display_name']: r['user_id'] for r in cur.fetchall()}
+
+            for display_name, content in messages:
+                uid = name_to_uid.get(display_name) or name_to_uid.get(display_name.replace('[BOT] ', '')) or judy_id
+                cur.execute("""
+                    INSERT INTO crab.messages (plan_id, user_id, display_name, content)
+                    VALUES (%s, %s, %s, %s)
+                """, (trip_plan_id, uid, display_name.replace('[BOT] ', ''), content))
+
         conn.commit()
         cur.close()
         conn.close()
