@@ -125,6 +125,13 @@ class KiwiAdapter(TravelAdapter):
     source_key = "kiwi"
 ```
 
+### 14. Airbnb / vacation rental integration
+Large group trips (10+ people) often need whole-home rentals, not hotel rooms. Airbnb is a better fit for groups splitting a house. Investigate:
+- Airbnb Affiliate API (if available) or scraping approach
+- VRBO/Vacasa affiliate programs as alternatives
+- Show "Stays" as a separate category from hotels in watch engine
+- Group-optimized search: filter by guest count, bedrooms, shared spaces
+
 ---
 
 ## Infrastructure / DevOps

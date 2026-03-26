@@ -2717,17 +2717,9 @@ def task_seed_demo_viewer():
         """, (demo_plan_id,))
         if not cur.fetchone():
             cur.execute("""
-                INSERT INTO crab.destination_suggestions
-                    (plan_id, destination_name, suggested_by, status, research_data)
-                VALUES (%s, 'Scottsdale, AZ', %s, 'ready', %s)
-            """, (demo_plan_id, judy_id, json.dumps({
-                'summary': 'Sun-drenched desert paradise with world-class golf, spa resorts, and stunning Sonoran Desert landscapes. Perfect for groups who want poolside relaxation mixed with hiking, Jeep tours, and incredible Southwestern cuisine.',
-                'highlights': ['Old Town Scottsdale nightlife & galleries', 'Camelback Mountain sunrise hike', 'Desert Botanical Garden', 'Championship golf courses', 'Spa & resort pool days'],
-                'best_for': ['Golf lovers', 'Foodies', 'Spa seekers', 'Desert adventurers'],
-                'avg_daily_cost': '$180-350/person',
-                'weather': 'Sunny, 90-105°F in May',
-                'getting_there': 'PHX airport, 15min drive',
-            })))
+                INSERT INTO crab.destination_suggestions (plan_id, suggested_by, destination_name, status)
+                VALUES (%s, %s, 'Scottsdale, AZ', 'ready')
+            """, (demo_plan_id, judy_id))
 
         # Also ensure demo trip status is 'booked'
         cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s AND status != 'booked'", (demo_plan_id,))
