@@ -2645,7 +2645,15 @@ def task_seed_demo_viewer():
         """, (DEMO_VIEWER_GOOGLE_ID, 'judy@tunaboat.crab.travel', DEMO_VIEWER_NAME, None, 'SEA'))
         judy_id = cur.fetchone()['pk_id']
 
-        # 2. Get ALL plans
+        # 2. Reset any plans Judy currently owns back to a bot user
+        cur.execute("""
+            UPDATE crab.plans SET organizer_id = (
+                SELECT u.pk_id FROM crab.users u WHERE u.google_id LIKE 'bot_%%' LIMIT 1
+            ) WHERE organizer_id = %s
+        """, (judy_id,))
+        reset_count = cur.rowcount
+
+        # 3. Get ALL plans
         cur.execute("SELECT plan_id, status, organizer_id FROM crab.plans ORDER BY created_at DESC")
         plans = cur.fetchall()
 
