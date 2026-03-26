@@ -2584,20 +2584,21 @@ def sms_inbound():
 
 # ── Demo viewer seed ──────────────────────────────────────────
 
-DEMO_PLAN_ID = '25438c20-0bb3-4137-9f5f-2ebdbeb0010b'
-DEMO_VIEWER_GOOGLE_ID = 'demo_viewer_alex_t'
+DEMO_VIEWER_GOOGLE_ID = 'demo_viewer_judy_tunaboat'
+DEMO_VIEWER_NAME = 'Judy Tunaboat'
 
 @app.route('/tasks/seed-demo-viewer')
 def task_seed_demo_viewer():
-    """One-time task: create 'Alex T.' demo viewer with availability on the demo trip."""
+    """One-time task: create demo viewer 'Judy Tunaboat' and add her to ALL trips with availability."""
     task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
     if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
         return 'Forbidden', 403
     try:
+        from utilities.invite_utils import generate_token
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        # 1. Upsert Alex T. user
+        # 1. Upsert Judy Tunaboat user
         cur.execute("""
             INSERT INTO crab.users (google_id, email, full_name, picture_url, home_airport)
             VALUES (%s, %s, %s, %s, %s)
@@ -2606,47 +2607,47 @@ def task_seed_demo_viewer():
                 home_airport = EXCLUDED.home_airport,
                 updated_at = NOW()
             RETURNING pk_id
-        """, (DEMO_VIEWER_GOOGLE_ID, 'alex.t@demo.crab.travel', 'Alex T.', None, 'SEA'))
-        alex_id = cur.fetchone()['pk_id']
+        """, (DEMO_VIEWER_GOOGLE_ID, 'judy@tunaboat.crab.travel', DEMO_VIEWER_NAME, None, 'SEA'))
+        judy_id = cur.fetchone()['pk_id']
 
-        # 2. Add as member of demo trip (skip if already exists)
-        cur.execute("""
-            SELECT pk_id FROM crab.plan_members
-            WHERE plan_id = %s AND user_id = %s
-        """, (DEMO_PLAN_ID, alex_id))
-        member = cur.fetchone()
-        if not member:
-            from utilities.invite_utils import generate_token
+        # 2. Get ALL plans
+        cur.execute("SELECT plan_id, status FROM crab.plans ORDER BY created_at DESC")
+        plans = cur.fetchall()
+
+        joined = 0
+        for plan in plans:
+            plan_id = plan['plan_id']
+
+            # Skip if already a member
+            cur.execute("SELECT pk_id FROM crab.plan_members WHERE plan_id = %s AND user_id = %s", (plan_id, judy_id))
+            if cur.fetchone():
+                continue
+
             cur.execute("""
                 INSERT INTO crab.plan_members (plan_id, user_id, display_name, email, member_token, role, home_airport, is_flexible)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING pk_id
-            """, (DEMO_PLAN_ID, alex_id, 'Alex T.', 'alex.t@demo.crab.travel',
+            """, (plan_id, judy_id, DEMO_VIEWER_NAME, 'judy@tunaboat.crab.travel',
                   generate_token(), 'member', 'SEA', False))
-            member = cur.fetchone()
 
-        # 3. Add tentative dates (May 19-24, covering the demo trip window)
-        cur.execute("DELETE FROM crab.member_tentative_dates WHERE plan_id = %s AND user_id = %s", (DEMO_PLAN_ID, alex_id))
-        # Ideal dates: May 20-23 (matches the trip exactly)
-        cur.execute("""
-            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
-            VALUES (%s, %s, '2026-05-20', '2026-05-23', 'ideal')
-        """, (DEMO_PLAN_ID, alex_id))
-        # If-needed buffer: May 19 and May 24
-        cur.execute("""
-            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
-            VALUES (%s, %s, '2026-05-19', '2026-05-19', 'works')
-        """, (DEMO_PLAN_ID, alex_id))
-        cur.execute("""
-            INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
-            VALUES (%s, %s, '2026-05-24', '2026-05-24', 'works')
-        """, (DEMO_PLAN_ID, alex_id))
+            # Add tentative dates — grab the plan's date window from existing member data
+            cur.execute("""
+                SELECT MIN(date_start) as earliest, MAX(date_end) as latest
+                FROM crab.member_tentative_dates WHERE plan_id = %s
+            """, (plan_id,))
+            dates = cur.fetchone()
+            if dates and dates['earliest'] and dates['latest']:
+                cur.execute("""
+                    INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+                    VALUES (%s, %s, %s, %s, 'ideal')
+                """, (plan_id, judy_id, dates['earliest'], dates['latest']))
+
+            joined += 1
 
         conn.commit()
         cur.close()
         conn.close()
-        logger.info(f"✅ Demo viewer Alex T. seeded (user_id={alex_id})")
-        return jsonify({'success': True, 'user_id': alex_id, 'member_id': member['pk_id']})
+        logger.info(f"✅ Demo viewer {DEMO_VIEWER_NAME} seeded (user_id={judy_id}, joined {joined} plans)")
+        return jsonify({'success': True, 'user_id': judy_id, 'plans_joined': joined, 'total_plans': len(plans)})
     except Exception as e:
         logger.error(f"❌ Seed demo viewer failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
