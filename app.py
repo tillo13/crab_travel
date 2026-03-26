@@ -405,7 +405,8 @@ def trip_summary(plan_id):
     plan = get_plan_by_id(plan_id)
     if not plan:
         return render_template('404.html'), 404
-    # Allow unauthenticated access for bot trips
+    # Auto-login as Judy on bot trips
+    _auto_login_demo_viewer(plan)
     is_bot_trip = plan.get('title', '').startswith('[BOT]')
     if not is_bot_trip:
         if AUTH_ENABLED and 'user' not in session:
@@ -1204,11 +1205,45 @@ def join_plan(invite_token):
     return redirect(f'/to/{invite_token}', code=301)
 
 
+def _auto_login_demo_viewer(plan):
+    """For bot trips, auto-login anonymous visitors as Judy Tunaboat so they get
+    the full interactive experience (comment, change dates, vote, etc.)."""
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        return
+    if session.get('user'):
+        return  # Already logged in as someone
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT pk_id, email, full_name, picture_url FROM crab.users WHERE google_id = %s",
+                    (DEMO_VIEWER_GOOGLE_ID,))
+        judy = cur.fetchone()
+        cur.close()
+        conn.close()
+        if judy:
+            session.permanent = True
+            session['user'] = {
+                'id': judy['pk_id'],
+                'email': judy['email'],
+                'name': judy['full_name'],
+                'picture': judy['picture_url'],
+            }
+            session['_demo_viewer'] = True
+            session.modified = True
+            logger.info(f"Auto-login demo viewer: {judy['full_name']} (user_id={judy['pk_id']})")
+    except Exception as e:
+        logger.warning(f"Demo viewer auto-login failed: {e}")
+
+
 @app.route('/to/<invite_token>')
 def invite_page(invite_token):
     plan = get_plan_by_invite_token(invite_token)
     if not plan:
         return render_template('index.html', active_page='home', error='Plan not found'), 404
+
+    # Auto-login anonymous visitors as Judy Tunaboat on bot trips
+    _auto_login_demo_viewer(plan)
 
     user = session.get('user')
 
@@ -1322,9 +1357,9 @@ def invite_page(invite_token):
             })
         watches_json = json.dumps(watches_data, default=_default_ser)
 
-    # Show "Viewing as" banner for demo viewer (apikey-authed user on demo trip)
+    # Show "Viewing as" banner for demo viewer on bot trips
     viewing_as = None
-    if user and is_member and 'apikey' in request.args:
+    if user and is_member and (session.get('_demo_viewer') or is_bot_trip):
         viewing_as = user.get('name', 'Demo User')
 
     return render_template('invite.html',
@@ -2611,12 +2646,18 @@ def task_seed_demo_viewer():
         judy_id = cur.fetchone()['pk_id']
 
         # 2. Get ALL plans
-        cur.execute("SELECT plan_id, status FROM crab.plans ORDER BY created_at DESC")
+        cur.execute("SELECT plan_id, status, organizer_id FROM crab.plans ORDER BY created_at DESC")
         plans = cur.fetchall()
 
         joined = 0
-        for plan in plans:
+        owned = 0
+        for i, plan in enumerate(plans):
             plan_id = plan['plan_id']
+
+            # Make Judy the organizer of every 3rd plan (so demo visitors see organizer view)
+            if i % 3 == 0 and plan['organizer_id'] != judy_id:
+                cur.execute("UPDATE crab.plans SET organizer_id = %s WHERE plan_id = %s", (judy_id, plan_id))
+                owned += 1
 
             # Skip if already a member
             cur.execute("SELECT pk_id FROM crab.plan_members WHERE plan_id = %s AND user_id = %s", (plan_id, judy_id))
@@ -2646,8 +2687,8 @@ def task_seed_demo_viewer():
         conn.commit()
         cur.close()
         conn.close()
-        logger.info(f"✅ Demo viewer {DEMO_VIEWER_NAME} seeded (user_id={judy_id}, joined {joined} plans)")
-        return jsonify({'success': True, 'user_id': judy_id, 'plans_joined': joined, 'total_plans': len(plans)})
+        logger.info(f"✅ Demo viewer {DEMO_VIEWER_NAME} seeded (user_id={judy_id}, joined {joined}, owns {owned})")
+        return jsonify({'success': True, 'user_id': judy_id, 'plans_joined': joined, 'plans_owned': owned, 'total_plans': len(plans)})
     except Exception as e:
         logger.error(f"❌ Seed demo viewer failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
