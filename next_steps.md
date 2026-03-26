@@ -1,7 +1,27 @@
 # crab.travel — Next Steps
-*Updated: 2026-03-25 (end of session)*
+*Updated: 2026-03-26*
 
-## Done This Session (March 25)
+## Done This Session (March 26)
+
+### /live Page Overhaul
+1. **New lifecycle tabs** — replaced `All | Active | Booked | Completed` with `All | Active | Voting | Charting | Booked`
+2. **Randomized trip destiny** — each bot trip randomly ends at Voting (45%), Charting (30%), or Booked (25%) — mirrors real human behavior
+3. **Nurture system** — each cron run, CrabAI revisits 5 past trips, generates LLM chat messages as members (nudging voters, asking about dates, etc.), 15% chance organizer advances stage
+4. **Pool exhaustion fix** — consolidated /live API from 5 DB connections per request to 1. Polling slowed from 3s to 10s.
+5. **Cron slowed** — crawl cron from every 30min to every 2hrs (trips evolve like real humans, not robots)
+6. **Booked trips seeded** — realistic flight ($180-650) and hotel ($120-400) prices on all watches, confirmation numbers
+7. **Prune protection** — booked plans never get deleted by the cleanup cron
+
+### Site Copy Refresh
+8. **CrabAI branding** — replaced ALL "the AI", "our AI", "AI-powered" references with "CrabAI" across every template (about, roadmap, index, live, privacy)
+9. **About page fixed** — "per-person cost tracking coming next" → now correctly says shipped
+10. **Roadmap badges fixed** — expense tracking: "in progress" → "shipped", who-owes-who marked done
+11. **Homepage** — new "No more who owes what?" expense tracking section
+12. **/live intro** — explains Voting/Charting/Booked lifecycle with color-coded labels
+
+---
+
+## Done Previous Session (March 25)
 
 ### Infrastructure Fixes
 1. **Pool auto-recovery** — if `getconn()` fails (corrupted pool), nuke and recreate automatically
@@ -83,6 +103,25 @@ This is the #1 blocker before showing Adam. SMS notifications are the killer fea
 ### Medium Impact
 - **Amadeus flight integration** — free tier 2K searches/month, add as adapter
 - **Kiwi Tequila integration** — free for affiliates, good for multi-city/flexible routing
+
+### Future Thinking: Beyond Flights + Hotels
+The current model assumes everyone flies and books a hotel. Real humans have way more options:
+
+**Getting There:**
+- **Road trips / RV rentals** — group of 6 rents an RV, drives from Denver to Scottsdale, saves on flights AND hotels. RV share platforms (Outdoorsy, RVshare) have affiliate APIs. Could even show "drive vs. fly" cost comparison per member based on their home city.
+- **Train / Amtrak** — for domestic trips, some members might prefer rail. Especially East Coast groups.
+- **Carpooling** — 4 members in Phoenix could carpool to Scottsdale instead of flying. Platform could detect nearby members and suggest shared rides.
+- **Multi-modal** — some fly, some drive, some take the train. The platform should handle mixed transport within one trip.
+
+**Staying There:**
+- **Airbnb / VRBO / vacation rentals** — already #1 priority above, but worth noting: large groups almost always do whole-home rentals, not hotels. This is THE accommodation type for group trips.
+- **Staying with friends/family** — real humans do this! "I'll crash at my cousin's place." Platform should let members mark "I have my own accommodation" so they're excluded from hotel cost splits but still included in activities/meals.
+- **Camping** — national park trips, festival camping, glamping. Completely different cost structure.
+- **Hostels** — budget groups, backpacker trips, younger demographics.
+- **Timeshares / points** — "My uncle has a timeshare in Scottsdale, we can stay free." Members should be able to contribute non-cash assets to the trip.
+- **Split stays** — 3 nights in a hotel, then 2 nights at an Airbnb. Real groups do this.
+
+**The Big Insight:** CrabAI shouldn't assume one transport mode or one accommodation type per trip. The platform should handle "Marcus is flying from SEA, Sarah is driving from PHX, David is taking the train from LAX, and Emily has her own place there" — all in the same trip. The expense tracking and who-owes-who math needs to account for all of it.
 
 ### Infrastructure
 - **Connection pool monitoring** — `/admin/pool` showing `pg_stat_activity`, per-app counts, leak detection
