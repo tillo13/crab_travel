@@ -134,6 +134,22 @@
     <div class="rm-item rm-item-done">Deep links to booking partners with affiliate tracking</div>
     <div class="rm-item rm-item-done">Price history tracking per flight/hotel (foundation for price drop alerts)</div>
     <div class="rm-item">Kayak affiliate integration — pending approval (applied March 5)</div>
+    <div class="rm-item">Airbnb / vacation rental search for large groups (whole-home rentals)</div>
+    <div class="rm-item">Amadeus API integration (2K free searches/month)</div>
+    <div class="rm-item">Kiwi Tequila integration (flexible multi-city routing)</div>
+  </div>
+
+  <div class="rm-section" data-section="16">
+    <h3 class="font-display text-lg">Interactive Demo Mode <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-sm leading-relaxed mb-3">You shouldn't have to sign up to see what a trip looks like. The demo system lets anyone experience the full platform as "Judy Tunaboat" — a fictional member who's part of every trip. Click "See a demo trip" on the homepage and you're instantly inside a fully booked Scottsdale trip with 12 members, real flight prices, hotel bookings, and AI-generated group chat.</p>
+    <p class="text-sm leading-relaxed mb-4">A stage switcher lets you see what Voting, Planning, and Booked stages look like — three different trips at three different phases of the planning process. Navigate away from the demo to any regular page and your real account restores automatically. No login required, no friction.</p>
+    <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">What's built:</p>
+    <div class="rm-item rm-item-done">/demo route with automatic Judy Tunaboat session (stashes and restores real user)</div>
+    <div class="rm-item rm-item-done">Stage switcher: Voting / Planning / Booked pill tabs on demo trips</div>
+    <div class="rm-item rm-item-done">"Viewing as Judy Tunaboat" banner with stage navigation</div>
+    <div class="rm-item rm-item-done">Full destination cards with AI content for all 4 destinations on demo trip</div>
+    <div class="rm-item rm-item-done">LLM-generated group chat messages (via 15+ free-tier AI backends)</div>
+    <div class="rm-item rm-item-done">Auto-login as Judy for anonymous visitors on any bot trip from /live</div>
   </div>
 
   <div class="rm-section" data-section="5">
@@ -158,47 +174,47 @@
   <p class="text-crab-sand-dim text-sm mb-6 leading-relaxed">These are the features that take crab.travel from "voting tool" to "the thing that actually replaces the spreadsheet." Stage 1 answers "where and when." Stage 2 answers "how much, who's doing what, and what's the plan once we get there."</p>
 
   <div class="rm-section" data-section="6">
-    <h3 class="font-display text-lg">Price Drop Alerts <span class="rm-badge rm-badge-next">next</span></h3>
+    <h3 class="font-display text-lg">Price Drop Alerts <span class="rm-badge rm-badge-done">shipped</span></h3>
     <p class="text-sm leading-relaxed mb-3">We already track every price we see. The <code>price_history</code> table logs every flight and hotel price with timestamps, so we know exactly how prices move over time for any route or property. The infrastructure is there — we just need to connect the dots and tell people when something gets cheaper.</p>
     <p class="text-sm leading-relaxed mb-3">Here's how it would work: once a trip locks in a destination and date range, we run the search adapters on a recurring schedule (probably daily or every few hours) instead of just on-demand. Each new result gets compared against the last recorded price for that route or hotel. If a flight drops by more than 10% or falls below a threshold the user set, we fire off an email or SMS: <em>"SEA → BNA dropped from $247 to $189 on June 12. Book now?"</em> with a direct link to the booking page.</p>
     <p class="text-sm leading-relaxed mb-3">The stretch goal is a "best time to book" indicator based on price trend analysis — are prices trending down (wait) or starting to climb (book now)? Airlines and OTAs have this data but they use it to maximize their revenue. We'd use it to maximize the traveler's savings.</p>
     <p class="text-sm leading-relaxed mb-4"><strong>Why this matters:</strong> Most people book flights based on vibes — "this seems like a good price" — because they don't have time to check every day. Price monitoring is the kind of thing that's trivial for software to do and painful for humans to do. It's a perfect automation target and a genuine "wow, this saved me money" moment that builds trust in the platform.</p>
     <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">Planned:</p>
-    <div class="rm-item">Recurring search runs for locked-in trips (daily or every few hours)</div>
-    <div class="rm-item">Price comparison against last seen price per route/hotel</div>
-    <div class="rm-item">Configurable alert threshold (% drop or absolute dollar amount)</div>
-    <div class="rm-item">Email and SMS alerts with direct booking links</div>
-    <div class="rm-item">Price trend visualization on the destination card (going up vs. going down)</div>
-    <div class="rm-item">Stretch: "Best time to book" recommendation based on historical patterns</div>
+    <div class="rm-item rm-item-done">Member price watches per flight and hotel — check every 6 hours via cron</div>
+    <div class="rm-item rm-item-done">Price history tracking with sparkline charts on watch cards</div>
+    <div class="rm-item rm-item-done">AI-powered Book Now / Wait / Watch recommendations based on price trend + days to departure</div>
+    <div class="rm-item rm-item-done">Mark Booked modal with price + confirmation number capture</div>
+    <div class="rm-item rm-item-done">All-booked celebration when every member's flights + hotels are confirmed</div>
+    <div class="rm-item">Email and SMS alerts on price drops (SMS pending Twilio A2P approval)</div>
   </div>
 
   <div class="rm-section" data-section="7">
-    <h3 class="font-display text-lg">Per-Person Cost Breakdown <span class="rm-badge rm-badge-next">next</span></h3>
+    <h3 class="font-display text-lg">Per-Person Cost Breakdown <span class="rm-badge rm-badge-next">in progress</span></h3>
     <p class="text-sm leading-relaxed mb-3">This is the spreadsheet killer. Right now, the person organizing a group trip inevitably ends up maintaining a Google Sheet with columns for each person, rows for each expense, and formulas that break every time someone changes something. It's the single most tedious part of group travel and it persists long after the trip is over ("hey, you still owe me for the Airbnb deposit").</p>
     <p class="text-sm leading-relaxed mb-3">The basic version is simple: each trip gets a cost section where the organizer (or any member) can add line items — "Airbnb deposit: $2,400 paid by Adam" or "Kayak rental: $180, split 6 ways." Each item gets tagged as shared (split evenly), per-person (individual), or custom-split. The platform computes a running total per person and shows a clean dashboard: who's paid what, who owes what, and the net balance between any two people.</p>
     <p class="text-sm leading-relaxed mb-3">We're not building a payment processor — that's Venmo and Zelle's job. What we'd do is generate deep links: when you see "You owe Adam $247," there's a button that opens Venmo pre-filled with the right amount and a note. Settlement in two taps.</p>
     <p class="text-sm leading-relaxed mb-4"><strong>Why this matters:</strong> Money is the #1 source of friction in group travel. Not because people are cheap, but because nobody has visibility. When everyone can see the same number in the same place, arguments disappear. This feature alone could be the reason someone chooses crab.travel over a group text.</p>
     <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">Planned:</p>
-    <div class="rm-item">Add expense line items (description, amount, who paid, split method)</div>
-    <div class="rm-item">Split modes: even, per-person, or custom allocation</div>
-    <div class="rm-item">Running total per person with net balance between members</div>
-    <div class="rm-item">Visual "who's paid / who owes" dashboard on the plan page</div>
+    <div class="rm-item rm-item-done">Trip summary page with total cost, flights total, hotels total, per-person breakdown</div>
+    <div class="rm-item rm-item-done">Expenses database table and CRUD functions built</div>
+    <div class="rm-item rm-item-done">Booked watch prices auto-populate as cost data</div>
+    <div class="rm-item">Expense entry UI on trip summary (who paid, amount, category, split method)</div>
+    <div class="rm-item">Running balance: "who owes who" dashboard</div>
     <div class="rm-item">Venmo and Zelle deep links pre-filled with amount and note</div>
-    <div class="rm-item">Organizer can mark expenses as settled</div>
   </div>
 
   <div class="rm-section" data-section="8">
-    <h3 class="font-display text-lg">Day-by-Day Itinerary <span class="rm-badge rm-badge-next">next</span></h3>
+    <h3 class="font-display text-lg">Day-by-Day Itinerary <span class="rm-badge rm-badge-next">in progress</span></h3>
     <p class="text-sm leading-relaxed mb-3">Right now, the destination card shows a flat board of pins — stays, activities, restaurants, events — all in one view. That's great for the discovery and voting phase ("ooh, that BBQ place looks amazing"). But once the trip is locked in, people want a schedule: what are we doing Thursday? What about Friday morning?</p>
     <p class="text-sm leading-relaxed mb-3">The itinerary builder would take the pins from the destination card and let the organizer (or anyone) drag them into day-by-day time slots. Thursday morning: arrive, check into hotel. Thursday afternoon: kayaking. Thursday evening: dinner at Martin's BBQ, then Broadway honky-tonks. Friday morning: Parthenon replica, then brunch. The whole group sees the same timeline and can suggest swaps or additions.</p>
     <p class="text-sm leading-relaxed mb-3">The AI layer here would suggest optimal ordering based on geography (don't put a morning activity 40 minutes from the afternoon one), operating hours (museum closes at 5, don't schedule it for 6pm), and group preferences (morning people vs. night owls based on what they said in their profiles). It wouldn't force anything — just surface suggestions like "swap these two so you're not driving across town twice."</p>
     <p class="text-sm leading-relaxed mb-4"><strong>Why this matters:</strong> The itinerary is what makes a trip feel real. It's the difference between "we're going to Nashville" and "we're going to Nashville and here's exactly what we're doing." It also reduces the on-the-ground decision fatigue that kills the vibe on day 2 of every group trip ("I don't know, what do YOU want to do?").</p>
     <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">Planned:</p>
-    <div class="rm-item">Day-by-day timeline view with morning / afternoon / evening slots</div>
+    <div class="rm-item rm-item-done">Itinerary data model built — items with day, time slot, title, description, category</div>
+    <div class="rm-item rm-item-done">Trip summary page renders day-by-day itinerary (21 items on demo trip)</div>
+    <div class="rm-item">Add/edit/reorder UI on trip summary page</div>
     <div class="rm-item">Drag pins from destination card into itinerary slots</div>
-    <div class="rm-item">Shared view — all members see the same schedule</div>
-    <div class="rm-item">AI-suggested ordering based on location proximity and operating hours</div>
-    <div class="rm-item">Free-form notes per day ("check-in is at 3pm," "Uber from airport")</div>
+    <div class="rm-item">AI auto-generate itinerary from booked flights + hotels + destination research</div>
     <div class="rm-item">Mobile-optimized view for on-the-ground reference during the trip</div>
   </div>
 
@@ -307,7 +323,7 @@
 </div>
 
 <div class="text-center text-crab-sand-dim text-xs mb-12 opacity-50">
-  Last updated March 2026
+  Last updated March 25, 2026
 </div>
 
 </div>

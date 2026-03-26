@@ -1,201 +1,95 @@
 # crab.travel — Next Steps
-*Updated: 2026-03-25*
+*Updated: 2026-03-25 (end of session)*
 
-## What Was Built This Session
+## Done This Session (March 25)
 
-### Features Shipped
-1. **Calendar overhaul** — names fill cells instead of "+N", click any date for modal with full member details, auto-skips to first month with data
-2. **Booking progress tracker** — progress bars for flights/hotels, per-member status chips, Mark Booked modal captures price + confirmation #, all-booked celebration
-3. **AI watch recommendations** — smart Book Now/Wait/Watch verdicts per watch based on price trend + days to departure, auto-computed on every cron price check
-4. **IATA code resolution** — LLM-powered destination→airport lookup (Scottsdale AZ → PHX), expanded 70-city local map, state-suffix stripping
-5. **Xotelo hotel adapter** — free hotel prices from Booking.com/Expedia/Agoda (no API key needed)
-6. **Trip Summary page** (`/plan/{id}/summary`) — flights, hotels, day-by-day itinerary, cost breakdown per person
-7. **Admin overhaul** — tabs (Overview/Users/Plans/Activity), search, pagination, status filters, sort dropdowns
-8. **Ops Dashboard** (`/admin/ops`) — LLM backend health, hourly volume chart, error log, watch engine stats, AI rec breakdown
-9. **/live reframe** — "See It Live" product showcase, "Example Trip" banners, "Booked" filter tab with trip summary links
-10. **Dark/light toggle fixed** — sun in dark mode, moon in light mode
-11. **Repo public** — github.com/tillo13/crab_travel with README, single `main` branch
-12. **Playwright auth** — `?apikey=SECRET&user_id=1` bypasses OAuth for testing
-13. **DB pool audit** — all 10 kumori apps fixed: statement_timeout=30s, pool sizes right-sized, 2manspades leak fixed
+### Infrastructure Fixes
+1. **Pool auto-recovery** — if `getconn()` fails (corrupted pool), nuke and recreate automatically
+2. **`/_ah/warmup` handler** — App Engine pre-tests DB pool on new instances before routing traffic
+3. **Stuck bot run cleanup** — `/tasks/crawl` auto-fails runs stuck in "running" for >1 hour
+4. **LLM pipeline fix** — `llm_usage_caps.py` had globals clobbering `_db_write_fn`/`_db_read_fn` after `init()`. DB sync was permanently broken. Fixed.
+5. **Xotelo removed** — requires RapidAPI auth (not free as assumed). Hotel watches now Travelpayouts → LiteAPI.
+6. **Wattson deployed** (user did this)
+7. **Old App Engine versions clean** — deploy tool auto-prunes to 3 versions
 
-### Demo Trip Seeded
-- **URL:** `crab.travel/to/qL6zhRAI`
-- **Summary:** `crab.travel/plan/25438c20-0bb3-4137-9f5f-2ebdbeb0010b/summary`
-- 12 members, all flights + hotels booked with real prices, hotel names, confirmation numbers
-- 4-day itinerary (Scottsdale, May 20-23) with 21 items: restaurants, hikes, tours, nightlife
-- Plan status: "booked"
+### Demo System (Judy Tunaboat)
+8. **Demo viewer: Judy Tunaboat** — fake user (user_id=81869) auto-joins all trips with availability + blackout dates
+9. **`/demo` route** — switches any user (even logged-in) to Judy, stashes real session, auto-restores on nav away
+10. **Auto-login on bot trips** — anonymous visitors hitting any `/to/<token>` bot trip become Judy automatically
+11. **"Viewing as Judy Tunaboat" banner** — coral pill with eye icon
+12. **Stage switcher** — pill tabs: Voting / Planning / Booked → `/demo/voting`, `/demo/planning`, `/demo/booked`
+13. **Booked trip UI** — correct status badge ("Booked — trip confirmed!"), cost stats in header, hide join form + suggest input
+14. **Scottsdale AZ added** to demo trip destinations with full card content
+15. **All 4 destination cards populated** — Scottsdale (91% match), Sagano, Salvador, Lapland with stays/activities/food/highlights
+16. **Votes seeded** — Scottsdale wins with 6 #1 votes, proper distribution across all destinations
+17. **LLM-generated chat messages** — `/tasks/seed-demo-chat` uses the LLM router to generate fun group chat threads for all 3 demo trips. Confirmed working via Cerebras, Groq, Groq-Kimi, Groq-GPToss, LLM7.
 
----
-
-## Immediate Fix Needed (Start of Next Session)
-
-### 1. /live page shows 0 trips after deploy storm
-**Root cause:** Fresh App Engine instances start with an empty psycopg2 connection pool. If ANY of the first few requests fail (pool exhaustion from other apps deploying simultaneously), the pool marks those connections as "checked out" permanently — the pool object is corrupted even though the DB connections are fine.
-
-**Fix options:**
-- A) Add pool health check on startup — if `pool.getconn()` fails, recreate the pool
-- B) Add a `/tasks/warmup` handler that pre-opens a connection to test the pool
-- C) Simply wait — once the deploy storm settles and old versions are deleted, new instances get clean pools
-
-**Also:** 790 bot runs were stuck in "running" status (now marked failed). The bot runner should auto-fail runs that have been "running" for > 1 hour. Add cleanup to the `/tasks/crawl` cron.
-
-### 2. Crab_travel needs one final clean deploy
-After all other app deploys finish and old versions drain, deploy crab_travel one more time to get a fresh pool. Then run the E2E test.
+### CTAs
+18. **Landing page** — "See a demo trip" button (teal, links to `/demo`) alongside "Start planning"
+19. **Landing page bottom** — "See it live" button alongside "Start planning"
+20. **/live page** — "Start your own trip →" coral button
+21. **Trip summary footer** — "Start your own trip" CTA
+22. **Invite page footer** — "Start your own trip" CTA (demo viewers only)
 
 ---
 
-## Short-Term (Next 1-2 Sessions)
+## Remaining — Prioritized
 
-### 3. Hotel adapter verification
-Xotelo adapter was added but hasn't been tested in production via the watch cron yet. Next `check-watches` run (every 8h) should use Xotelo for hotels. Verify:
-- Does Xotelo return prices for "Scottsdale AZ"?
-- Do hotel prices show up on watch cards?
-- Do non-demo trips get hotel data?
+### High Impact (Next Session)
+- **Expense tracking UI** — DB + CRUD exist, no frontend. Add form on trip summary (who paid, amount, category) + per-person balances.
+- **Itinerary editor** — 21 items exist on demo trip but no add/edit/reorder UI. Add "Add item" button, drag-and-drop.
+- **Auto-generate itinerary via AI** — when all watches booked, LLM generates day-by-day plan from flight times + hotel + destination research.
 
-If Xotelo doesn't work for the destination format, the `_destination_iata` function may need to pass city names differently to the hotel adapter (hotels use city names, not IATA codes).
+### Medium Impact
+- **Amadeus flight integration** — free tier 2K searches/month, add as adapter
+- **Kiwi Tequila integration** — free for affiliates, good for multi-city/flexible routing
+- **Airbnb / vacation rental integration** — large groups need whole-home rentals. Investigate Airbnb Affiliate API, VRBO/Vacasa alternatives. Show "Stays" as separate category from hotels.
 
-### 4. LLM pipeline is broken
-Last LLM call was March 24 15:35 UTC. All backends stopped working. The bots still run (creating plans, joining, voting don't need LLMs) but:
-- No AI destination research on new trips
-- No AI-generated chat messages
-- No destination card content
-
-**Investigation needed:** Check `crab.llm_calls` error types from March 24. Likely all backends hit daily caps simultaneously, or the `_log` function broke. The `llm_router.py` may need its caps/quotas refreshed.
-
-### 5. Deploy wattson
-`deploy.json` was created at `/Users/at/Desktop/code/wattson/deploy.json` but wattson hasn't been deployed yet. Run:
-```bash
-cd ~/Desktop/code/wattson && deploy "DB pool: add 30s statement_timeout"
-```
-
-### 6. Clean up old App Engine versions across ALL apps
-Each app may have 2-3 old versions still "SERVING" (0% traffic but holding stale pools). For each app:
-```bash
-gcloud app versions list --service=default --project=PROJECT_ID
-gcloud app versions delete OLD_VERSION --service=default --project=PROJECT_ID --quiet
-```
-
----
-
-## Medium-Term (Next Week)
-
-### 7. Interactive demo mode
-Adam Agust demo: instead of just a static seeded trip, build a guided walkthrough where a visitor can click through the entire flow — create trip → watch members join → vote → lock → see prices → book → summary. Could be a "demo" button on the landing page that auto-populates a personal trip in real-time.
-
-### 8. Expense tracking UI
-`crab.expenses` table exists, CRUD functions exist in postgres_utils.py, but no UI. Add:
-- Expense form on trip summary page (who paid, amount, category)
-- Per-person balance ("Alice owes Bob $47")
-- Integration with booked watch prices as auto-expenses
-
-### 9. Itinerary editor
-Currently itinerary items are seeded via script. Add:
-- "Add item" button on trip summary
-- Drag-and-drop reordering
-- Link AI recommendations to itinerary items
-- Auto-generate itinerary from booked watches + recommendations via LLM
-
-### 10. Auto-generate itinerary via AI
-When a trip has all watches booked, use the LLM router to generate a day-by-day itinerary based on:
-- Flight arrival/departure times
-- Hotel check-in/out
-- Destination research from `crab.destination_suggestions`
-- Group preferences from `crab.plan_preferences`
-
-### 11. "Start your own trip" CTA
-Add prominent call-to-action on:
-- Trip summary page footer ("Plan your group trip →")
-- /live page ("Start planning →")
-- About page
-
-### 12. Amadeus integration
-Free tier: 2,000 flight searches/month. Add as another adapter in the round-robin:
-```python
-# utilities/adapters/amadeus.py
-class AmadeusAdapter(TravelAdapter):
-    source_key = "amadeus"
-    # Self-service API, 10 req/s test, 40 req/s prod
-```
-
-### 13. Kiwi Tequila integration
-Free for affiliates. Great for flexible routing (multi-city, "anywhere" searches):
-```python
-# utilities/adapters/kiwi.py
-class KiwiAdapter(TravelAdapter):
-    source_key = "kiwi"
-```
-
-### 14. Airbnb / vacation rental integration
-Large group trips (10+ people) often need whole-home rentals, not hotel rooms. Airbnb is a better fit for groups splitting a house. Investigate:
-- Airbnb Affiliate API (if available) or scraping approach
-- VRBO/Vacasa affiliate programs as alternatives
-- Show "Stays" as a separate category from hotels in watch engine
-- Group-optimized search: filter by guest count, bedrooms, shared spaces
-
----
-
-## Infrastructure / DevOps
-
-### 14. Connection pool monitoring
-Add a `/admin/pool` page or section to ops dashboard showing:
-- Current `pg_stat_activity` breakdown
-- Per-app connection count
-- Leaked connection detection
-- One-click cleanup button
-
-### 15. Cron health monitoring
-The `/tasks/crawl` and `/tasks/check-watches` crons don't persist execution logs. Add a `crab.cron_executions` table:
-```sql
-CREATE TABLE crab.cron_executions (
-    pk_id SERIAL PRIMARY KEY,
-    task_name VARCHAR(50),
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    finished_at TIMESTAMPTZ,
-    duration_ms INTEGER,
-    success BOOLEAN,
-    summary JSONB,
-    error_message TEXT
-);
-```
-
-### 16. Bot run cleanup
-Auto-fail bot runs stuck in "running" for > 1 hour. Add to `/tasks/crawl`:
-```python
-# At start of crawl task:
-cur.execute("UPDATE crab.bot_runs SET status='failed', finished_at=NOW() WHERE status='running' AND started_at < NOW() - INTERVAL '1 hour'")
-```
+### Infrastructure
+- **Connection pool monitoring** — `/admin/pool` showing `pg_stat_activity`, per-app counts, leak detection
+- **Cron health monitoring** — `crab.cron_executions` table for persistent execution logs
 
 ---
 
 ## API Cost Awareness
 
-| API | Model | Monthly Cost | Status |
-|---|---|---|---|
-| Duffel | Pay per booking + excess search fee | ~$0 (no bookings yet) | Demoted to fallback |
-| Travelpayouts | Free (affiliate) | $0 | Primary flight source |
-| Xotelo | Free | $0 | Primary hotel source (NEW) |
-| LiteAPI | Sandbox (free) | $0 | Hotel fallback |
-| LLM Router | Free tier round-robin | $0 | 15+ backends |
-| Twilio | Pay per SMS | ~$0.01/msg | Alert delivery |
-
-**Watch:** Duffel search-to-booking ratio. If we hit 1500 searches with 0 bookings, they charge $0.005/search. Travelpayouts is now primary to minimize Duffel usage.
+| API | Monthly Cost | Status |
+|---|---|---|
+| Duffel | ~$0 (no bookings) | Demoted to fallback |
+| Travelpayouts | $0 (affiliate) | Primary flight source |
+| Xotelo | N/A | **Removed** — needs RapidAPI auth |
+| LiteAPI | $0 (sandbox) | Hotel fallback |
+| LLM Router | $0 (free tier round-robin) | 15+ backends, **confirmed working** |
+| Twilio | ~$0.01/msg | Alert delivery |
 
 ---
 
-## DB Connection Budget (Post-Audit)
+## DB Connection Budget
 
 | App | maxconn | Status |
 |---|---|---|
-| galactica | 6 | ✅ Deployed |
-| crab_travel | 6 | ✅ Deployed |
-| kumori | 3 | ✅ Deployed |
-| dandy | 2 | ✅ Deployed |
-| 2manspades | 2 | ✅ Deployed (leak fixed) |
-| scatterbrain | 2 | ✅ Deployed |
-| stealth | 2 | ✅ Deployed |
-| kindness_social | 3 | ⏳ Deploying |
-| ooqio | 2 | ⏳ Deploying |
-| wattson | 2 | ❌ Not deployed yet |
+| galactica | 6 | ✅ |
+| crab_travel | 6 | ✅ |
+| kumori | 3 | ✅ |
+| dandy | 2 | ✅ |
+| 2manspades | 2 | ✅ |
+| scatterbrain | 2 | ✅ |
+| stealth | 2 | ✅ |
+| kindness_social | 3 | ✅ |
+| ooqio | 2 | ✅ |
+| wattson | 2 | ✅ |
 | **Total** | **30/50** | **20 headroom** |
 
-All apps now have `statement_timeout=30000` (30s) and `connect_timeout=10`.
+All apps: `statement_timeout=30s`, `connect_timeout=10`.
+
+---
+
+## Demo Trip Reference
+
+| Stage | Token | URL | Trip |
+|---|---|---|---|
+| Booked | `qL6zhRAI` | `crab.travel/demo` | Scottsdale, AZ (12 members, fully booked) |
+| Voting | `xL2aRt-k` | `crab.travel/demo/voting` | Reykjavik / Marrakech / Luang Prabang (50 members) |
+| Planning | `TpPeETPm` | `crab.travel/demo/planning` | Andes / Ushuaia (75 members) |
+
+Judy Tunaboat (user_id=81869) is a member of all 109 trips. Organizer of every 20th.
