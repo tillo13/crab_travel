@@ -3167,17 +3167,33 @@ def task_seed_booked_trips():
                 continue  # already has itinerary
             # Get trip info for LLM prompt
             cur.execute("""
-                SELECT p.title, p.destination, p.start_date, p.end_date
-                FROM crab.plans p WHERE p.plan_id = %s
+                SELECT p.title, p.destination, p.start_date, p.end_date,
+                       br.summary->>'destinations' as summary_dests
+                FROM crab.plans p
+                LEFT JOIN crab.bot_runs br ON br.plan_id = p.plan_id
+                WHERE p.plan_id = %s
+                LIMIT 1
             """, (pid,))
             pinfo = cur.fetchone()
-            if not pinfo or not pinfo.get('start_date') or not pinfo.get('destination'):
+            if not pinfo:
                 continue
-            dest = pinfo['destination']
+            # Get destination from plan or bot_run summary
+            dest = pinfo.get('destination') or ''
+            if not dest and pinfo.get('summary_dests'):
+                try:
+                    import json as _json2
+                    dests_list = _json2.loads(pinfo['summary_dests'])
+                    dest = dests_list[0] if dests_list else ''
+                except Exception:
+                    pass
+            if not dest:
+                continue
+            # Use plan dates, fallback to Scottsdale defaults if missing
+            from datetime import date as _date
             trip_title = (pinfo['title'] or '').replace('[BOT] ', '')
-            s_date = pinfo['start_date']
-            e_date = pinfo['end_date']
-            num_days = (e_date - s_date).days if s_date and e_date else 3
+            s_date = pinfo['start_date'] or _date(2026, 5, 20)
+            e_date = pinfo['end_date'] or (s_date + timedelta(days=3))
+            num_days = max((e_date - s_date).days, 2)
 
             try:
                 from utilities.llm_router import generate as llm_generate
