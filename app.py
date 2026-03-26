@@ -863,10 +863,10 @@ def live_page():
         cur.execute("SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT 50")
         runs = [dict(r) for r in cur.fetchall()]
 
-        _plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
+        _plan_ids = [str(r['plan_id']) for r in runs if r.get('plan_id')]
         _plan_statuses = {}
         if _plan_ids:
-            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (_plan_ids,))
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s::uuid[])", (_plan_ids,))
             _plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
 
         for r in runs:
@@ -936,10 +936,10 @@ def api_live_status():
         runs = [dict(r) for r in cur.fetchall()]
 
         # 2) Plan statuses (single query, same connection)
-        plan_ids = [r['plan_id'] for r in runs if r.get('plan_id')]
+        plan_ids = [str(r['plan_id']) for r in runs if r.get('plan_id')]
         plan_statuses = {}
         if plan_ids:
-            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s)", (plan_ids,))
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s::uuid[])", (plan_ids,))
             plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
 
         # 3) Serialize + extract summary info
