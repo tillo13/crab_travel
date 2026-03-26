@@ -3159,85 +3159,126 @@ def task_seed_booked_trips():
             if pid not in stale_plans:
                 _humanize_watches(cur, pid)
 
+        # Commit watches first so itinerary failures don't roll them back
+        conn.commit()
+
         # Seed itineraries on booked plans that don't have one yet
+        # Each trip gets its own connection so failures are isolated
         itineraries_added = 0
+        from utilities.llm_router import generate as llm_generate
+        import json as _json
+        from datetime import date as _date
+        import re as _re
+
         for pid in all_booked:
-            cur.execute("SELECT COUNT(*) as cnt FROM crab.itinerary_items WHERE plan_id = %s", (pid,))
-            if cur.fetchone()['cnt'] > 0:
-                continue  # already has itinerary
-            # Get trip info for LLM prompt
-            cur.execute("""
-                SELECT p.title, p.destination, p.start_date, p.end_date,
-                       br.summary->>'destinations' as summary_dests
-                FROM crab.plans p
-                LEFT JOIN crab.bot_runs br ON br.plan_id = p.plan_id
-                WHERE p.plan_id = %s
-                LIMIT 1
-            """, (pid,))
-            pinfo = cur.fetchone()
-            if not pinfo:
-                continue
-            # Get destination from plan or bot_run summary
-            dest = pinfo.get('destination') or ''
-            if not dest and pinfo.get('summary_dests'):
-                try:
-                    import json as _json2
-                    dests_list = _json2.loads(pinfo['summary_dests'])
-                    dest = dests_list[0] if dests_list else ''
-                except Exception:
-                    pass
-            if not dest:
-                continue
-            # Use plan dates, fallback to Scottsdale defaults if missing
-            from datetime import date as _date
-            trip_title = (pinfo['title'] or '').replace('[BOT] ', '')
-            s_date = pinfo['start_date'] or _date(2026, 5, 20)
-            e_date = pinfo['end_date'] or (s_date + timedelta(days=3))
-            num_days = max((e_date - s_date).days, 2)
-
+            iconn = None
             try:
-                from utilities.llm_router import generate as llm_generate
-                prompt = f"""Generate a {num_days}-day itinerary for a group trip to {dest}. Trip: "{trip_title}", {s_date} to {e_date}.
-
-For each day, create 3-5 items. Respond in JSON only — an array of objects:
-[{{"day": 1, "time": "09:00", "title": "item title", "category": "activity|food|transport|culture|nightlife|relaxation", "duration": minutes, "location": "specific place name", "notes": "brief note"}}]
-
-Be specific — use real place names, real restaurants, real activities for {dest}. Mix categories. Day 1 should start with arrival/check-in. Last day should end with checkout/departure. Keep it realistic and fun."""
-
-                text, backend = llm_generate(prompt, max_tokens=1500, temperature=0.9)
-                if not text:
+                iconn = get_db_connection()
+                icur = iconn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                icur.execute("SELECT COUNT(*) as cnt FROM crab.itinerary_items WHERE plan_id = %s", (pid,))
+                if icur.fetchone()['cnt'] > 0:
+                    icur.close(); iconn.close()
                     continue
-                import json as _json
-                if '```' in text:
-                    text = text.split('```')[1]
-                    if text.startswith('json'):
-                        text = text[4:]
-                items = _json.loads(text.strip())
-                if not isinstance(items, list):
+                icur.execute("""
+                    SELECT p.title, p.destination, p.start_date, p.end_date,
+                           br.summary->>'destinations' as summary_dests
+                    FROM crab.plans p
+                    LEFT JOIN crab.bot_runs br ON br.plan_id = p.plan_id
+                    WHERE p.plan_id = %s LIMIT 1
+                """, (pid,))
+                pinfo = icur.fetchone()
+                if not pinfo:
+                    icur.close(); iconn.close()
+                    continue
+                dest = pinfo.get('destination') or ''
+                if not dest and pinfo.get('summary_dests'):
+                    try:
+                        dests_list = _json.loads(pinfo['summary_dests'])
+                        dest = dests_list[0] if dests_list else ''
+                    except Exception:
+                        pass
+                if not dest:
+                    icur.close(); iconn.close()
+                    continue
+                trip_title = (pinfo['title'] or '').replace('[BOT] ', '')
+                s_date = pinfo['start_date'] or _date(2026, 5, 20)
+                e_date = pinfo['end_date'] or (s_date + timedelta(days=3))
+                num_days = max((e_date - s_date).days, 2)
+
+                prompt = f"""Generate a {num_days}-day itinerary for a group trip to {dest}. Trip: "{trip_title}", dates {s_date} to {e_date}.
+
+Create 3-5 items per day. Respond ONLY with a JSON array (no extra text):
+[{{"day":1,"time":"09:00","title":"item","category":"activity","duration":60,"location":"place","notes":"note"}}]
+
+Categories: activity, food, transport, culture, nightlife, relaxation.
+Use REAL place names and restaurants for {dest}. Day 1 = arrival. Last day = departure."""
+
+                # Try up to 2 LLM calls if JSON parsing fails
+                items = None
+                for attempt in range(2):
+                    text, backend = llm_generate(prompt, max_tokens=1500, temperature=0.9)
+                    if not text:
+                        continue
+                    try:
+                        # Extract JSON from response
+                        if '```' in text:
+                            text = text.split('```')[1]
+                            if text.startswith('json'):
+                                text = text[4:]
+                        # Try to find the JSON array even if there's extra text
+                        match = _re.search(r'\[.*\]', text, _re.DOTALL)
+                        if match:
+                            text = match.group(0)
+                        items = _json.loads(text.strip())
+                        if isinstance(items, list) and len(items) > 0:
+                            break
+                        items = None
+                    except (_json.JSONDecodeError, Exception):
+                        items = None
+
+                if not items:
+                    icur.close(); iconn.close()
                     continue
 
                 for item in items:
                     day_num = item.get('day', 1)
-                    sched_date = s_date + timedelta(days=day_num - 1)
-                    cur.execute("""
+                    if not isinstance(day_num, int):
+                        day_num = 1
+                    sched_date = s_date + timedelta(days=min(day_num - 1, num_days - 1))
+                    time_str = item.get('time', '')
+                    # Validate time format
+                    if time_str and not _re.match(r'^\d{1,2}:\d{2}', str(time_str)):
+                        time_str = None
+                    icur.execute("""
                         INSERT INTO crab.itinerary_items
                             (plan_id, title, category, scheduled_date, scheduled_time,
                              duration_minutes, location, notes)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         pid,
-                        item.get('title', 'Activity')[:200],
-                        item.get('category', 'activity')[:30],
-                        sched_date,
-                        item.get('time'),
-                        item.get('duration'),
-                        item.get('location', '')[:200],
-                        item.get('notes', '')[:500],
+                        str(item.get('title', 'Activity'))[:200],
+                        str(item.get('category', 'activity'))[:30],
+                        sched_date, time_str,
+                        item.get('duration') if isinstance(item.get('duration'), (int, float)) else None,
+                        str(item.get('location', ''))[:200],
+                        str(item.get('notes', ''))[:500],
                     ))
+                iconn.commit()
                 itineraries_added += 1
-                logger.info(f"  📅 Itinerary seeded for {trip_title}: {len(items)} items")
+                logger.info(f"  📅 Itinerary seeded for {trip_title}: {len(items)} items via {backend}")
             except Exception as e:
-                logger.warning(f"  ⚠️ Itinerary generation failed for {pid}: {e}")
+                logger.warning(f"  ⚠️ Itinerary failed for {pid}: {e}")
+                if iconn:
+                    try:
+                        iconn.rollback()
+                    except Exception:
+                        pass
+            finally:
+                if iconn:
+                    try:
+                        iconn.close()
+                    except Exception:
+                        pass
 
         # Find bot-generated plans at 'locked' status that have bot_runs with 'passed'
         cur.execute("""
