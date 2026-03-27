@@ -55,11 +55,14 @@
 
 ## BLOCKER: SMS / Twilio A2P Campaign
 
-**Status: NOT APPROVED. Still error 30034. Waiting on carrier approval.**
+**Status: IN_PROGRESS. New campaign submitted 2026-03-27. Waiting on TCR review.**
 
-**Submitted:** 2026-03-25 (resubmitted)
-**Last checked:** 2026-03-26 at 5:49 PM PT. Still failing. Error 30034 (carrier filtering).
-**Days waiting:** 1 day since resubmission. Typical approval: 1-7 business days.
+**Previous campaign (Mar 25) FAILED** — error 30909 (CTA verification). Reviewer couldn't verify opt-in because /profile requires login.
+**Fix applied (Mar 27):** Created public https://crab.travel/sms page showing full opt-in flow. Deleted failed campaign. Resubmitted with public URL in messageFlow.
+**Campaign SID:** `QE2c6890da8086d771620e9b13fadeba0b`
+**Expected approval:** Several days from 2026-03-27. No carrier post-approval needed for LOW_VOLUME use case.
+
+**Full documentation:** See `docs/twilio_a2p_campaign.md` for complete history, all SIDs, what was submitted, why previous attempts failed, and how to check status.
 
 This is the #1 thing to tell Adam and team about. When this clears, SMS goes live instantly with zero code changes. Price drop alerts to your phone, chat messages as texts, vote reminders via SMS. Everything is built and waiting.
 
