@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}SMS Program Info — crab.travel{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto animate-in">
+<h1 class="text-3xl font-display mb-6">SMS Program Information</h1>
+<p class="text-sm text-crab-sand-dim mb-8">How crab.travel uses text messaging to keep your group trip on track.</p>
+
+<div class="space-y-8 text-sm leading-relaxed text-crab-sand-dim">
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">How Users Opt In to SMS</h2>
+<p class="mb-3">SMS notifications are <strong>never enabled by default</strong>. To receive text messages, users must complete two deliberate steps on their <strong>Profile page</strong> (login required):</p>
+<ol class="list-decimal ml-5 space-y-2">
+<li><strong>Enter a phone number</strong> in the "Phone number" field</li>
+<li><strong>Check the SMS consent checkbox</strong>, which reads:</li>
+</ol>
+<div class="mt-3 p-4 rounded-lg bg-white/5 border border-white/10">
+<p class="flex items-start gap-2.5">
+<span class="inline-block w-4 h-4 mt-0.5 rounded border-2 border-crab-coral flex-shrink-0"></span>
+<span class="text-crab-sand">"I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <span class="text-crab-coral">Terms</span> &amp; <span class="text-crab-coral">Privacy</span>."</span>
+</p>
+</div>
+<p class="mt-3">Users must also select <strong>"SMS"</strong> or <strong>"Both"</strong> as their notification channel. Selecting SMS or Both without checking the consent box is blocked by validation.</p>
+<p class="mt-2">Users may also opt in by texting <strong>START</strong> to <strong>(425) 600-2722</strong>.</p>
+</div>
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">What Messages We Send</h2>
+<p class="mb-2">All messages are transactional and related to trips the user has joined:</p>
+<ul class="list-disc ml-5 space-y-1">
+<li><strong>Trip chat messages</strong> — when a group member sends a message in the trip chat</li>
+<li><strong>Voting reminders</strong> — when the group is choosing a destination and votes are needed</li>
+<li><strong>Trip status updates</strong> — when plans change, dates lock in, or stages advance</li>
+<li><strong>Booking confirmations</strong> — when flights or hotels are reserved</li>
+<li><strong>Price drop alerts</strong> — when a watched hotel or flight drops in price</li>
+</ul>
+</div>
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">Sample Messages</h2>
+<div class="space-y-2">
+<div class="p-3 rounded bg-white/5 font-mono text-xs">[crab.travel] Sarah: Hey everyone, should we push dinner to 7pm instead? Reply STOP to opt out.</div>
+<div class="p-3 rounded bg-white/5 font-mono text-xs">crab.travel: Price drop alert! The Hilton Scottsdale is now $189/night, down from $245. View your trip at crab.travel. Reply STOP to unsubscribe.</div>
+<div class="p-3 rounded bg-white/5 font-mono text-xs">[crab.travel] Trip status update: Nashville dates are locked in for June 12-15. Reply STOP to opt out.</div>
+</div>
+</div>
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">How to Opt Out</h2>
+<ul class="list-disc ml-5 space-y-1">
+<li>Reply <strong>STOP</strong> to any message at any time</li>
+<li>Uncheck the SMS consent checkbox on your <a href="/profile" class="text-crab-coral hover:underline">Profile page</a></li>
+<li>Change your notification channel to "Email" on your Profile page</li>
+</ul>
+<p class="mt-2">You will receive a confirmation: "You have been unsubscribed from crab.travel SMS alerts. You will not receive any more messages. Reply START to re-subscribe."</p>
+</div>
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">Help</h2>
+<p>Reply <strong>HELP</strong> to any message, or visit our <a href="/contact" class="text-crab-coral hover:underline">contact page</a>. You can also email support@crab.travel.</p>
+</div>
+
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">Program Details</h2>
+<ul class="list-none space-y-1">
+<li><strong>Program name:</strong> crab.travel Trip Notifications</li>
+<li><strong>Message frequency:</strong> Varies based on trip activity</li>
+<li><strong>Message and data rates may apply</strong></li>
+<li><strong>Carrier:</strong> Twilio (SMS delivery provider)</li>
+<li><strong>Phone number:</strong> (425) 600-2722</li>
+</ul>
+<p class="mt-3">Consent to receive SMS is not a condition of purchase or use of crab.travel. Carriers are not liable for delayed or undelivered messages. We do not sell, rent, or share your phone number with any third party for marketing purposes.</p>
+</div>
+
+<div class="pt-4 border-t border-white/10">
+<p>See also: <a href="/terms#sms" class="text-crab-coral hover:underline">SMS Terms of Service</a> · <a href="/privacy#sms" class="text-crab-coral hover:underline">SMS Privacy Policy</a></p>
+</div>
+
+</div>
+</div>
+{% endblock %}

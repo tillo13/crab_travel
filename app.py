@@ -271,6 +271,11 @@ def terms():
     return render_template('terms.html', active_page=None)
 
 
+@app.route('/sms')
+def sms_info():
+    return render_template('sms.html', active_page=None)
+
+
 @app.route('/about')
 def about():
     return render_template('about.html', active_page='about')
