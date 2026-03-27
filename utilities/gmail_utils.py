@@ -27,6 +27,9 @@ def _get_gmail_creds():
 
 def send_simple_email(subject, body, to_email, from_name="crab.travel"):
     """Send a simple email via Gmail SMTP."""
+    if to_email and to_email.startswith('bot.'):
+        logger.info(f"Email skipped for bot address: {to_email}")
+        return False
     try:
         creds = _get_gmail_creds()
         if not creds:

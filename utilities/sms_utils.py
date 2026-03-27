@@ -67,6 +67,7 @@ def notify_plan_members_sms(plan_id, sender_name, message_text, exclude_user_id=
               AND u.phone_number != ''
               AND u.notify_chat = 'realtime'
               AND u.notify_channel IN ('sms', 'both')
+              AND u.full_name NOT LIKE '%%[BOT]%%'
         """, (str(plan_id),))
         members = cursor.fetchall()
 
@@ -114,6 +115,7 @@ def notify_plan_members_email(plan_id, sender_name, message_text, exclude_user_i
             WHERE m.plan_id = %s::uuid
               AND u.notify_chat = 'realtime'
               AND u.notify_channel IN ('email', 'both')
+              AND u.full_name NOT LIKE '%%[BOT]%%'
         """, (str(plan_id),))
         members = cursor.fetchall()
 
