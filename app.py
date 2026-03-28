@@ -2206,6 +2206,20 @@ def api_update_watch_status(plan_id, watch_id):
     return jsonify({'success': success, 'plan_booked': plan_auto_booked})
 
 
+@app.route('/api/plan/<plan_id>/leave', methods=['POST'])
+@api_auth_required
+def api_leave_plan(plan_id):
+    """Leave a trip — removes the current user from the plan."""
+    from utilities.postgres_utils import remove_plan_member
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    removed = remove_plan_member(plan_id, user['pk_id'])
+    if removed:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Could not leave trip (you may be the organizer)'}), 400
+
+
 @app.route('/api/plan/<plan_id>/watches/<int:watch_id>/history')
 def api_get_watch_history(plan_id, watch_id):
     """Price history for a single watch (sparkline data)."""

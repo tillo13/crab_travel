@@ -927,6 +927,33 @@ def add_plan_member(plan_id, display_name, member_token, email=None, user_id=Non
             conn.close()
 
 
+def remove_plan_member(plan_id, user_id):
+    """Remove a member from a plan by user_id. Cascades to watches, availability, etc."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM crab.plan_members
+            WHERE plan_id = %s AND user_id = %s AND role != 'organizer'
+            RETURNING pk_id
+        """, (plan_id, user_id))
+        deleted = cursor.fetchone()
+        conn.commit()
+        return deleted is not None
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Remove member failed: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_plan_members(plan_id):
     conn = None
     cursor = None

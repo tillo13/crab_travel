@@ -590,6 +590,15 @@
         {% if is_bot_trip %}
         <div class="mb-5 p-3 rounded-xl bg-crab-teal/10 border border-crab-teal/20 text-sm text-crab-sand">
           This is a demo trip — feel free to join and click around to see what the experience looks like! Your profile and preferences will be saved to your account, but this isn't a real trip.
+          {% if is_member %}
+          <div class="mt-2 pt-2 border-t border-crab-teal/20">
+            Want to remove this from your trips? <button onclick="leaveTrip()" class="text-crab-coral hover:underline font-medium">Leave this demo trip</button>
+          </div>
+          {% endif %}
+        </div>
+        {% elif is_member %}
+        <div class="mb-5 flex justify-end">
+          <button onclick="leaveTrip()" class="text-xs text-crab-sand-dim hover:text-crab-coral transition-colors">Leave this trip</button>
         </div>
         {% endif %}
         <div class="mb-5">
@@ -1695,6 +1704,20 @@ function toggleSection(bodyId, chevId) {
 }
 function toggleChat() { toggleSection('chat-body', 'chat-chevron'); }
 function toggleDetails() { toggleSection('details-body', 'details-chevron'); }
+
+function leaveTrip() {
+  if (!confirm('Leave this trip? You can always rejoin later via the invite link.')) return;
+  fetch('/api/plan/{{ plan.plan_id }}/leave', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.success) {
+        window.location.href = '/plans';
+      } else {
+        alert(d.error || 'Could not leave trip');
+      }
+    });
+}
 function toggleDestinations() { toggleSection('dest-body', 'dest-chevron'); }
 function toggleWatches() { toggleSection('watches-body', 'watches-chevron'); }
 
