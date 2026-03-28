@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # The per-model 1K RPD is real, but the RPM is the binding constraint with concurrency.
 DAILY_CAPS = {
     # ── Tier 1: Workhorses (carry bulk of traffic) ──
-    'cerebras': 1000,            # 1M tokens/day free, 30 RPM — our #1 backend
+    'cerebras': 0,               # DISABLED 2026-03-28 — 90% of free tier exhausted, reserving all tokens for kindness_social evals
     'groq': 500,                 # 1K RPD per model, but shared key RPM limits real throughput
     'groq-kimi': 500,            # same — cap at 500 to leave room for user-triggered calls
     'groq-qwen': 500,            # same
