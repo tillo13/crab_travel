@@ -3169,7 +3169,7 @@ def task_seed_booked_trips():
             JOIN crab.member_watches w ON w.plan_id = p.plan_id
             WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
               AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0
-                   OR (w.watch_type = 'flight' AND NOT COALESCE(w.data, '{}')::jsonb ? 'departure_time'))
+                   OR (w.watch_type = 'flight' AND NOT jsonb_exists(COALESCE(w.data, '{}'), 'departure_time')))
         """)
         stale_plans = [r['plan_id'] for r in cur.fetchall()]
         stale_fixed = 0
