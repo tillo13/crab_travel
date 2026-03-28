@@ -3197,7 +3197,10 @@ def task_seed_booked_trips():
         from datetime import date as _date
         import re as _re
 
+        MAX_ITINERARIES_PER_RUN = 2  # LLM calls are slow; do a few per cron run
         for pid in all_booked:
+            if itineraries_added >= MAX_ITINERARIES_PER_RUN:
+                break
             iconn = None
             try:
                 iconn = get_db_connection()
