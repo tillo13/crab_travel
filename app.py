@@ -3163,13 +3163,14 @@ def task_seed_booked_trips():
                 """, (price, price, new_checkin, new_checkout, _json.dumps(extra_data), w['pk_id']))
             return len(watches)
 
-        # First, fix existing booked plans missing flight times, varied dates, or $0 watches
+        # Fix existing booked plans missing flight times, varied dates, or $0 watches (batch of 10)
         cur.execute("""
             SELECT DISTINCT p.plan_id FROM crab.plans p
             JOIN crab.member_watches w ON w.plan_id = p.plan_id
             WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
               AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0
                    OR (w.watch_type = 'flight' AND NOT jsonb_exists(COALESCE(w.data, '{}'), 'departure_time')))
+            LIMIT 10
         """)
         stale_plans = [r['plan_id'] for r in cur.fetchall()]
         stale_fixed = 0
