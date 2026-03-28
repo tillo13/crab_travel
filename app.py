@@ -3178,15 +3178,12 @@ def task_seed_booked_trips():
         if stale_fixed:
             logger.info(f"Humanized {stale_fixed} watches on {len(stale_plans)} existing booked plans")
 
-        # Also re-humanize ALL booked bot plans (randomize dates even if prices exist)
+        # Get all booked bot plans for itinerary seeding below
         cur.execute("""
             SELECT DISTINCT p.plan_id FROM crab.plans p
             WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
         """)
         all_booked = [r['plan_id'] for r in cur.fetchall()]
-        for pid in all_booked:
-            if pid not in stale_plans:
-                _humanize_watches(cur, pid)
 
         # Commit watches first so itinerary failures don't roll them back
         conn.commit()
