@@ -2,6 +2,9 @@
 
 {% block title %}Trip Summary — {{ plan.title|replace('[BOT] ', '') }} | crab.travel{% endblock %}
 
+{# Format "HH:MM" (24h) to "H:MM AM/PM" #}
+{% macro fmt_time(t) %}{% if t %}{% set h = t[:2]|int %}{% set m = t[3:] %}{% if h == 0 %}12:{{ m }} AM{% elif h < 12 %}{{ h }}:{{ m }} AM{% elif h == 12 %}12:{{ m }} PM{% else %}{{ h - 12 }}:{{ m }} PM{% endif %}{% endif %}{% endmacro %}
+
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6">
 
@@ -84,8 +87,23 @@
               <div class="text-sm font-medium text-crab-sand truncate">{{ m.name|replace('[BOT] ', '') }}</div>
               <div class="text-xs text-crab-sand-dim">
                 {{ f.origin or '???' }} &rarr; {{ f.destination }}
-                {% if f.checkin %} · {{ f.checkin.strftime('%b %d') if f.checkin is not string else f.checkin }}{% endif %}
+                {% if f.checkin %}
+                  · {{ f.checkin.strftime('%b %d') if f.checkin is not string else f.checkin }}
+                  {% if f.departure_time %}
+                    <span class="text-crab-teal/80">{{ fmt_time(f.departure_time) }}</span> &rarr;
+                    {% if f.arrival_time %}<span class="text-crab-teal/80">{{ fmt_time(f.arrival_time) }}</span>{% endif %}
+                  {% endif %}
+                {% endif %}
               </div>
+              {% if f.checkout %}
+              <div class="text-xs text-crab-sand-dim/60">
+                Return {{ f.checkout.strftime('%b %d') if f.checkout is not string else f.checkout }}
+                {% if f.return_departure_time %}
+                  <span class="text-crab-teal/80">{{ fmt_time(f.return_departure_time) }}</span> &rarr;
+                  {% if f.return_arrival_time %}<span class="text-crab-teal/80">{{ fmt_time(f.return_arrival_time) }}</span>{% endif %}
+                {% endif %}
+              </div>
+              {% endif %}
             </div>
           </div>
           <div class="flex items-center gap-3 shrink-0">

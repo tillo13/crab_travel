@@ -3068,14 +3068,32 @@ def task_seed_booked_trips():
         from datetime import timedelta
 
         def _humanize_watches(cur, plan_id):
-            """Seed realistic prices + varied dates on watches for a plan.
-            Real humans fly in/out on different days and don't all stay the full trip."""
+            """Seed realistic prices + varied dates + flight times on watches.
+            Real humans fly in/out on different days/times and don't all stay the full trip."""
+            import json as _json
             # Get trip date range
             cur.execute("SELECT start_date, end_date FROM crab.plans WHERE plan_id = %s", (plan_id,))
             plan_row = cur.fetchone()
             trip_start = plan_row['start_date'] if plan_row and plan_row.get('start_date') else None
             trip_end = plan_row['end_date'] if plan_row and plan_row.get('end_date') else None
             trip_days = (trip_end - trip_start).days if trip_start and trip_end else 3
+
+            # Realistic flight time windows (hour, minute) — weighted toward common slots
+            DEPART_SLOTS = [
+                (6, 0), (6, 30), (7, 15), (7, 45), (8, 20), (9, 0), (9, 50),
+                (10, 30), (11, 15), (12, 0), (13, 10), (14, 0), (14, 45),
+                (15, 30), (16, 15), (17, 0), (17, 45), (18, 30), (19, 20), (20, 15),
+            ]
+
+            def _rand_flight_time():
+                h, m = _rnd.choice(DEPART_SLOTS)
+                return f"{h:02d}:{m:02d}"
+
+            def _arrival_time(dep_str, flight_hrs):
+                dh, dm = int(dep_str[:2]), int(dep_str[3:])
+                total = dh * 60 + dm + int(flight_hrs * 60)
+                ah, am = (total // 60) % 24, total % 60
+                return f"{ah:02d}:{am:02d}"
 
             cur.execute("""
                 SELECT pk_id, watch_type, checkin, checkout
@@ -3087,45 +3105,51 @@ def task_seed_booked_trips():
                 price = _rnd.randint(180, 650) if is_flight else _rnd.randint(120, 400)
                 conf = f"CRAB{_rnd.randint(100000, 999999)}"
 
-                # Randomize dates — most arrive on time, some early/late, some leave early
+                # Randomize dates — ~50% get varied dates for realism
                 new_checkin = w['checkin']
                 new_checkout = w['checkout']
                 if trip_start and trip_end and trip_days >= 3:
                     roll = _rnd.random()
                     if is_flight:
-                        # Flights: arrival date varies
-                        if roll < 0.15:
-                            # 15% arrive a day early
+                        if roll < 0.25:
                             new_checkin = trip_start - timedelta(days=1)
-                        elif roll < 0.30:
-                            # 15% arrive a day late (miss day 1)
+                        elif roll < 0.45:
                             new_checkin = trip_start + timedelta(days=1)
-                        # Departure: some leave early
                         roll2 = _rnd.random()
-                        if roll2 < 0.20:
-                            # 20% leave a day early
+                        if roll2 < 0.30:
                             new_checkout = trip_end - timedelta(days=1)
-                        elif roll2 < 0.30:
-                            # 10% stay an extra day
+                        elif roll2 < 0.40:
                             new_checkout = trip_end + timedelta(days=1)
                     else:
-                        # Hotels: check-in/out varies more
-                        if roll < 0.20:
+                        if roll < 0.25:
                             new_checkin = trip_start - timedelta(days=1)
-                        elif roll < 0.35:
+                        elif roll < 0.45:
                             new_checkin = trip_start + timedelta(days=1)
                         roll2 = _rnd.random()
-                        if roll2 < 0.25:
+                        if roll2 < 0.30:
                             new_checkout = trip_end - timedelta(days=1)
-                        elif roll2 < 0.35:
+                        elif roll2 < 0.40:
                             new_checkout = trip_end + timedelta(days=1)
-                        # 10% only stay half the trip
                         if _rnd.random() < 0.10 and trip_days >= 4:
                             mid = trip_start + timedelta(days=trip_days // 2)
                             if _rnd.random() < 0.5:
-                                new_checkout = mid  # leaves at halfway
+                                new_checkout = mid
                             else:
-                                new_checkin = mid   # arrives at halfway
+                                new_checkin = mid
+
+                # Build data JSONB with times for flights
+                extra_data = {'booked_price': price, 'confirmation': conf}
+                if is_flight:
+                    dep = _rand_flight_time()
+                    flight_hrs = _rnd.uniform(1.5, 5.5)
+                    arr = _arrival_time(dep, flight_hrs)
+                    extra_data['departure_time'] = dep
+                    extra_data['arrival_time'] = arr
+                    # Return flight gets its own times
+                    ret_dep = _rand_flight_time()
+                    ret_arr = _arrival_time(ret_dep, flight_hrs + _rnd.uniform(-0.5, 0.5))
+                    extra_data['return_departure_time'] = ret_dep
+                    extra_data['return_arrival_time'] = ret_arr
 
                 cur.execute("""
                     UPDATE crab.member_watches
@@ -3134,18 +3158,18 @@ def task_seed_booked_trips():
                         best_price_at = NOW(), last_checked_at = NOW(),
                         checkin = COALESCE(%s, checkin),
                         checkout = COALESCE(%s, checkout),
-                        data = jsonb_set(COALESCE(data, '{}'), '{booked_price}', %s::jsonb)
-                            || jsonb_build_object('confirmation', %s)
+                        data = COALESCE(data, '{}') || %s::jsonb
                     WHERE pk_id = %s
-                """, (price, price, new_checkin, new_checkout, str(price), conf, w['pk_id']))
+                """, (price, price, new_checkin, new_checkout, _json.dumps(extra_data), w['pk_id']))
             return len(watches)
 
-        # First, fix existing booked plans that still have uniform dates or $0 watches
+        # First, fix existing booked plans missing flight times, varied dates, or $0 watches
         cur.execute("""
             SELECT DISTINCT p.plan_id FROM crab.plans p
             JOIN crab.member_watches w ON w.plan_id = p.plan_id
             WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
-              AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0)
+              AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0
+                   OR (w.watch_type = 'flight' AND NOT COALESCE(w.data, '{}')::jsonb ? 'departure_time'))
         """)
         stale_plans = [r['plan_id'] for r in cur.fetchall()]
         stale_fixed = 0

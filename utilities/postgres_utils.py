@@ -2702,6 +2702,7 @@ def get_trip_summary(plan_id):
             # Use booked_price if available, else best/last price
             effective_price = float(booked_price) if booked_price is not None else price
 
+            data = w.get('data') or {}
             watch_info = {
                 'pk_id': w['pk_id'],
                 'watch_type': w['watch_type'],
@@ -2713,7 +2714,11 @@ def get_trip_summary(plan_id):
                 'price': effective_price,
                 'deep_link': w.get('deep_link'),
                 'confirmation': confirmation,
-                'data': w.get('data', {}),
+                'departure_time': data.get('departure_time'),
+                'arrival_time': data.get('arrival_time'),
+                'return_departure_time': data.get('return_departure_time'),
+                'return_arrival_time': data.get('return_arrival_time'),
+                'data': data,
             }
 
             if w['watch_type'] == 'flight':
