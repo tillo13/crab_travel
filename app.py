@@ -1477,6 +1477,8 @@ def invite_page(invite_token):
                 'pk_id': w['pk_id'], 'member_id': w['member_id'],
                 'member_name': w['member_name'], 'watch_type': w['watch_type'],
                 'origin': w.get('origin'), 'destination': w['destination'],
+                'checkin': w['checkin'].isoformat() if w.get('checkin') else None,
+                'checkout': w['checkout'].isoformat() if w.get('checkout') else None,
                 'status': w['status'],
                 'best_price': float(w['best_price_usd']) if w.get('best_price_usd') else None,
                 'last_price': float(w['last_price_usd']) if w.get('last_price_usd') else None,
@@ -1485,6 +1487,10 @@ def invite_page(invite_token):
                 'history': [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history],
                 'booked_price': watch_data.get('booked_price'),
                 'confirmation': watch_data.get('confirmation'),
+                'departure_time': watch_data.get('departure_time'),
+                'arrival_time': watch_data.get('arrival_time'),
+                'return_departure_time': watch_data.get('return_departure_time'),
+                'return_arrival_time': watch_data.get('return_arrival_time'),
                 'recommendation': rec if rec else None,
             })
         watches_json = json.dumps(watches_data, default=_default_ser)

@@ -2067,10 +2067,30 @@ function renderWatchRow(w) {
 
   var icon = w.watch_type === 'flight' ? '✈️' : '🏨';
   var route = '';
+
+  // Format "HH:MM" (24h) to "H:MM AM/PM"
+  function fmt12(t) {
+    if (!t) return '';
+    var parts = t.split(':'), h = parseInt(parts[0]), m = parts[1];
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + m + ' ' + ampm;
+  }
+  // Format ISO date to "Mon DD"
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+  }
+
   if (w.watch_type === 'flight' && w.origin) {
     route = w.origin + ' → ' + escapeHtml(w.destination);
+    if (w.checkin) route += ' · ' + fmtDate(w.checkin);
+    if (w.departure_time) route += ' <span class="text-crab-teal/80">' + fmt12(w.departure_time) + '</span>';
+    if (w.arrival_time) route += ' → <span class="text-crab-teal/80">' + fmt12(w.arrival_time) + '</span>';
   } else {
     route = escapeHtml(w.destination);
+    if (w.checkin && w.checkout) route += ' · ' + fmtDate(w.checkin) + ' – ' + fmtDate(w.checkout);
   }
 
   var priceHtml = '';
@@ -2135,6 +2155,15 @@ function renderWatchRow(w) {
     '</div>';
   }
 
+  // Return flight line for flights
+  var returnHtml = '';
+  if (w.watch_type === 'flight' && w.checkout) {
+    returnHtml = '<div class="text-[11px] text-crab-sand-dim/60 ml-6 mt-0.5">Return ' + fmtDate(w.checkout);
+    if (w.return_departure_time) returnHtml += ' <span class="text-crab-teal/60">' + fmt12(w.return_departure_time) + '</span>';
+    if (w.return_arrival_time) returnHtml += ' → <span class="text-crab-teal/60">' + fmt12(w.return_arrival_time) + '</span>';
+    returnHtml += '</div>';
+  }
+
   return '<div class="py-2 border-b border-white/[0.04] last:border-0">' +
     '<div class="flex flex-col sm:flex-row sm:items-center gap-2">' +
       '<div class="flex items-center gap-2 min-w-0 flex-1">' +
@@ -2149,6 +2178,7 @@ function renderWatchRow(w) {
         bookBtn + markBookedBtn +
       '</div>' +
     '</div>' +
+    returnHtml +
     recHtml +
   '</div>';
 }
