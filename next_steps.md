@@ -1,7 +1,34 @@
 # crab.travel — Next Steps
-*Updated: 2026-03-26*
+*Updated: 2026-03-27*
 
-## Done This Session (March 26)
+## Done This Session (March 27)
+
+### Itinerary Google Search Links
+1. **Clickable itinerary items** — every item on the trip summary page is now a clickable Google search link. Clicking opens a new tab with a Google search for the venue/location.
+2. **Smart search query** — uses `item.location` (e.g., "Bar Kuld") instead of the full title ("Evening Drinks at Bar Kuld") so Google actually finds the place. Falls back to title if no location set. Destination city appended for specificity.
+3. **Location links too** — the location metadata text (e.g., "· Pirita Beach") is also a clickable Google search link.
+
+### Flight Times & Date Variance
+4. **Flight departure/arrival times** — every flight watch now stores `departure_time`, `arrival_time`, `return_departure_time`, and `return_arrival_time` in the JSONB `data` column. Times are generated from 20 realistic departure slots (6 AM – 8 PM) with randomized flight durations (1.5–5.5 hrs).
+5. **12-hour format** — times display as "3:30 PM → 6:41 PM" (not 24h). Jinja macro `fmt_time()` on summary page, JS `fmt12()` on invite page.
+6. **Return flight line** — both summary and invite pages show a second line for return flights: "Return May 23 11:15 AM → 2:27 PM".
+7. **Times on invite/watch cards** — the per-member watch cards on the invite page (`/to/<token>`) now show dates + times for flights, and date ranges for hotels. Previously only showed destination.
+8. **Increased date variance** — bumped from ~30% to ~45% of members having varied arrival/departure dates. Some arrive a day early, some a day late, some leave early, some stay extra. Hotels have similar variance with 10% chance of half-trip stays. Makes group trips look realistic — not everyone flies on the same day.
+9. **Backfilled existing trips** — `_humanize_watches()` upgraded to store times in JSONB. Stale-fix query in `/tasks/seed-booked-trips` detects flights missing `departure_time` and backfills them.
+
+### Demo/Bot Trip UX
+10. **Join form collapsed on demo trips** — the "Update Your Info" / "Join" section starts collapsed on all bot/demo trips (previously expanded by default, taking up screen space for demo viewers).
+11. **Demo mode banner** — when expanded on a bot trip, shows a teal info box: "This is a demo trip — feel free to join and click around to see what the experience looks like! Your profile and preferences will be saved to your account, but this isn't a real trip."
+12. **Leave Trip feature** — new `POST /api/plan/<id>/leave` endpoint removes a user from any trip (cascades to watches, availability, blackouts via `ON DELETE CASCADE`). Organizers cannot leave their own trips.
+13. **Leave Trip UI** — on demo trips, the demo banner includes "Want to remove this from your trips? Leave this demo trip" link. On real trips, a subtle "Leave this trip" link appears in the form section. Both confirm before acting and redirect to `/plans`.
+
+### Seed Task Performance
+14. **Batch limits** — stale-fix capped at 10 plans per cron run, itinerary generation capped at 2 per run (LLM calls are slow). Prevents App Engine 60s timeout that was crashing the seed task.
+15. **Removed redundant re-humanize** — previously re-humanized ALL booked bot plans every run (expensive and unnecessary). Now only targets plans missing flight times or with $0 watches.
+
+---
+
+## Done Previous Session (March 26)
 
 ### /live Page Overhaul
 1. **New lifecycle tabs** — replaced `All | Active | Booked | Completed` with `All | Active | Voting | Charting | Booked`
@@ -156,6 +183,9 @@ else:
 - **Expense tracking UI** — ~~DB + CRUD exist, no frontend~~ **DONE** — expenses seeded on demo trip, "who owes who" balances on trip summary. Next: add expense form for manual entry.
 
 ### High Impact (Next Session)
+- **Carpool/pickup coordination** — flight times are now stored per-member. Next: detect members arriving at the same airport within a few hours and suggest shared rides. Show "3 members arriving at PHX between 2-4 PM" on the summary page. This is a natural extension of the flight time data we just added.
+- **Real flight time integration** — when Duffel/Travelpayouts return real flight offers, store actual departure/arrival times from the API instead of random ones. The JSONB `data` column already has the fields. When users mark a watch as "booked," prompt them to enter their flight times.
+- **Hotel check-in/out times** — similar to flight times, store and display hotel check-in (typically 3-4 PM) and check-out (typically 10-11 AM) times. Useful for day-of coordination.
 - **Airbnb / vacation rental integration** — THIS IS THE BIG ONE. Large group trips (10+ people) always have one person fronting $3-5K for the Airbnb on their card. That single booking is the anchor expense that drives the entire "who owes who" flow. Airbnb integration isn't just another adapter — it's the expense tracking killer feature. The pain: one person books, then spends 3 months chasing 14 Venmo requests. The solution: crab.travel shows the booking, auto-splits it, and shows everyone exactly what they owe. Investigate Airbnb Affiliate API, VRBO/Vacasa alternatives. Show "Stays" as separate category from hotels. Group-optimized search: filter by guest count, bedrooms, shared spaces.
 - **Itinerary editor** — 21 items exist on demo trip but no add/edit/reorder UI. Add "Add item" button, drag-and-drop.
 - **Auto-generate itinerary via AI** — when all watches booked, LLM generates day-by-day plan from flight times + hotel + destination research.
