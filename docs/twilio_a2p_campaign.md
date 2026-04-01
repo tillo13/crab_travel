@@ -1,7 +1,7 @@
 # Twilio A2P 10DLC Campaign — Full Documentation
 
-**Last updated:** 2026-03-27
-**Status:** IN_PROGRESS (submitted for review)
+**Last updated:** 2026-04-01
+**Status:** FAILED (attempt 5 rejected 2026-03-27, preparing attempt 6)
 
 ---
 
@@ -19,7 +19,7 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 | **Customer Profile** | `BUf5cd2668261710eff4bb1c97eea9bf10` | twilio-approved |
 | **A2P Trust Product** | `BU7406bb09eaf450c62a6fc4f40019fb1b` | twilio-approved (policy `RNb0d4771c2c98518d916a3d4cd70a8f8b`) |
 | **Brand Registration** | `BN05299cc8c46ebf46b61fb87fb11d6ff9` | **APPROVED** (TCR ID: `B9D07O1`, since 2026-03-08) |
-| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **IN_PROGRESS** (submitted 2026-03-27) |
+| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **FAILED** (2026-03-27, error 30909 CTA again) |
 | **Messaging Service** | `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` | "Low Volume Mixed A2P Messaging Service" |
 | **Phone Number** | `+14256002722` (`PN62f5dfd99912cceb5213c3b1e1f9bbe5`) | In messaging service sender pool |
 
@@ -82,15 +82,20 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 - Error 30794: Used wrong A2P profile (`BU436f...` with policy `RN7a975...`)
 - This was unnecessary — the brand was already approved from March 8. Someone tried to re-register it with a different profile.
 
-### Attempt 4: Campaign Resubmission (Mar 27) — THIS ONE
-- **Fixed the CTA problem** by creating a public page at `https://crab.travel/sms` that shows:
-  - The exact opt-in checkbox text
-  - The two-step opt-in process
-  - Sample messages
-  - Opt-out instructions
-  - Program details
-- `messageFlow` now directs reviewers to the public `/sms` page AND the public `/terms#sms` and `/privacy#sms` pages
-- `helpMessage` now actually describes help options instead of generic text
+### Attempt 4: Campaign Resubmission (Mar 27) — FAILED
+- Error 30909 again: CTA verification failed
+- Created public page at `https://crab.travel/sms` with text-only description of opt-in flow
+- `messageFlow` directed reviewers to `/sms`, `/terms#sms`, `/privacy#sms`
+- **Root cause:** The `/sms` page only had text descriptions, not visual proof. Reviewer still couldn't verify the actual UI. Per Twilio docs: "If the CTA is behind a login, provide a screenshot of the CTA hosted on a publicly accessible URL."
+
+### Attempt 5: Campaign Resubmission (Apr 1) — PREPARING
+- **Major `/sms` page overhaul:** Now includes:
+  - Step-by-step visual mockups of the Profile page showing exact UI at each stage (initial state, phone entered, consent checked, validation blocking)
+  - Interactive demo replicating the actual form with real validation logic
+  - Clear documentation of both opt-in methods (web + keyword)
+  - All required disclosures (brand, frequency, rates, terms, privacy, opt-out)
+- **Updated Message Flow** to explicitly call out the visual walkthrough on `/sms`
+- **Key insight from research:** Twilio reviewers need to visually verify the consent UI. Text descriptions aren't enough when the actual form is behind auth.
 
 ---
 
@@ -180,7 +185,7 @@ elif d.get('error_code') == 30034:
 |---|---|---|---|
 | Brand registration (one-time) | $4.00 | 2026-03-08 | TCR fee |
 | Campaign vetting | $15.00 | 2026-03-25 | First campaign (failed) |
-| Campaign vetting | ~$15.00 | 2026-03-27 | Second campaign (this one) |
+| Campaign vetting | ~$15.00 | 2026-03-27 | Second campaign (failed, 30909 again) |
 | Brand re-registration (failed) | $4.00 | 2026-03-26 | Unnecessary, wasted |
 | Phone number (monthly) | $2.30 | Monthly | +14256002722 local |
 | Toll-free number (monthly) | $4.30 | Monthly | If still active |

@@ -2,31 +2,264 @@
 {% block title %}SMS Program Info — crab.travel{% endblock %}
 {% block content %}
 <div class="max-w-3xl mx-auto animate-in">
-<h1 class="text-3xl font-display mb-6">SMS Program Information</h1>
-<p class="text-sm text-crab-sand-dim mb-8">How crab.travel uses text messaging to keep your group trip on track.</p>
+<h1 class="text-3xl font-display mb-2">SMS Program Information</h1>
+<p class="text-sm text-crab-sand-dim mb-2">How crab.travel uses text messaging to keep your group trip on track.</p>
+<p class="text-xs text-crab-sand-dim mb-8 opacity-60">Program name: <strong>crab.travel Trip Notifications</strong> &middot; Phone: <strong>(425) 600-2722</strong> &middot; <a href="/terms#sms" class="text-crab-coral hover:underline">Terms</a> &middot; <a href="/privacy#sms" class="text-crab-coral hover:underline">Privacy Policy</a></p>
 
-<div class="space-y-8 text-sm leading-relaxed text-crab-sand-dim">
+<div class="space-y-10 text-sm leading-relaxed text-crab-sand-dim">
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 1: OPT-IN METHODS — all consent collection paths
+     ════════════════════════════════════════════════════════════ -->
 <div>
-<h2 class="text-lg font-display text-crab-sand mb-3">How Users Opt In to SMS</h2>
-<p class="mb-3">SMS notifications are <strong>never enabled by default</strong>. To receive text messages, users must complete two deliberate steps on their <strong>Profile page</strong> (login required):</p>
-<ol class="list-decimal ml-5 space-y-2">
-<li><strong>Enter a phone number</strong> in the "Phone number" field</li>
-<li><strong>Check the SMS consent checkbox</strong>, which reads:</li>
-</ol>
-<div class="mt-3 p-4 rounded-lg bg-white/5 border border-white/10">
-<p class="flex items-start gap-2.5">
-<span class="inline-block w-4 h-4 mt-0.5 rounded border-2 border-crab-coral flex-shrink-0"></span>
-<span class="text-crab-sand">"I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <span class="text-crab-coral">Terms</span> &amp; <span class="text-crab-coral">Privacy</span>."</span>
-</p>
+<h2 class="text-lg font-display text-crab-sand mb-3">How Users Opt In (Call to Action)</h2>
+<p class="mb-4">SMS notifications are <strong>never enabled by default</strong>. crab.travel collects SMS consent through two methods:</p>
+
+<div class="space-y-4">
+  <!-- Method 1: Web -->
+  <div class="p-4 rounded-lg bg-white/[0.03] border border-white/10">
+    <p class="text-xs uppercase tracking-widest text-crab-coral font-semibold mb-2">Method 1 — Web opt-in (Profile page)</p>
+    <p>Users log in via Google OAuth and navigate to their <strong>Profile page</strong> at <code class="text-crab-coral">https://crab.travel/profile</code>. In the Notifications section, they must complete <strong>all three steps</strong>:</p>
+    <ol class="list-decimal ml-5 mt-2 space-y-1">
+      <li>Enter their phone number</li>
+      <li>Check the consent checkbox (appears only after a phone number is entered)</li>
+      <li>Select "SMS" or "Both" as their notification channel</li>
+    </ol>
+    <p class="mt-2">If a user selects SMS or Both without checking the consent box, <strong>validation blocks the selection</strong> and the channel falls back to Email. SMS cannot be enabled without explicit consent.</p>
+  </div>
+
+  <!-- Method 2: Keyword -->
+  <div class="p-4 rounded-lg bg-white/[0.03] border border-white/10">
+    <p class="text-xs uppercase tracking-widest text-crab-coral font-semibold mb-2">Method 2 — Keyword opt-in (Text START)</p>
+    <p>Users can text <strong>START</strong> to <strong>(425) 600-2722</strong> to opt in. They receive a confirmation reply:</p>
+    <div class="mt-2 p-3 rounded bg-white/5 font-mono text-xs">"Welcome to crab.travel SMS alerts! You will receive trip updates, price alerts, and group chat notifications. Message frequency varies. Msg & data rates may apply. Reply STOP to unsubscribe, HELP for help."</div>
+  </div>
 </div>
-<p class="mt-3">Users must also select <strong>"SMS"</strong> or <strong>"Both"</strong> as their notification channel. Selecting SMS or Both without checking the consent box is blocked by validation.</p>
-<p class="mt-2">Users may also opt in by texting <strong>START</strong> to <strong>(425) 600-2722</strong>.</p>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 2: VISUAL WALKTHROUGH — step-by-step screenshots
+     of the actual opt-in UI (Profile page is behind login)
+     ════════════════════════════════════════════════════════════ -->
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">Opt-In Visual Walkthrough</h2>
+<p class="mb-4">The Profile page requires login. Below is a <strong>step-by-step visual walkthrough</strong> showing exactly what users see during the opt-in process. Each step shows the actual UI from the Profile page Notifications section.</p>
+
+<!-- Step 1: Empty state -->
+<div class="mb-6">
+  <p class="text-xs uppercase tracking-widest text-crab-teal font-semibold mb-3">Step 1 — Initial state (SMS disabled by default)</p>
+  <div class="p-5 rounded-xl bg-[#1a1a2e] border border-white/10 relative">
+    <div class="absolute top-2 right-3 text-[9px] text-white/20 uppercase tracking-widest">Profile page &middot; Notifications</div>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <div class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/20 max-w-xs">+1 (555) 123-4567</div>
+    </div>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2">
+        <span class="px-3 py-1.5 rounded-full text-sm bg-crab-coral text-white inline-block">Email</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">SMS</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Both</span>
+      </div>
+    </div>
+    <p class="text-[10px] text-emerald-400 mt-3 flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-emerald-400/30"></span> No phone number entered. SMS consent checkbox is hidden. Channel defaults to Email.</p>
+  </div>
+</div>
+
+<!-- Step 2: Phone entered, consent appears -->
+<div class="mb-6">
+  <p class="text-xs uppercase tracking-widest text-crab-teal font-semibold mb-3">Step 2 — User enters phone number → consent checkbox appears</p>
+  <div class="p-5 rounded-xl bg-[#1a1a2e] border border-white/10 relative">
+    <div class="absolute top-2 right-3 text-[9px] text-white/20 uppercase tracking-widest">Profile page &middot; Notifications</div>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <div class="bg-white/5 border border-crab-coral rounded-lg px-3 py-2 text-sm text-crab-sand max-w-xs">+1 (206) 555-0199</div>
+    </div>
+    <!-- Consent appears -->
+    <div class="mb-4 p-3 rounded-lg border border-crab-coral/40 bg-crab-coral/5">
+      <div class="flex items-start gap-2.5">
+        <span class="inline-block w-4 h-4 mt-0.5 rounded border-2 border-white/30 flex-shrink-0"></span>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <span class="text-crab-coral">Terms</span> &amp; <span class="text-crab-coral">Privacy</span>.</span>
+      </div>
+    </div>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2">
+        <span class="px-3 py-1.5 rounded-full text-sm bg-crab-coral text-white inline-block">Email</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">SMS</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Both</span>
+      </div>
+    </div>
+    <p class="text-[10px] text-yellow-400 mt-3 flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-yellow-400/30"></span> Phone entered. Consent checkbox now visible but unchecked. User must check it to proceed.</p>
+  </div>
+</div>
+
+<!-- Step 3: Consent checked, SMS selected -->
+<div class="mb-6">
+  <p class="text-xs uppercase tracking-widest text-crab-teal font-semibold mb-3">Step 3 — User checks consent + selects SMS → opt-in complete</p>
+  <div class="p-5 rounded-xl bg-[#1a1a2e] border border-white/10 relative">
+    <div class="absolute top-2 right-3 text-[9px] text-white/20 uppercase tracking-widest">Profile page &middot; Notifications</div>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <div class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-crab-sand max-w-xs">+1 (206) 555-0199</div>
+    </div>
+    <!-- Consent checked -->
+    <div class="mb-4">
+      <div class="flex items-start gap-2.5">
+        <span class="inline-flex items-center justify-center w-4 h-4 mt-0.5 rounded border-2 border-crab-coral bg-crab-coral flex-shrink-0 text-white text-[10px]">&#10003;</span>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <span class="text-crab-coral">Terms</span> &amp; <span class="text-crab-coral">Privacy</span>.</span>
+      </div>
+    </div>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2">
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Email</span>
+        <span class="px-3 py-1.5 rounded-full text-sm bg-crab-coral text-white inline-block">SMS</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Both</span>
+      </div>
+    </div>
+    <p class="text-[10px] text-emerald-400 mt-3 flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-emerald-400/30"></span> Consent given + SMS selected. User will now receive text notifications for their trips.</p>
+  </div>
+</div>
+
+<!-- Validation: what happens without consent -->
+<div class="mb-2">
+  <p class="text-xs uppercase tracking-widest text-crab-teal font-semibold mb-3">Validation — Selecting SMS without consent is blocked</p>
+  <div class="p-5 rounded-xl bg-[#1a1a2e] border border-crab-coral/50 relative">
+    <div class="absolute top-2 right-3 text-[9px] text-white/20 uppercase tracking-widest">Profile page &middot; Notifications</div>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <div class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-crab-sand max-w-xs">+1 (206) 555-0199</div>
+    </div>
+    <!-- Consent NOT checked, highlighted -->
+    <div class="mb-4 p-2 rounded-lg ring-1 ring-crab-coral">
+      <div class="flex items-start gap-2.5">
+        <span class="inline-block w-4 h-4 mt-0.5 rounded border-2 border-crab-coral flex-shrink-0"></span>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <span class="text-crab-coral">Terms</span> &amp; <span class="text-crab-coral">Privacy</span>.</span>
+      </div>
+    </div>
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2">
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Email</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-crab-coral text-crab-coral inline-block">SMS</span>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 text-crab-sand-dim inline-block">Both</span>
+      </div>
+    </div>
+    <p class="text-[10px] text-crab-coral mt-3 flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-crab-coral/30"></span> Blocked! User clicked SMS but consent is unchecked. Checkbox highlights with a red ring. Channel falls back to Email on save.</p>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 3: INTERACTIVE DEMO — live replica of the form
+     ════════════════════════════════════════════════════════════ -->
+<div>
+<h2 class="text-lg font-display text-crab-sand mb-3">Interactive Demo</h2>
+<p class="mb-4">Try the opt-in flow yourself. This is a <strong>functional replica</strong> of the Profile page form with the same validation logic.</p>
+
+<div class="p-6 rounded-xl bg-white/[0.03] border border-white/10">
+  <p class="text-[10px] uppercase tracking-widest text-crab-coral mb-4 font-semibold">Live demo — Profile page Notifications section</p>
+  <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+
+  <div class="mb-4">
+    <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+    <input type="tel" id="demo-phone" placeholder="+1 (555) 123-4567"
+      class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-crab-sand focus:outline-none focus:border-crab-coral max-w-xs w-full">
+  </div>
+
+  <div class="mb-4 transition-all duration-300" id="demo-consent-wrap" style="display:none; opacity:0">
+    <label class="flex items-start gap-2.5 cursor-pointer">
+      <input type="checkbox" id="demo-consent" class="mt-0.5 accent-crab-coral">
+      <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <a href="/terms" class="underline text-crab-coral">Terms</a> &amp; <a href="/privacy" class="underline text-crab-coral">Privacy</a>.</span>
+    </label>
+  </div>
+
+  <div class="mb-4">
+    <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+    <div class="flex flex-wrap gap-2" id="demo-channels">
+      <label class="cursor-pointer">
+        <input type="radio" name="demo_channel" value="email" class="peer hidden" checked>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">Email</span>
+      </label>
+      <label class="cursor-pointer">
+        <input type="radio" name="demo_channel" value="sms" class="peer hidden">
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">SMS</span>
+      </label>
+      <label class="cursor-pointer">
+        <input type="radio" name="demo_channel" value="both" class="peer hidden">
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">Both</span>
+      </label>
+    </div>
+  </div>
+
+  <div id="demo-feedback" class="text-xs mt-3 hidden"></div>
+</div>
+
+<script>
+(function(){
+  var phone = document.getElementById('demo-phone');
+  var wrap  = document.getElementById('demo-consent-wrap');
+  var box   = document.getElementById('demo-consent');
+  var fb    = document.getElementById('demo-feedback');
+
+  phone.addEventListener('input', function(){
+    if(this.value.trim()){
+      wrap.style.display = '';
+      requestAnimationFrame(function(){ wrap.style.opacity = '1'; });
+    } else {
+      wrap.style.opacity = '0';
+      setTimeout(function(){ wrap.style.display = 'none'; }, 300);
+    }
+    updateFeedback();
+  });
+
+  document.querySelectorAll('input[name="demo_channel"]').forEach(function(r){
+    r.addEventListener('change', function(){
+      if((this.value === 'sms' || this.value === 'both') && !box.checked){
+        wrap.style.display = '';
+        wrap.style.opacity = '1';
+        wrap.classList.add('ring-1','ring-crab-coral','rounded-lg','p-2');
+        setTimeout(function(){ wrap.classList.remove('ring-1','ring-crab-coral','rounded-lg','p-2'); }, 2000);
+      }
+      updateFeedback();
+    });
+  });
+
+  box.addEventListener('change', updateFeedback);
+
+  function updateFeedback(){
+    var ch = document.querySelector('input[name="demo_channel"]:checked').value;
+    var hasPhone = phone.value.trim().length > 0;
+    var consented = box.checked;
+    if((ch === 'sms' || ch === 'both') && !hasPhone){
+      fb.className = 'text-xs mt-3 text-yellow-400';
+      fb.textContent = 'Enter a phone number first to enable SMS.';
+    } else if((ch === 'sms' || ch === 'both') && !consented){
+      fb.className = 'text-xs mt-3 text-crab-coral';
+      fb.textContent = 'You must check the consent box to receive SMS. Channel will fall back to Email.';
+    } else if((ch === 'sms' || ch === 'both') && consented && hasPhone){
+      fb.className = 'text-xs mt-3 text-emerald-400';
+      fb.textContent = 'SMS opt-in complete. You would now receive text notifications.';
+    } else {
+      fb.className = 'text-xs mt-3 hidden';
+      fb.textContent = '';
+    }
+  }
+})();
+</script>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 4: What messages we send
+     ════════════════════════════════════════════════════════════ -->
 <div>
 <h2 class="text-lg font-display text-crab-sand mb-3">What Messages We Send</h2>
-<p class="mb-2">All messages are transactional and related to trips the user has joined:</p>
+<p class="mb-2">All messages are transactional and related to trips the user has joined. crab.travel does not send marketing or promotional messages.</p>
 <ul class="list-disc ml-5 space-y-1">
 <li><strong>Trip chat messages</strong> — when a group member sends a message in the trip chat</li>
 <li><strong>Voting reminders</strong> — when the group is choosing a destination and votes are needed</li>
@@ -36,6 +269,9 @@
 </ul>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 5: Sample messages
+     ════════════════════════════════════════════════════════════ -->
 <div>
 <h2 class="text-lg font-display text-crab-sand mb-3">Sample Messages</h2>
 <div class="space-y-2">
@@ -45,6 +281,9 @@
 </div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 6: Opt-out
+     ════════════════════════════════════════════════════════════ -->
 <div>
 <h2 class="text-lg font-display text-crab-sand mb-3">How to Opt Out</h2>
 <ul class="list-disc ml-5 space-y-1">
@@ -52,28 +291,36 @@
 <li>Uncheck the SMS consent checkbox on your <a href="/profile" class="text-crab-coral hover:underline">Profile page</a></li>
 <li>Change your notification channel to "Email" on your Profile page</li>
 </ul>
-<p class="mt-2">You will receive a confirmation: "You have been unsubscribed from crab.travel SMS alerts. You will not receive any more messages. Reply START to re-subscribe."</p>
+<p class="mt-2">Opt-out confirmation: <span class="font-mono text-xs">"You have successfully been unsubscribed. You will not receive any more messages from this number. Reply START to resubscribe."</span></p>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 7: Help
+     ════════════════════════════════════════════════════════════ -->
 <div>
 <h2 class="text-lg font-display text-crab-sand mb-3">Help</h2>
-<p>Reply <strong>HELP</strong> to any message, or visit our <a href="/contact" class="text-crab-coral hover:underline">contact page</a>. You can also email support@crab.travel.</p>
+<p>Reply <strong>HELP</strong> to any message. Response: <span class="font-mono text-xs">"Reply STOP to unsubscribe. Msg&amp;Data Rates May Apply."</span></p>
+<p class="mt-1">You can also email <strong>support@crab.travel</strong> or visit our <a href="/contact" class="text-crab-coral hover:underline">contact page</a>.</p>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 8: Program details
+     ════════════════════════════════════════════════════════════ -->
 <div>
 <h2 class="text-lg font-display text-crab-sand mb-3">Program Details</h2>
 <ul class="list-none space-y-1">
 <li><strong>Program name:</strong> crab.travel Trip Notifications</li>
-<li><strong>Message frequency:</strong> Varies based on trip activity</li>
+<li><strong>Message frequency:</strong> Varies based on trip activity (not more than 10 messages per day)</li>
 <li><strong>Message and data rates may apply</strong></li>
 <li><strong>Carrier:</strong> Twilio (SMS delivery provider)</li>
 <li><strong>Phone number:</strong> (425) 600-2722</li>
+<li><strong>Consent is not required</strong> to use crab.travel — SMS is an optional notification channel</li>
 </ul>
-<p class="mt-3">Consent to receive SMS is not a condition of purchase or use of crab.travel. Carriers are not liable for delayed or undelivered messages. We do not sell, rent, or share your phone number with any third party for marketing purposes.</p>
+<p class="mt-3">We do not sell, rent, or share your phone number with any third party for marketing purposes. Carriers are not liable for delayed or undelivered messages.</p>
 </div>
 
 <div class="pt-4 border-t border-white/10">
-<p>See also: <a href="/terms#sms" class="text-crab-coral hover:underline">SMS Terms of Service</a> · <a href="/privacy#sms" class="text-crab-coral hover:underline">SMS Privacy Policy</a></p>
+<p>See also: <a href="/terms#sms" class="text-crab-coral hover:underline">SMS Terms of Service</a> &middot; <a href="/privacy#sms" class="text-crab-coral hover:underline">SMS Privacy Policy</a></p>
 </div>
 
 </div>
