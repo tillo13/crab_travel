@@ -107,6 +107,18 @@ def get_db_connection():
             _connection_pools.pop(GCP_PROJECT_ID, None)
         pool = _get_connection_pool()
         conn = pool.getconn()
+    # Test if connection is alive — Cloud SQL kills idle connections
+    try:
+        conn.cursor().execute("SELECT 1")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        logger.warning("Stale DB connection detected, reconnecting")
+        try:
+            pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        _connection_pools.pop(GCP_PROJECT_ID, None)
+        pool = _get_connection_pool()
+        conn = pool.getconn()
     return PooledConnection(conn, pool)
 
 
