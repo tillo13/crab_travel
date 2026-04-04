@@ -18,6 +18,7 @@
   <meta property="og:url" content="{{ request.url.split('?')[0] }}">
   <meta property="og:image" content="{{ url_for('static', filename='images/crab_logo.png', _external=True) }}">
 
+  <link rel="alternate" type="application/atom+xml" title="crab.travel Feed" href="/feed.xml">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
@@ -360,6 +361,18 @@
         <a href="/contact" class="hover:text-crab-coral transition-colors">Contact</a>
         <a href="/privacy" class="hover:text-crab-coral transition-colors">Privacy</a>
         <a href="/terms" class="hover:text-crab-coral transition-colors">Terms</a>
+      </div>
+    </div>
+    <div class="max-w-5xl mx-auto px-4 pb-4">
+      <div style="padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); text-align: center;">
+        <span style="font-size: 10px; color: rgba(200,194,184,0.4); letter-spacing: 0.05em;">More projects</span>
+        <div style="margin-top: 4px; display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;">
+          <a href="https://scatterbrain.us" style="font-size: 11px; color: rgba(200,194,184,0.4); text-decoration: none;" class="hover:text-crab-coral transition-colors">Scatterbrain</a>
+          <a href="https://kindness.social" style="font-size: 11px; color: rgba(200,194,184,0.4); text-decoration: none;" class="hover:text-crab-coral transition-colors">Kindness</a>
+          <a href="https://pilgri.ms" style="font-size: 11px; color: rgba(200,194,184,0.4); text-decoration: none;" class="hover:text-crab-coral transition-colors">Pilgrims</a>
+          <a href="https://wattson.ac" style="font-size: 11px; color: rgba(200,194,184,0.4); text-decoration: none;" class="hover:text-crab-coral transition-colors">Wattson</a>
+          <a href="https://noqout.com" style="font-size: 11px; color: rgba(200,194,184,0.4); text-decoration: none;" class="hover:text-crab-coral transition-colors">Noqout</a>
+        </div>
       </div>
     </div>
   </footer>

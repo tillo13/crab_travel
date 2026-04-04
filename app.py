@@ -252,8 +252,73 @@ def sitemap():
 @app.route('/robots.txt')
 def robots():
     host = request.host_url.rstrip('/')
-    content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\n'
+    content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\nFeed: {host}/feed.xml\n'
     return Response(content, mimetype='text/plain')
+
+@app.route('/feed.xml')
+def atom_feed():
+    """Atom feed of roadmap and feature updates for search engine discovery."""
+    from datetime import datetime
+    now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>crab.travel</title>
+  <subtitle>Group trip planning without the chaos. Roadmap and feature updates.</subtitle>
+  <link href="https://crab.travel/"/>
+  <link href="https://crab.travel/feed.xml" rel="self"/>
+  <id>https://crab.travel/</id>
+  <updated>{now}</updated>
+  <entry>
+    <title>Interactive Demo Mode — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#demo-mode</id>
+    <updated>2026-03-20T00:00:00Z</updated>
+    <summary>Experience the full platform as Judy Tunaboat without signing up. Stage switcher shows Voting, Planning, and Booked phases of real demo trips.</summary>
+  </entry>
+  <entry>
+    <title>Travel Search &amp; Deals — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#travel-search</id>
+    <updated>2026-03-15T00:00:00Z</updated>
+    <summary>Four search adapters (Duffel, LiteAPI, Viator, Travelpayouts) running in parallel with real-time streaming results and cross-provider deduplication.</summary>
+  </entry>
+  <entry>
+    <title>CrabAI Destination Research — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#crabai-research</id>
+    <updated>2026-03-10T00:00:00Z</updated>
+    <summary>AI-generated destination cards with stays, activities, food, and local events. Group vibes filter and compatibility scoring based on collective preferences.</summary>
+  </entry>
+  <entry>
+    <title>Voting &amp; Availability — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#voting</id>
+    <updated>2026-03-05T00:00:00Z</updated>
+    <summary>Rank-order destination voting with live tallies and visual group availability calendar with three-tier date preferences.</summary>
+  </entry>
+  <entry>
+    <title>Trip Creation &amp; Invites — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#trip-creation</id>
+    <updated>2026-03-01T00:00:00Z</updated>
+    <summary>Core trip loop: create a trip, share one link, everyone joins and fills out preferences. No app download or account required for members.</summary>
+  </entry>
+  <entry>
+    <title>Live Trip Bots</title>
+    <link href="https://crab.travel/live"/>
+    <id>https://crab.travel/live</id>
+    <updated>2026-03-25T00:00:00Z</updated>
+    <summary>Watch AI-powered bots plan trips in real time. Live demo of the full group planning experience with destination research and group chat.</summary>
+  </entry>
+  <entry>
+    <title>About crab.travel</title>
+    <link href="https://crab.travel/about"/>
+    <id>https://crab.travel/about</id>
+    <updated>2026-03-01T00:00:00Z</updated>
+    <summary>The story behind crab.travel: why group trip planning is broken and how we are fixing it with AI and collaborative tools.</summary>
+  </entry>
+</feed>'''
+    return Response(xml, mimetype='application/atom+xml')
 
 @app.route('/')
 def index():
