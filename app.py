@@ -255,6 +255,10 @@ def robots():
     content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\nFeed: {host}/feed.xml\n'
     return Response(content, mimetype='text/plain')
 
+@app.route('/b4c9ebbc8faa4d7b8b2b8104b6511fee.txt')
+def indexnow_key():
+    return Response('b4c9ebbc8faa4d7b8b2b8104b6511fee', mimetype='text/plain')
+
 @app.route('/feed.xml')
 def atom_feed():
     """Atom feed of roadmap and feature updates for search engine discovery."""
