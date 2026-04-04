@@ -1,7 +1,21 @@
 # crab.travel — Next Steps
-*Updated: 2026-03-27*
+*Updated: 2026-04-01*
 
-## Done This Session (March 27)
+## Done This Session (April 1)
+
+### Twilio A2P Campaign — Attempt 6
+1. **Checked campaign status** — attempt 5 (Mar 27) FAILED with error 30909 (CTA verification) for the 5th time.
+2. **Researched what actually works** — web-searched Twilio docs, community forums, and Reddit. Key finding: when opt-in is behind a login wall, reviewers need publicly accessible screenshots/mockups of the consent UI, not just text descriptions.
+3. **Overhauled `/sms` page** — added 4-step visual walkthrough with HTML/CSS mockups of the Profile page consent flow (initial state → phone entered → consent checked → validation blocking). Added interactive demo with live validation. Restructured for reviewer clarity.
+4. **Verified all reviewer-accessible pages** — `/sms` (200), `/terms#sms` (200, anchor exists), `/privacy#sms` (200, anchor exists), `/contact` (200). All public, no login required. All internal links verified working.
+5. **Deployed to GCP** — `version-91mxnseng0`, live at crab.travel.
+6. **Deleted failed campaign** — `DELETE` on `QE2c6890da8086d771620e9b13fadeba0b`, returned 204.
+7. **Resubmitted campaign** — new `QE2c6890da8086d771620e9b13fadeba0b`, status IN_PROGRESS. Updated Message Flow explicitly references visual walkthrough + interactive demo on `/sms`. Added frequency cap ("not exceeding 10 messages per day").
+8. **Updated docs** — `docs/twilio_a2p_campaign.md` updated with failure history, new submission details, costs (~$68 total in A2P fees).
+
+---
+
+## Done Previous Session (March 27)
 
 ### Itinerary Google Search Links
 1. **Clickable itinerary items** — every item on the trip summary page is now a clickable Google search link. Clicking opens a new tab with a Google search for the venue/location.
@@ -82,14 +96,25 @@
 
 ## BLOCKER: SMS / Twilio A2P Campaign
 
-**Status: IN_PROGRESS. New campaign submitted 2026-03-27. Waiting on TCR review.**
+**Status: IN_PROGRESS. Attempt 6 submitted 2026-04-01. Waiting on TCR review.**
 
-**Previous campaign (Mar 25) FAILED** — error 30909 (CTA verification). Reviewer couldn't verify opt-in because /profile requires login.
-**Fix applied (Mar 27):** Created public https://crab.travel/sms page showing full opt-in flow. Deleted failed campaign. Resubmitted with public URL in messageFlow.
+**Attempt 5 (Mar 27) FAILED** — error 30909 (CTA verification) again. The `/sms` page only had text descriptions of the opt-in flow. Reviewer still couldn't verify the actual consent UI.
+
+**What changed for attempt 6 (Apr 1):**
+- Researched Twilio docs + community: when CTA is behind a login wall, you must provide **publicly accessible visual proof** of the opt-in UI (screenshots/mockups), not just text descriptions.
+- Overhauled `/sms` page with:
+  - **4-step visual walkthrough** — HTML/CSS mockups of the actual Profile page showing: initial state (SMS off), phone entered (consent appears), consent checked + SMS selected (complete), and validation blocking SMS without consent.
+  - **Interactive demo** — functional replica of the form with real validation logic. Reviewer can type a phone number and see the consent flow themselves.
+  - Both opt-in methods clearly separated (web + keyword START).
+  - All CTIA/TCR compliance disclosures (brand, frequency cap, rates, terms, privacy, opt-out).
+- Updated Message Flow text to explicitly say: "Because the web opt-in form requires authentication, a complete visual walkthrough with step-by-step UI mockups... is publicly available at https://crab.travel/sms"
+- Added frequency cap: "not exceeding 10 messages per day" (previously just "varies").
+- Deleted failed campaign, resubmitted fresh.
+
 **Campaign SID:** `QE2c6890da8086d771620e9b13fadeba0b`
-**Expected approval:** Several days from 2026-03-27. No carrier post-approval needed for LOW_VOLUME use case.
+**Expected approval:** Several days from 2026-04-01. No carrier post-approval needed for LOW_VOLUME use case.
 
-**Full documentation:** See `docs/twilio_a2p_campaign.md` for complete history, all SIDs, what was submitted, why previous attempts failed, and how to check status.
+**Full documentation:** See `docs/twilio_a2p_campaign.md` for complete history, all SIDs, what was submitted, why all previous attempts failed, and how to check status.
 
 This is the #1 thing to tell Adam and team about. When this clears, SMS goes live instantly with zero code changes. Price drop alerts to your phone, chat messages as texts, vote reminders via SMS. Everything is built and waiting.
 

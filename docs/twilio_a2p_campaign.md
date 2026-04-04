@@ -1,7 +1,7 @@
 # Twilio A2P 10DLC Campaign — Full Documentation
 
 **Last updated:** 2026-04-01
-**Status:** FAILED (attempt 5 rejected 2026-03-27, preparing attempt 6)
+**Status:** IN_PROGRESS (attempt 6, submitted 2026-04-01)
 
 ---
 
@@ -19,7 +19,7 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 | **Customer Profile** | `BUf5cd2668261710eff4bb1c97eea9bf10` | twilio-approved |
 | **A2P Trust Product** | `BU7406bb09eaf450c62a6fc4f40019fb1b` | twilio-approved (policy `RNb0d4771c2c98518d916a3d4cd70a8f8b`) |
 | **Brand Registration** | `BN05299cc8c46ebf46b61fb87fb11d6ff9` | **APPROVED** (TCR ID: `B9D07O1`, since 2026-03-08) |
-| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **FAILED** (2026-03-27, error 30909 CTA again) |
+| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **IN_PROGRESS** (attempt 6, submitted 2026-04-01) |
 | **Messaging Service** | `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` | "Low Volume Mixed A2P Messaging Service" |
 | **Phone Number** | `+14256002722` (`PN62f5dfd99912cceb5213c3b1e1f9bbe5`) | In messaging service sender pool |
 
@@ -32,16 +32,26 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 
 ---
 
-## What Was Submitted in the Campaign (2026-03-27)
+## What Was Submitted in the Campaign (2026-04-01, attempt 6)
 
 ### Use Case
 `LOW_VOLUME` — "Low Volume Mixed" — any combination of use cases, low throughput (<2000 msgs/day on T-Mobile), no carrier post-approval required. Lowest monthly fee.
 
 ### Description
-> crab.travel is a group trip planning platform. We send SMS notifications to trip members who have explicitly opted in via their Profile page. Messages include trip chat messages from other group members, voting reminders when the group is choosing a destination, trip status updates when plans change, booking confirmations when flights or hotels are reserved, and price drop alerts for watched travel deals. All messages are transactional and related to trips the user has joined. Message frequency varies based on trip activity.
+> crab.travel is a group trip planning platform. We send transactional SMS notifications to trip members who have explicitly opted in. Messages include trip chat messages from other group members, voting reminders, trip status updates, booking confirmations, and price drop alerts. All messages relate to trips the user has joined. Message frequency varies based on trip activity, not exceeding 10 messages per day. SMS is never enabled by default.
 
 ### Message Flow (this is the CTA — what the reviewer checks)
-> End users opt in to SMS by visiting their Profile page at https://crab.travel/profile (login required via Google OAuth). They enter their phone number, which reveals a consent checkbox reading: "I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg & data rates may apply. Reply STOP to unsubscribe at any time, HELP for help." Users must check this box AND select SMS or Both as their notification channel. SMS is never enabled by default. Users may also opt in by texting START to (425) 600-2722. Full opt-in flow, sample messages, and program details are publicly documented at https://crab.travel/sms (no login required). SMS terms at https://crab.travel/terms#sms and privacy policy at https://crab.travel/privacy#sms are also publicly accessible.
+> End users opt in to SMS through two methods:
+>
+> 1. WEB OPT-IN: Users log in to crab.travel via Google OAuth, navigate to their Profile page (https://crab.travel/profile), enter their phone number, check a consent checkbox that reads: "I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg & data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. Terms & Privacy." — and select SMS or Both as their notification channel. All three steps are required. Selecting SMS without checking the consent box is blocked by validation.
+>
+> 2. KEYWORD OPT-IN: Users text START to (425) 600-2722.
+>
+> Because the web opt-in form requires authentication, a complete visual walkthrough with step-by-step UI mockups of the actual consent form is publicly available at https://crab.travel/sms — showing the initial state (SMS off by default), the consent checkbox appearing after phone entry, the completed opt-in, and the validation that blocks SMS selection without consent. An interactive demo of the same form with live validation is also on that page.
+>
+> SMS terms of service: https://crab.travel/terms#sms
+> SMS privacy policy: https://crab.travel/privacy#sms
+> Public SMS program info: https://crab.travel/sms
 
 ### Sample Messages
 1. `[crab.travel] Sarah: Hey everyone, should we push dinner to 7pm instead? Reply STOP to opt out.`
@@ -191,7 +201,9 @@ elif d.get('error_code') == 30034:
 | Toll-free number (monthly) | $4.30 | Monthly | If still active |
 | Per SMS | $0.0079 | Per message | Even undelivered ones |
 
-Total spent on A2P registration: ~$38 in fees + ~$15 pending for this campaign.
+| Campaign vetting | ~$15.00 | 2026-04-01 | Third campaign (attempt 6, visual walkthrough) |
+
+Total spent on A2P registration: ~$53 in fees + ~$15 pending for this campaign.
 
 ---
 

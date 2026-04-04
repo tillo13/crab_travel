@@ -224,20 +224,29 @@ def page_not_found(e):
 @app.route('/sitemap.xml')
 def sitemap():
     host = request.host_url.rstrip('/')
-    skip = {'api', 'admin', 'auth', 'login', 'logout', 'callback', 'health', 'sitemap', 'robots', 'tasks', 'cron', 'debug', 'mimic'}
+    # Only public-facing content pages — no auth, admin, API, internal, or utility routes
+    public_pages = {
+        '/':                1.0,
+        '/about':           0.8,
+        '/live':            0.7,
+        '/demo':            0.7,
+        '/roadmap':         0.6,
+        '/contact':         0.6,
+        '/crab-animations': 0.5,
+        '/privacy':         0.3,
+        '/terms':           0.3,
+    }
+    lastmod = '2026-04-04'
     urls = []
-    for rule in app.url_map.iter_rules():
-        if 'GET' not in rule.methods or rule.arguments:
-            continue
-        path = rule.rule
-        parts = path.strip('/').split('/')
-        if any(p in skip for p in parts):
-            continue
-        if path.startswith('/api/') or path.startswith('/admin'):
-            continue
-        priority = '1.0' if path == '/' else '0.6'
-        urls.append(f'  <url><loc>{host}{path}</loc><priority>{priority}</priority></url>')
-    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + '\n'.join(sorted(urls)) + '\n</urlset>'
+    for path, priority in sorted(public_pages.items()):
+        urls.append(
+            f'  <url>\n'
+            f'    <loc>{host}{path}</loc>\n'
+            f'    <lastmod>{lastmod}</lastmod>\n'
+            f'    <priority>{priority}</priority>\n'
+            f'  </url>'
+        )
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + '\n'.join(urls) + '\n</urlset>'
     return Response(xml, mimetype='application/xml')
 
 @app.route('/robots.txt')
