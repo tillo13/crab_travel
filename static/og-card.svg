@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0735"/>
+      <stop offset="50%" stop-color="#0f0d3a"/>
+      <stop offset="100%" stop-color="#141240"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E8593A"/>
+      <stop offset="50%" stop-color="#F47A5F"/>
+      <stop offset="100%" stop-color="#14B8A6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="40%">
+      <stop offset="0%" stop-color="rgba(232,89,58,0.08)"/>
+      <stop offset="100%" stop-color="rgba(20,184,166,0.02)"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <text x="600" y="270" text-anchor="middle" font-family="DM Serif Display, Georgia, serif" font-size="76" font-weight="400" fill="url(#accent)">crab.travel</text>
+  <text x="600" y="345" text-anchor="middle" font-family="Outfit, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="28" font-weight="400" fill="rgba(255,255,255,0.6)" letter-spacing="0.5">Group trips, without the chaos</text>
+  <rect x="530" y="385" width="140" height="1" fill="url(#accent)" opacity="0.3"/>
+</svg>
