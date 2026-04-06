@@ -8,14 +8,14 @@
   <!-- SEO meta -->
   <meta name="description" content="{% block meta_description %}Plan group trips without the chaos. Pick destinations, let AI find activities, share one link — everyone votes, drops their airport, marks blackout dates. Done.{% endblock %}">
   <meta name="robots" content="{% block meta_robots %}index, follow{% endblock %}">
-  <link rel="canonical" href="{{ request.url.split('?')[0] }}">
+  <link rel="canonical" href="https://crab.travel{{ request.path }}">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="crab.travel">
   <meta property="og:title" content="{% block og_title %}crab.travel — Group trips, without the chaos{% endblock %}">
   <meta property="og:description" content="{% block og_description %}Plan group trips without the chaos. Pick destinations, let AI find activities, share one link — everyone votes, drops their airport, marks blackout dates. Done.{% endblock %}">
-  <meta property="og:url" content="{{ request.url.split('?')[0] }}">
+  <meta property="og:url" content="https://crab.travel{{ request.path }}">
   <meta property="og:image" content="https://crab.travel/static/og-card.svg">
 
   <link rel="alternate" type="application/atom+xml" title="crab.travel Feed" href="/feed.xml">

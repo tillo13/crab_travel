@@ -1,5 +1,20 @@
 # crab.travel — Next Steps
-*Updated: 2026-04-01*
+*Updated: 2026-04-06*
+
+## YouTube Quota Increase Watch (Apr 6 check-in)
+- Submitted Mar 31, acknowledged Apr 1, silent since (Day 6).
+- Ask: **10k → 100k units/day** on `youtube.googleapis.com` (project: **kumori-404602**).
+- Evidence of need: **9 × 403 quota-exceeded errors** on kumori-404602 in last 30 days.
+- **Why we asked:** itinerary seeding triggers `/api/youtube-search` per item → hit 10k cap at ~5 seeded trips/day. The `Cap itinerary seeding to 2 per run` and `Limit seed task to 10 stale plans per run` commits are partially quota workarounds.
+- **Decision rule:** silent is normal through Apr 14; ping the thread on Apr 14; escalate Apr 21.
+- **Once approved:** remove seed throttles, add search caching to stretch headroom further.
+- Full doc: [`docs/youtube_quota_increase.md`](docs/youtube_quota_increase.md)
+
+## Twilio A2P Watch (Apr 6 check-in)
+- Attempt 6 still `IN_PROGRESS`, Day 5 in TCR queue, **zero errors** — first attempt that hasn't auto-rejected.
+- **Decision rule:** if still IN_PROGRESS after **2026-04-15 (Day 14)**, migrate to Telgorithm.
+- Full escape-hatch plan + provider comparison + migration checklist: [`docs/twilio_escape_hatch.md`](docs/twilio_escape_hatch.md)
+- TL;DR: Telgorithm ≤72h approval vs Twilio weeks, ~$0.005/msg vs $0.0079, TCR brand `B9D07O1` likely transfers (need to confirm with their sales).
 
 ## Done This Session (April 1)
 

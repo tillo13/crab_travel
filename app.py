@@ -75,6 +75,15 @@ AUTH_ENABLED = google_auth is not None
 
 
 @app.before_request
+def force_canonical_host():
+    """301 www.crab.travel → crab.travel so Google sees one canonical host.
+    Without this, both hostnames serve 200 and pages get marked 'Duplicate without user-selected canonical'."""
+    host = request.host.split(':')[0]
+    if host == 'www.crab.travel':
+        return redirect(f'https://crab.travel{request.full_path.rstrip("?")}', code=301)
+
+
+@app.before_request
 def check_apikey_auth():
     """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing).
     Sets session inline — no redirect needed, the request proceeds with auth."""
