@@ -472,9 +472,9 @@ def contact():
 @app.route('/api/contact', methods=['POST'])
 def api_contact():
     try:
-        data = request.get_json()
-        email = data.get('email', '').strip()
-        message = data.get('message', '').strip()
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip()
+        message = (data.get('message') or '').strip()
 
         # Spam guard (shared across all kumori sites)
         from utilities.spam_guard import check_spam
@@ -494,7 +494,6 @@ def api_contact():
 From: {email}
 IP: {request.remote_addr}
 User Agent: {request.headers.get('User-Agent', 'Unknown')}
-Time open: {time_open/1000:.1f}s
 
 Message:
 {message}
@@ -1415,10 +1414,47 @@ def _auto_login_demo_viewer(plan):
 
 DEMO_TRIPS = {
     'booked':   {'token': 'qL6zhRAI', 'label': 'Booked Trip'},
-    'voting':   {'token': 'xL2aRt-k', 'label': 'Voting Stage'},
-    'planning': {'token': 'TpPeETPm', 'label': 'Planning Stage'},
+    'voting':   {'token': None, 'label': 'Voting Stage'},
+    'planning': {'token': None, 'label': 'Planning Stage'},
 }
+# Map UI stage names to DB status values used by bot trips
+_DEMO_STAGE_STATUS = {'voting': 'voting', 'planning': 'locked', 'booked': 'booked'}
 DEMO_DEFAULT_STAGE = 'booked'
+
+
+def _resolve_demo_token(stage):
+    """Return a bot trip invite_token for the given demo stage.
+    Falls back to the booked demo if no match is found."""
+    pinned = DEMO_TRIPS.get(stage, {}).get('token')
+    if pinned:
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM crab.plans WHERE invite_token = %s", (pinned,))
+            ok = cur.fetchone() is not None
+            cur.close(); conn.close()
+            if ok:
+                return pinned
+        except Exception as e:
+            logger.warning(f"Demo token check failed: {e}")
+    # Dynamic lookup by status — pick a stable representative bot trip
+    db_status = _DEMO_STAGE_STATUS.get(stage, 'booked')
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT invite_token FROM crab.plans "
+            "WHERE title LIKE '[BOT]%%' AND status = %s "
+            "ORDER BY plan_id ASC LIMIT 1",
+            (db_status,),
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.warning(f"Demo token dynamic lookup failed: {e}")
+    return DEMO_TRIPS[DEMO_DEFAULT_STAGE]['token']
 
 @app.route('/demo')
 @app.route('/demo/<stage>')
@@ -1427,7 +1463,9 @@ def demo_mode(stage=None):
     /demo → booked trip, /demo/voting → voting stage, /demo/planning → planning stage.
     Stashes the real user so they auto-restore when navigating away."""
     stage = stage or request.args.get('stage', DEMO_DEFAULT_STAGE)
-    trip = DEMO_TRIPS.get(stage, DEMO_TRIPS[DEMO_DEFAULT_STAGE])
+    if stage not in DEMO_TRIPS:
+        stage = DEMO_DEFAULT_STAGE
+    token = _resolve_demo_token(stage)
 
     try:
         real_user = session.get('user')
@@ -1452,7 +1490,7 @@ def demo_mode(stage=None):
             session.modified = True
     except Exception as e:
         logger.warning(f"Demo mode switch failed: {e}")
-    return redirect(f'/to/{trip["token"]}')
+    return redirect(f'/to/{token}')
 
 
 @app.route('/to/<invite_token>')

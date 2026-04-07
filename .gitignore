@@ -8,3 +8,20 @@ venv*/
 .idea/
 node_modules/
 .claude/
+
+# ── Media (audio/video) — NEVER commit, use external storage ──
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+*.wmv
+*.flv
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
