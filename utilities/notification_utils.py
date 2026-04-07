@@ -202,7 +202,7 @@ def notify_vote_reminder(plan_id, days_remaining=None):
                   SELECT 1 FROM crab.notifications_sent n
                   WHERE n.plan_id = %s::uuid AND n.user_id = u.pk_id
                     AND n.notification_type = 'vote_reminder'
-                    AND (n.sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+                    AND n.sent_at::date = NOW()::date
               )
         """, (str(plan_id), str(plan_id), str(plan_id)))
         members = cursor.fetchall()

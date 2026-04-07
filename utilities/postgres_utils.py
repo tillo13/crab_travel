@@ -561,7 +561,7 @@ def init_database():
                 sent_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_sent_plan_type_day ON crab.notifications_sent (plan_id, notification_type, ((sent_at AT TIME ZONE 'UTC')::date))")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_sent_plan_type_day ON crab.notifications_sent (plan_id, notification_type, (sent_at::date))")
 
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
