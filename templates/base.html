@@ -316,6 +316,7 @@
         {% endif %}
       </div>
       <div class="flex items-center gap-3 text-sm">
+        <a href="/demo" class="{% if active_page == 'demo' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors text-xs font-medium">Demo</a>
         <a href="/live" class="{% if active_page == 'live' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors text-xs font-medium">Live</a>
         <a href="/about" class="{% if active_page == 'about' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors text-xs font-medium">About</a>
         <button onclick="toggleTheme()" class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors" title="Toggle dark mode">
