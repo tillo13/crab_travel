@@ -1,5 +1,17 @@
 # crab.travel — Next Steps
-*Updated: 2026-04-06*
+*Updated: 2026-04-07*
+
+## SMS — Premium Tier (deferred, no longer a blocker)
+- All three SMS use cases (chat forwarding, price drop alerts, vote reminders) now ship via **email** today through `utilities/notification_utils.py`.
+- SMS code path is intact. Flipping `crab.users.subscription_tier='premium'` for a trip organizer instantly enables SMS for their plan members (no code change).
+- Twilio A2P campaign `QE2c6890da8086d771620e9b13fadeba0b` continues to wait in TCR queue. Monitored daily by `probe_twilio_a2p` in scatterbrain — no manual checks required.
+- Telgorithm parallel-track is **paused** until we have ~10K msgs/month or a sales relationship willing to onboard at our volume. Their public floor is 500K/month for self-serve trial.
+- Apr 15 "decide whether to migrate" deadline → demoted to monitoring milestone, no action required.
+- The Adam pitch: *"SMS is built and live as a Premium feature — free users get email today, premium organizers get SMS the moment we flip a column."*
+
+## YouTube Quota — APPROVED 🎉
+- Apr 6: 100k units/day approved. Seed throttles relaxed (`MAX_ITINERARIES_PER_RUN: 2 → 10`, stale-fix batch `10 → 25`).
+- No further action required.
 
 ## YouTube Quota Increase Watch (Apr 6 check-in)
 - Submitted Mar 31, acknowledged Apr 1, silent since (Day 6).
@@ -113,7 +125,7 @@
 
 ---
 
-## BLOCKER: SMS / Twilio A2P Campaign
+## ARCHIVED — SMS / Twilio A2P Campaign (no longer a blocker, see top of file)
 
 **Status: IN_PROGRESS. Attempt 6 submitted 2026-04-01. Waiting on TCR review.**
 

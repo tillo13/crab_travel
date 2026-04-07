@@ -2630,6 +2630,44 @@ def task_refresh_deals():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/tasks/vote-reminders')
+def task_vote_reminders():
+    """Cron job — email/SMS reminders to plan members who haven't voted yet.
+
+    Idempotent via crab.notifications_sent (max one reminder per plan/user/day).
+    """
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.notification_utils import notify_vote_reminder
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Plans currently in voting/planning stage with at least one destination suggestion
+        cur.execute("""
+            SELECT DISTINCT p.plan_id
+            FROM crab.plans p
+            JOIN crab.destination_suggestions d ON d.plan_id = p.plan_id
+            WHERE p.status IN ('planning', 'voting')
+              AND p.title NOT LIKE '[BOT]%%'
+        """)
+        plan_ids = [r['plan_id'] for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        total = 0
+        for pid in plan_ids:
+            try:
+                total += notify_vote_reminder(pid) or 0
+            except Exception as e:
+                logger.warning(f"vote reminder failed for plan {pid}: {e}")
+        logger.info(f"✅ /tasks/vote-reminders complete: {total} reminders across {len(plan_ids)} plans")
+        return jsonify({'success': True, 'reminders_sent': total, 'plans_scanned': len(plan_ids)})
+    except Exception as e:
+        logger.error(f"❌ vote-reminders failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/tasks/check-watches')
 def task_check_watches():
     """Cron job — check all active member watches for price changes."""
@@ -2813,12 +2851,14 @@ def api_post_message(plan_id):
     msg['created_at'] = msg['created_at'].isoformat() if msg['created_at'] else None
     msg['user_picture'] = user.get('picture')
 
-    # Send notifications to members (async, don't block response)
+    # Send notifications to members (async, don't block response).
+    # Routes via the unified dispatcher: email always, SMS only if the trip's
+    # organizer is on subscription_tier='premium'.
     try:
-        from utilities.sms_utils import notify_plan_members
+        from utilities.notification_utils import notify_chat_message
         import threading
         threading.Thread(
-            target=notify_plan_members,
+            target=notify_chat_message,
             args=(plan_id, display_name, content, user['id']),
             kwargs={'message_id': msg['message_id']},
             daemon=True,

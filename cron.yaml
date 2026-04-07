@@ -13,3 +13,8 @@ cron:
   url: /tasks/check-watches
   schedule: every 8 hours
   timezone: America/Los_Angeles
+
+- description: "Email/SMS reminders to members who haven't voted yet"
+  url: /tasks/vote-reminders
+  schedule: every day 09:00
+  timezone: America/Los_Angeles

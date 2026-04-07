@@ -149,15 +149,18 @@
     <!-- Channel preference -->
     <div class="mb-4">
       <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
-      <div class="flex flex-wrap gap-2">
-        {% for ch, label in [('email', 'Email'), ('sms', 'SMS'), ('both', 'Both')] %}
-        <label class="cursor-pointer">
+      <div class="flex flex-wrap gap-2 items-center">
+        {% for ch, label, premium in [('email', 'Email', false), ('sms', 'SMS', true), ('both', 'Both', true)] %}
+        <label class="cursor-pointer relative">
           <input type="radio" name="notify_channel" value="{{ ch }}" class="peer hidden"
             {% if notify_prefs.notify_channel == ch %}checked{% endif %}>
-          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ label }}</span>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">
+            {{ label }}{% if premium %} <span class="ml-1 text-[9px] uppercase tracking-widest font-semibold text-crab-teal align-middle">Premium</span>{% endif %}
+          </span>
         </label>
         {% endfor %}
       </div>
+      <p class="text-[11px] text-crab-sand-dim mt-2 opacity-70">SMS is a <strong>Premium</strong> feature available to trip organizers on the Premium plan — <a href="/sms" class="text-crab-coral hover:underline">learn more</a>. Free accounts get full email notifications today; SMS turns on automatically when you upgrade.</p>
     </div>
 
     <!-- Chat messages frequency -->

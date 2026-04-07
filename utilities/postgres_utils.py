@@ -184,6 +184,7 @@ def init_database():
             ('notify_updates', 'VARCHAR(10)', "'off'"),
             ('notify_channel', 'VARCHAR(10)', "'email'"),
             ('is_admin', 'BOOLEAN', 'FALSE'),
+            ('subscription_tier', 'VARCHAR(20)', "'free'"),
         ]:
             try:
                 default_clause = f" DEFAULT {default}" if default else ""
@@ -548,6 +549,19 @@ def init_database():
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_watch_history_watch ON crab.watch_history(watch_id, observed_at)")
+
+        # Notification dedupe — used by vote reminders today, extensible later
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.notifications_sent (
+                pk_id SERIAL PRIMARY KEY,
+                plan_id UUID REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES crab.users(pk_id) ON DELETE CASCADE,
+                notification_type VARCHAR(50) NOT NULL,
+                channel VARCHAR(10) NOT NULL,
+                sent_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_sent_plan_type_day ON crab.notifications_sent (plan_id, notification_type, ((sent_at AT TIME ZONE 'UTC')::date))")
 
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
@@ -2560,9 +2574,10 @@ def get_active_watches():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT w.*, m.display_name,
+            SELECT w.*, m.display_name, m.user_id,
                    COALESCE(u.full_name, m.display_name) as member_name,
-                   u.email as user_email, u.phone_number, u.notify_channel
+                   u.email as user_email, u.phone_number, u.notify_channel,
+                   u.subscription_tier
             FROM crab.member_watches w
             JOIN crab.plan_members m ON m.pk_id = w.member_id
             LEFT JOIN crab.users u ON u.pk_id = m.user_id

@@ -393,53 +393,13 @@ def _update_recommendation(watch_id, recommendation):
 
 
 def _send_alert(watch, old_price, new_price, deep_link=None):
-    """Send price drop notification via email and/or SMS."""
-    member_name = watch.get('member_name', 'Traveler')
-    if '[BOT]' in member_name:
-        logger.info(f"Watch alert skipped for bot member {member_name}")
-        return
+    """Send price drop notification via the unified dispatcher.
+
+    Email always; SMS only if the user is on the premium subscription tier.
+    Tier gating lives in utilities/notification_utils.notify_price_drop().
+    """
     try:
-        from utilities.gmail_utils import send_simple_email
-        from utilities.sms_utils import send_sms
-
-        member_name = watch.get('member_name', 'Traveler')
-        origin = watch.get('origin', '')
-        destination = watch.get('destination', '')
-
-        if watch['watch_type'] == 'flight':
-            subject = f"Price drop: {origin}→{destination} now ${new_price:.0f}"
-            body = (
-                f"Hey {member_name}!\n\n"
-                f"Your {origin} → {destination} flight dropped to ${new_price:.2f} "
-                f"(was ${old_price:.2f}).\n\n"
-            )
-        else:
-            subject = f"Price drop: Hotels in {destination} now ${new_price:.0f}/night"
-            body = (
-                f"Hey {member_name}!\n\n"
-                f"Hotels in {destination} dropped to ${new_price:.2f}/night "
-                f"(was ${old_price:.2f}/night).\n\n"
-            )
-
-        if deep_link:
-            body += f"Book now: {deep_link}\n\n"
-        body += "— crab.travel"
-
-        # Email
-        email = watch.get('user_email')
-        if email:
-            send_simple_email(subject, body, email)
-            logger.info(f"Watch alert email sent to {email}: {subject}")
-
-        # SMS
-        phone = watch.get('phone_number')
-        notify_channel = watch.get('notify_channel', 'email')
-        if phone and notify_channel in ('sms', 'both'):
-            sms_body = f"[crab.travel] {subject}"
-            if deep_link:
-                sms_body += f" Book: {deep_link}"
-            send_sms(phone, sms_body[:160])
-            logger.info(f"Watch alert SMS sent to {phone}")
-
+        from utilities.notification_utils import notify_price_drop
+        notify_price_drop(watch, old_price, new_price, deep_link=deep_link)
     except Exception as e:
         logger.error(f"Watch alert failed for watch {watch.get('pk_id')}: {e}")
