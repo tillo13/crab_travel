@@ -476,12 +476,9 @@ def api_contact():
         email = (data.get('email') or '').strip()
         message = (data.get('message') or '').strip()
 
-        # Spam guard (shared across all kumori sites)
-        from utilities.spam_guard import check_spam
-        spam_reason = check_spam(data, request.remote_addr,
-                                 fields=['email', 'message'])
-        if spam_reason:
-            logger.warning(f"Spam blocked: {spam_reason} from {request.remote_addr}")
+        # Spam guard — honeypot field + obvious URL spam
+        if data.get('website') or data.get('url') or data.get('honeypot'):
+            logger.warning(f"Spam blocked: honeypot from {request.remote_addr}")
             return jsonify({'error': 'Invalid submission'}), 400
 
         if not email or not message:
