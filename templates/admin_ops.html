@@ -190,9 +190,35 @@
 
     <!-- ── Recent Bot Runs ── -->
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
-      <div class="px-5 py-3 border-b border-white/6">
+      <div class="px-5 py-3 border-b border-white/6 flex items-baseline justify-between">
         <span class="text-sm font-display">Recent Bot Runs</span>
+        {% set ball = bot_runs_all %}
+        {% set arate = ((ball.passed / ball.total * 100) if ball.total else 0)|round(1) %}
+        <span class="text-xs text-crab-sand-dim">
+          all-time: <span class="text-crab-teal">{{ ball.passed or 0 }}</span>/{{ ball.total or 0 }}
+          ({{ arate }}%)
+          {% if ball.failed %}<span class="text-crab-coral ml-1">{{ ball.failed }} fail</span>{% endif %}
+        </span>
       </div>
+      {% if bot_runs_7d %}
+      <div class="px-5 py-3 border-b border-white/6">
+        <div class="text-xs text-crab-sand-dim mb-2">Last 7 days</div>
+        <table class="w-full text-xs">
+          <tbody>
+          {% for d in bot_runs_7d %}
+            {% set drate = ((d.passed / d.total * 100) if d.total else 0)|round(0)|int %}
+            <tr class="border-b border-white/[0.04]">
+              <td class="py-1 text-crab-sand-dim">{{ d.day.strftime('%a %b %d') }}</td>
+              <td class="py-1 text-right">{{ d.total }}</td>
+              <td class="py-1 text-right text-crab-teal">{{ d.passed or 0 }} ok</td>
+              <td class="py-1 text-right {% if d.failed %}text-crab-coral{% else %}text-crab-sand-dim{% endif %}">{{ d.failed or 0 }} fail</td>
+              <td class="py-1 text-right {% if drate >= 90 %}text-crab-teal{% elif drate >= 70 %}text-yellow-400{% else %}text-crab-coral{% endif %}">{{ drate }}%</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
           <thead><tr class="text-crab-sand-dim border-b border-white/6">

@@ -466,6 +466,30 @@ def get_ops_data():
     """)
     data['recent_bot_runs'] = [dict(r) for r in cur.fetchall()]
 
+    # Bot runs — per-day breakdown for last 7 days
+    cur.execute("""
+        SELECT date_trunc('day', started_at)::date AS day,
+               COUNT(*) AS total,
+               SUM(CASE WHEN status='passed'  THEN 1 ELSE 0 END) AS passed,
+               SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running
+        FROM crab.bot_runs
+        WHERE started_at > NOW() - INTERVAL '7 days'
+        GROUP BY 1 ORDER BY 1 DESC
+    """)
+    data['bot_runs_7d'] = [dict(r) for r in cur.fetchall()]
+
+    # Bot runs — all-time totals
+    cur.execute("""
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN status='passed'  THEN 1 ELSE 0 END) AS passed,
+               SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running,
+               MIN(started_at) AS first_run
+        FROM crab.bot_runs
+    """)
+    data['bot_runs_all'] = dict(cur.fetchone())
+
     # ── LLM Daily Caps (today) ──
     cur.execute("""
         SELECT backend,
