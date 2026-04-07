@@ -247,3 +247,7 @@ Zero code changes needed. The SMS pipeline is fully built:
 - Messaging services: https://console.twilio.com/us1/develop/sms/services
 - A2P registration: https://console.twilio.com/us1/develop/sms/regulatory-compliance/a2p-onboarding
 - Message logs: https://console.twilio.com/us1/monitor/logs/sms
+
+---
+
+**Automated monitoring:** `scatterbrain/docs/daily_health_check.md` → `probe_twilio_a2p()` runs daily at 07:15 PT. You will be emailed automatically when status flips (IN_PROGRESS → VERIFIED or FAILED) — no need to check manually.

@@ -168,3 +168,7 @@ See `scatterbrain` consolidated daily health check plan (TBD).
 - `dev/smoke_test.py:275` — smoke test caller
 - `docs/twilio_a2p_campaign.md` — sister "pending external approval" saga
 - `docs/twilio_escape_hatch.md` — escape hatch pattern (same idea could apply here: create a new project if this one gets rejected)
+
+---
+
+**Automated monitoring:** `scatterbrain/docs/daily_health_check.md` → `probe_youtube_quota()` and `probe_youtube_errors()` run daily at 07:15 PT. You will be emailed automatically when the quota flips from 10k → 100k (approval) or when 403 errors reappear.

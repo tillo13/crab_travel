@@ -16,6 +16,10 @@
 - Full escape-hatch plan + provider comparison + migration checklist: [`docs/twilio_escape_hatch.md`](docs/twilio_escape_hatch.md)
 - TL;DR: Telgorithm ≤72h approval vs Twilio weeks, ~$0.005/msg vs $0.0079, TCR brand `B9D07O1` likely transfers (need to confirm with their sales).
 
+## Done 2026-04-06 Session
+- **SEO canonical fix deployed** — `force_canonical_host()` 301 redirects `www.crab.travel` → `crab.travel`; canonical + og:url tags hardcoded in `templates/base.html`. Found during sweep triggered by the same bug on digitalempiretv.com. Not GSC-alerted (yet) but would have been. Live in production.
+- **Health check monitoring wired** — scatterbrain now runs `probe_twilio_a2p()`, `probe_twilio_sms_health()`, `probe_youtube_quota()`, `probe_youtube_errors()` daily at 07:15 PT and emails only on state change or red. No more manual checking of the Twilio campaign or YouTube quota status — the cron will tell you the instant anything flips. Full doc: `scatterbrain/docs/daily_health_check.md`.
+
 ## Done This Session (April 1)
 
 ### Twilio A2P Campaign — Attempt 6

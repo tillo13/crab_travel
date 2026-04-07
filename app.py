@@ -2567,19 +2567,25 @@ def task_crawl():
 
         import subprocess
         cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.abspath(__file__))
-        # Run one random trip + nurture past trips (all in one subprocess)
-        subprocess.Popen(
-            ['python3', '-c',
-             'import sys; sys.path.insert(0,"."); '
-             'from dev.trip_bots import build_random_trip, nurture_past_trips; '
-             'from utilities.google_auth_utils import get_secret; '
-             's = get_secret("CRAB_BOT_SECRET"); '
-             'build_random_trip("https://crab.travel", s); '
-             'nurture_past_trips("https://crab.travel", s, max_trips=5)'],
-            cwd=cwd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Run one random trip + nurture past trips (block until done so App Engine
+        # keeps the instance alive — Popen-detached subprocesses get SIGKILLed when
+        # the instance scales down off-hours, leaving runs stuck and auto-failed).
+        try:
+            subprocess.run(
+                ['python3', '-c',
+                 'import sys; sys.path.insert(0,"."); '
+                 'from dev.trip_bots import build_random_trip, nurture_past_trips; '
+                 'from utilities.google_auth_utils import get_secret; '
+                 's = get_secret("CRAB_BOT_SECRET"); '
+                 'build_random_trip("https://crab.travel", s); '
+                 'nurture_past_trips("https://crab.travel", s, max_trips=5)'],
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=540,  # 9 min — under App Engine cron 10-min request deadline
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ Bot run subprocess hit 540s timeout")
         # Prune old bot plans (keep last 100, never prune booked trips)
         try:
             conn = get_db_connection()
@@ -3277,7 +3283,7 @@ def task_seed_booked_trips():
             WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
               AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0
                    OR (w.watch_type = 'flight' AND NOT jsonb_exists(COALESCE(w.data, '{}'), 'departure_time')))
-            LIMIT 10
+            LIMIT 25
         """)
         stale_plans = [r['plan_id'] for r in cur.fetchall()]
         stale_fixed = 0
@@ -3304,7 +3310,7 @@ def task_seed_booked_trips():
         from datetime import date as _date
         import re as _re
 
-        MAX_ITINERARIES_PER_RUN = 2  # LLM calls are slow; do a few per cron run
+        MAX_ITINERARIES_PER_RUN = 10  # YouTube quota now 100k/day (approved 2026-04-06); LLM is the bottleneck
         for pid in all_booked:
             if itineraries_added >= MAX_ITINERARIES_PER_RUN:
                 break

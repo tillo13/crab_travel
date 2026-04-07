@@ -79,3 +79,7 @@
 - https://www.ringly.io/blog/plivo-alternatives
 - https://emitrr.com/blog/twilio-alternative/
 - r/twilio thread "How long is A2P 10DLC campaign registration taking right now?" — multiple users confirming Twilio = weeks, Telgorithm = ≤72h
+
+---
+
+**Automated monitoring:** `scatterbrain/docs/daily_health_check.md` → `probe_twilio_a2p()` watches the Twilio campaign state daily. The Day-14 escape-hatch decision (2026-04-15) is manual — consult this doc when that email arrives.
