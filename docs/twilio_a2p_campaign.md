@@ -1,7 +1,7 @@
 # Twilio A2P 10DLC Campaign — Full Documentation
 
-**Last updated:** 2026-04-01
-**Status:** IN_PROGRESS (attempt 6, submitted 2026-04-01)
+**Last updated:** 2026-04-09
+**Status:** IN_PROGRESS (attempt 7, submitted 2026-04-09)
 
 ---
 
@@ -19,7 +19,7 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 | **Customer Profile** | `BUf5cd2668261710eff4bb1c97eea9bf10` | twilio-approved |
 | **A2P Trust Product** | `BU7406bb09eaf450c62a6fc4f40019fb1b` | twilio-approved (policy `RNb0d4771c2c98518d916a3d4cd70a8f8b`) |
 | **Brand Registration** | `BN05299cc8c46ebf46b61fb87fb11d6ff9` | **APPROVED** (TCR ID: `B9D07O1`, since 2026-03-08) |
-| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **IN_PROGRESS** (attempt 6, submitted 2026-04-01) |
+| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **IN_PROGRESS** (attempt 7, submitted 2026-04-09) |
 | **Messaging Service** | `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` | "Low Volume Mixed A2P Messaging Service" |
 | **Phone Number** | `+14256002722` (`PN62f5dfd99912cceb5213c3b1e1f9bbe5`) | In messaging service sender pool |
 
@@ -97,6 +97,16 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 - Created public page at `https://crab.travel/sms` with text-only description of opt-in flow
 - `messageFlow` directed reviewers to `/sms`, `/terms#sms`, `/privacy#sms`
 - **Root cause:** The `/sms` page only had text descriptions, not visual proof. Reviewer still couldn't verify the actual UI. Per Twilio docs: "If the CTA is behind a login, provide a screenshot of the CTA hosted on a publicly accessible URL."
+
+### Attempt 6: Campaign Resubmission (Apr 1) — FAILED
+- Error 30909 again: CTA verification failed
+- `/sms` page had visual mockups + interactive demo of the opt-in form
+- **Root cause:** Mockups weren't enough — reviewers want to see the real form with real fields, not simulated UI. Text-plus-mockups still reads as "described, not proven" when the real thing is behind auth.
+
+### Attempt 7: Campaign Resubmission (Apr 9) — IN_PROGRESS
+- **New tactic:** Published a public read-only copy of the actual Profile form at `https://crab.travel/profile/demo`. Same template, same fields, same consent checkbox, same disclosure wording — just no Google sign-in required. A banner at top identifies it as the reviewer preview. Form submissions are intercepted with an alert.
+- **Updated `messageFlow`** to direct reviewers to `/profile/demo` explicitly with an "IMPORTANT FOR REVIEWERS" callout.
+- **Why this should finally work:** The reviewer now sees the *real* rendered form, not a mockup or screenshot. Twilio's own docs say: "If the CTA is behind a login, provide a publicly accessible URL showing the CTA." A public rendering of the identical template is the most direct possible interpretation of that guidance.
 
 ### Attempt 5: Campaign Resubmission (Apr 1) — PREPARING
 - **Major `/sms` page overhaul:** Now includes:
@@ -211,6 +221,7 @@ Total spent on A2P registration: ~$53 in fees + ~$15 pending for this campaign.
 
 | URL | Content |
 |---|---|
+| https://crab.travel/profile/demo | **Public read-only copy of the real Profile/opt-in form** (attempt 7) |
 | https://crab.travel/sms | Full SMS program info, opt-in flow, samples, opt-out |
 | https://crab.travel/terms#sms | SMS terms of service section |
 | https://crab.travel/privacy#sms | SMS privacy policy section |
