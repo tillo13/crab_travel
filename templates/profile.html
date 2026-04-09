@@ -20,24 +20,32 @@
 </style>
 {% endblock %}
 {% block content %}
+{% set display_user = display_user or session.user %}
 <div class="max-w-2xl mx-auto animate-in">
+
+{% if demo_mode %}
+<div class="mb-6 p-4 rounded-lg border border-crab-coral/40 bg-crab-coral/10">
+  <p class="text-sm font-semibold text-crab-coral mb-1">Public Preview — SMS Opt-In Form</p>
+  <p class="text-xs text-crab-sand-dim leading-relaxed">This is a read-only preview of the crab.travel Profile page, published at <code>/profile/demo</code> so Twilio A2P reviewers can verify the SMS consent Call-to-Action without logging in. The real form lives at <code>/profile</code> (Google sign-in required). The consent checkbox, disclosure wording, and opt-out language below are identical to production.</p>
+</div>
+{% endif %}
 
 <!-- Google account info -->
 <div class="flex items-center gap-4 mb-6">
-  {% if session.user.picture %}
-  <img src="{{ session.user.picture }}" class="w-16 h-16 rounded-full ring-2 ring-white/10" alt="">
+  {% if display_user.picture %}
+  <img src="{{ display_user.picture }}" class="w-16 h-16 rounded-full ring-2 ring-white/10" alt="">
   {% else %}
-  <div class="w-16 h-16 rounded-full bg-crab-coral text-white flex items-center justify-center text-2xl font-bold">{{ session.user.name[0]|upper }}</div>
+  <div class="w-16 h-16 rounded-full bg-crab-coral text-white flex items-center justify-center text-2xl font-bold">{{ display_user.name[0]|upper }}</div>
   {% endif %}
   <div>
-    <h1 class="text-2xl font-display">{{ session.user.name }}</h1>
-    <p class="text-sm text-crab-sand-dim">{{ session.user.email }}</p>
+    <h1 class="text-2xl font-display">{{ display_user.name }}</h1>
+    <p class="text-sm text-crab-sand-dim">{{ display_user.email }}</p>
   </div>
 </div>
 
 <p class="text-crab-sand-dim mb-8 text-sm">All fields are optional. The more you fill in, the better CrabAI can match you to plans and pre-fill your info when you join trips.</p>
 
-<form id="profile-form" class="space-y-5">
+<form id="profile-form" class="space-y-5" {% if demo_mode %}onsubmit="event.preventDefault();alert('This is a public read-only preview. The live form is at /profile and requires Google sign-in.');return false;"{% endif %}>
 
   <!-- Home location -->
   <div>

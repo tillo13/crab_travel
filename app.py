@@ -1254,6 +1254,42 @@ def profile():
                            user_phone=user_phone, notify_prefs=notify_prefs)
 
 
+@app.route('/profile/demo')
+def profile_demo():
+    """Public read-only preview of the Profile page.
+
+    Published for Twilio A2P 10DLC reviewers so the SMS consent Call-to-Action
+    can be verified without Google sign-in. The real form is /profile.
+    """
+    demo_user = {
+        'id': 0,
+        'name': 'Sample Reviewer',
+        'email': 'reviewer@crab.travel',
+        'picture': None,
+    }
+    demo_profile = {
+        'home_location': 'Scottsdale, AZ',
+        'home_airport': 'PHX',
+        'interests': ['hiking', 'food tours', 'live music'],
+        'travel_style': 'adventure,foodie',
+        'accommodation_preference': 'hotel',
+        'budget_comfort': 'moderate',
+        'dietary_needs': '',
+        'mobility_notes': '',
+        'bio': '',
+    }
+    demo_prefs = {'notify_chat': 'realtime', 'notify_updates': 'daily', 'notify_channel': 'sms'}
+    return render_template(
+        'profile.html',
+        active_page='profile',
+        display_user=demo_user,
+        profile=demo_profile,
+        user_phone='+1 (425) 555-0123',
+        notify_prefs=demo_prefs,
+        demo_mode=True,
+    )
+
+
 @app.route('/notifications/off/<member_token>')
 def unsubscribe_notifications(member_token):
     """One-click email unsubscribe — sets notify_chat=off for this user."""
