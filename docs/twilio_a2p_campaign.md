@@ -201,19 +201,30 @@ elif d.get('error_code') == 30034:
 
 ## Costs Incurred
 
-| Item | Cost | Date | Notes |
+Verified against Twilio Usage API on 2026-04-09.
+
+| Category | Total billed | Count | Notes |
 |---|---|---|---|
-| Brand registration (one-time) | $4.00 | 2026-03-08 | TCR fee |
-| Campaign vetting | $15.00 | 2026-03-25 | First campaign (failed) |
-| Campaign vetting | ~$15.00 | 2026-03-27 | Second campaign (failed, 30909 again) |
-| Brand re-registration (failed) | $4.00 | 2026-03-26 | Unnecessary, wasted |
-| Phone number (monthly) | $2.30 | Monthly | +14256002722 local |
-| Toll-free number (monthly) | $4.30 | Monthly | If still active |
-| Per SMS | $0.0079 | Per message | Even undelivered ones |
+| `a2p-10dlc-registrationfees-campaignvetting` | **$75.00** | 5 | $15 per campaign submission |
+| `a2p-10dlc-registrationfees-onetime` | **$79.50** | 6 | Brand registration + related one-time fees |
+| Phone number (monthly) | $2.30/mo | — | +14256002722 local |
+| Toll-free number (monthly) | $4.30/mo | — | If still active |
+| Per SMS | $0.0079 | per msg | Even undelivered ones |
 
-| Campaign vetting | ~$15.00 | 2026-04-01 | Third campaign (attempt 6, visual walkthrough) |
+**Total A2P fees billed to date: ~$154.50** (plus recurring monthly phone fees).
 
-Total spent on A2P registration: ~$53 in fees + ~$15 pending for this campaign.
+To re-verify current totals:
+```python
+# Pulls real charges from Twilio Usage API
+import requests
+from utilities.google_auth_utils import get_secret
+acc = get_secret('CRAB_TWILIO_ACCOUNT_SID'); tok = get_secret('CRAB_TWILIO_AUTH_TOKEN')
+r = requests.get(f'https://api.twilio.com/2010-04-01/Accounts/{acc}/Usage/Records.json',
+                 auth=(acc, tok), params={'StartDate': '2026-02-01', 'PageSize': 200}).json()
+for u in r['usage_records']:
+    if 'a2p' in u['category'].lower():
+        print(f"{u['category']}: ${u['price']} (count={u['count']})")
+```
 
 ---
 
