@@ -184,32 +184,33 @@ def notify_vote_reminder(plan_id, days_remaining=None):
         prow = cursor.fetchone()
         plan_title = prow['title'] if prow else 'your trip'
 
-        # Members opted in for trip-update notifications who have NOT been
-        # reminded already today and have NOT cast any votes for this plan.
+        # Members opted in for trip-update notifications who have NOT voted yet
+        # AND have not been reminded today AND are still under the lifetime cap.
+        # Single LEFT JOIN aggregation = one scan of notifications_sent (vs. two
+        # correlated subqueries). Index idx_notif_sent_plan_type_day covers it.
         cursor.execute("""
             SELECT DISTINCT u.pk_id, u.full_name, u.email, u.phone_number,
                    u.notify_channel, m.member_token
             FROM crab.plan_members m
             JOIN crab.users u ON u.pk_id = m.user_id
+            LEFT JOIN (
+                SELECT user_id,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE sent_at::date = NOW()::date) AS today
+                FROM crab.notifications_sent
+                WHERE plan_id = %s::uuid AND notification_type = 'vote_reminder'
+                GROUP BY user_id
+            ) ns ON ns.user_id = u.pk_id
             WHERE m.plan_id = %s::uuid
               AND u.full_name NOT LIKE '%%[BOT]%%'
               AND u.notify_updates IN ('realtime', 'daily')
+              AND COALESCE(ns.total, 0) < 3
+              AND COALESCE(ns.today, 0) = 0
               AND NOT EXISTS (
                   SELECT 1 FROM crab.votes v
                   WHERE v.plan_id = %s::uuid AND v.user_id = u.pk_id
               )
-              AND NOT EXISTS (
-                  SELECT 1 FROM crab.notifications_sent n
-                  WHERE n.plan_id = %s::uuid AND n.user_id = u.pk_id
-                    AND n.notification_type = 'vote_reminder'
-                    AND n.sent_at::date = NOW()::date
-              )
-              AND (
-                  SELECT COUNT(*) FROM crab.notifications_sent n
-                  WHERE n.plan_id = %s::uuid AND n.user_id = u.pk_id
-                    AND n.notification_type = 'vote_reminder'
-              ) < 3
-        """, (str(plan_id), str(plan_id), str(plan_id), str(plan_id)))
+        """, (str(plan_id), str(plan_id), str(plan_id)))
         members = cursor.fetchall()
 
         plan_url = f"https://crab.travel/plan/{plan_id}"
