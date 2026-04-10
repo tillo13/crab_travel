@@ -3,5 +3,6 @@
     "app_name": "Crab Travel",
     "github_repo": "https://github.com/tillo13/crab_travel.git",
     "custom_domain": "https://crab.travel",
-    "cron_yaml": true
+    "cron_yaml": true,
+    "pre_deploy_test": "python smoke_test.py"
 }
