@@ -217,10 +217,10 @@ try:
         ok(f"Wrote + read {len(smoke_results)} test result(s)")
         info(f"pk_id={smoke_results[0]['pk_id']} title={smoke_results[0]['title']} price=${smoke_results[0]['price_usd']}")
 
-        # Clean up
+        # Clean up — scope by pk_id (table has 400K+ rows, no index on source)
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM crab.search_results WHERE source = 'smoke_test'")
+        cursor.execute("DELETE FROM crab.search_results WHERE pk_id = %s", (smoke_results[0]['pk_id'],))
         conn.commit()
         cursor.close()
         conn.close()
@@ -478,6 +478,97 @@ try:
 
 except Exception as e:
     fail(f"Tentative dates test failed: {e}")
+
+
+# ── 9. Vote reminder cap (max 3 per plan/user) ───────────────
+
+section("9. Vote reminders — 3-reminder cap per plan/user")
+test_plan_id_9 = None
+original_status_9 = None
+test_user_id_9 = None
+try:
+    from utilities.notification_utils import notify_vote_reminder
+
+    # Find any closed/completed plan with at least one non-bot member + a destination
+    # suggestion. Temporarily flip its status to 'voting' so it qualifies for the
+    # reminder query, then restore at the end.
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.plan_id, p.status, m.user_id
+        FROM crab.plans p
+        JOIN crab.plan_members m ON m.plan_id = p.plan_id
+        JOIN crab.destination_suggestions d ON d.plan_id = p.plan_id
+        JOIN crab.users u ON u.pk_id = m.user_id
+        WHERE p.title NOT LIKE '[BOT]%%'
+          AND u.full_name NOT LIKE '%%[BOT]%%'
+          AND u.notify_updates IN ('realtime', 'daily')
+        LIMIT 1
+    """)
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row:
+        info("No real plan with destination suggestion + member — skipping cap test")
+    else:
+        test_plan_id_9, original_status_9, test_user_id_9 = row[0], row[1], row[2]
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Flip plan to voting so the reminder cron query picks it up
+        cursor.execute("UPDATE crab.plans SET status = 'voting' WHERE plan_id = %s", (test_plan_id_9,))
+        # Wipe any existing reminder history for this user/plan + inject 3 historical sends
+        cursor.execute("""
+            DELETE FROM crab.notifications_sent
+            WHERE plan_id = %s AND user_id = %s AND notification_type = 'vote_reminder'
+        """, (test_plan_id_9, test_user_id_9))
+        for days_ago in (5, 4, 3):
+            cursor.execute("""
+                INSERT INTO crab.notifications_sent (plan_id, user_id, notification_type, channel, sent_at)
+                VALUES (%s, %s, 'vote_reminder', 'email', NOW() - INTERVAL '%s days')
+            """, (test_plan_id_9, test_user_id_9, days_ago))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Run the reminder dispatch — capped user must NOT get a 4th send
+        notify_vote_reminder(test_plan_id_9)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) FROM crab.notifications_sent
+            WHERE plan_id = %s AND user_id = %s AND notification_type = 'vote_reminder'
+        """, (test_plan_id_9, test_user_id_9))
+        after_count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        assert after_count == 3, f"Expected user to stay at 3 reminders (cap), got {after_count}"
+        ok(f"Capped user stayed at 3 reminders (no 4th sent)")
+
+except Exception as e:
+    fail(f"Vote reminder cap test failed: {e}")
+finally:
+    # Always restore: remove injected rows + restore plan status
+    if test_plan_id_9 is not None:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            if test_user_id_9 is not None:
+                cursor.execute("""
+                    DELETE FROM crab.notifications_sent
+                    WHERE plan_id = %s AND user_id = %s AND notification_type = 'vote_reminder'
+                """, (test_plan_id_9, test_user_id_9))
+            if original_status_9 is not None:
+                cursor.execute("UPDATE crab.plans SET status = %s WHERE plan_id = %s",
+                               (original_status_9, test_plan_id_9))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            info("Restored plan status + cleaned up injected reminder rows")
+        except Exception as cleanup_err:
+            print(f"  ⚠️  Cleanup failed: {cleanup_err}")
 
 
 # ── Done ──────────────────────────────────────────────────────
