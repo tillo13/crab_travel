@@ -204,7 +204,12 @@ def notify_vote_reminder(plan_id, days_remaining=None):
                     AND n.notification_type = 'vote_reminder'
                     AND n.sent_at::date = NOW()::date
               )
-        """, (str(plan_id), str(plan_id), str(plan_id)))
+              AND (
+                  SELECT COUNT(*) FROM crab.notifications_sent n
+                  WHERE n.plan_id = %s::uuid AND n.user_id = u.pk_id
+                    AND n.notification_type = 'vote_reminder'
+              ) < 3
+        """, (str(plan_id), str(plan_id), str(plan_id), str(plan_id)))
         members = cursor.fetchall()
 
         plan_url = f"https://crab.travel/plan/{plan_id}"
