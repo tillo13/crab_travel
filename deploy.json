@@ -2,6 +2,9 @@
     "project_id": "crab-travel",
     "app_name": "Crab Travel",
     "github_repo": "https://github.com/tillo13/crab_travel.git",
+    "shared_files": [
+        {"src": "litellm/litellm_plus_router.py", "dst": "utilities/litellm_plus_router.py"}
+    ],
     "custom_domain": "https://crab.travel",
     "cron_yaml": true,
     "pre_deploy_test": "python3 smoke_test.py"

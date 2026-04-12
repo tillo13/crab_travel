@@ -1,0 +1,24 @@
+{
+  "name": "crab_travel",
+  "baseUrl": "https://crab.travel",
+  "routes": [
+    "/",
+    "/about",
+    "/roadmap",
+    "/privacy",
+    "/terms",
+    "/contact",
+    "/crab-animations",
+    "/health",
+    "/sitemap.xml",
+    "/robots.txt"
+  ],
+  "checks": {
+    "noBrokenImages": true,
+    "noConsoleErrors": true,
+    "no5xx": true,
+    "no4xx": false
+  },
+  "viewport": { "width": 1440, "height": 900 },
+  "screenshots": true
+}
