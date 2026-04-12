@@ -1,3 +1,18 @@
+# next_steps — crab_travel
+
+<!-- Auto-maintained.
+     • Append a pending item:  `deploy "msg" --next "thing to do later"`
+     • Standalone queue (no commit):  `deploy --next "thing to do later"`
+     • The nightly cron rewrites the Shipped and Unfinished sections. -->
+
+*Last refreshed: 2026-04-12 05:19*
+
+## 🎯 Pending
+
+<!-- pending:start -->
+- [ ] _legacy next_steps contents preserved below — Andy, curate manually_
+
+```
 # crab.travel — Next Steps
 *Updated: 2026-04-07*
 
@@ -39,83 +54,36 @@
 - Refactors: [`utilities/watch_engine.py:395`](utilities/watch_engine.py#L395) (price drops), [`app.py:2818`](app.py#L2818) (chat). All three flows now route through the dispatcher.
 - New cron [`/tasks/vote-reminders`](app.py#L2633) — daily 09:00 PT, idempotent.
 - Profile UI: SMS/Both radios now show teal "PREMIUM" badge + explainer text ([templates/profile.html](templates/profile.html)).
-- `/sms` page repositioned: "Coming with Premium" headline + banner; all compliance content preserved for any future CSP review. Now linked from footer.
-- Caught-and-fixed mid-deploy: my `notifications_sent` index used a non-IMMUTABLE expression (`(sent_at AT TIME ZONE 'UTC')::date`) that silently aborted the entire migration transaction. Fixed to `(sent_at::date)`, redeployed.
+- `/sms` page repositioned: 
+...
+```
+<!-- pending:end -->
 
----
+## ✅ Recently shipped
 
-## Remaining — Prioritized
+<!-- shipped:start -->
+- `6e7a2a4` · 2026-04-10 14:27 — Collapse vote-reminder dedup+cap into one LEFT JOIN scan (db-speed-first)
+- `2d09429` · 2026-04-10 14:20 — Fix pre_deploy_test command: python → python3
+- `6032280` · 2026-04-10 14:17 — Wire smoke_test.py as pre_deploy_test hook
+- `a5d9459` · 2026-04-10 14:13 — Add reminder cap smoke test + fix section 4 cleanup timeout
+- `f9c7425` · 2026-04-10 09:20 — Cap vote reminders at 3 per plan/user — stop nagging after 3 days
+- `a7e1658` · 2026-04-09 08:44 — Update Twilio A2P cost table with verified usage numbers
+- `d011be9` · 2026-04-09 08:36 — Twilio A2P attempt 7: update docs for /profile/demo CTA strategy
+- `bb60eed` · 2026-04-09 08:32 — Add /profile/demo public CTA preview for Twilio A2P reviewer
+- `0e80e2c` · 2026-04-07 16:36 — Inline contact-form spam guard (kumori module not bundled)
+- `ee25e17` · 2026-04-07 16:33 — Fix demo stage toggles + contact form 500s
+- `c251c3f` · 2026-04-07 13:09 — fix: remove cross-site footer links + kumoridotai OAuth API send
+- `036b888` · 2026-04-07 09:21 — Add Demo link to navbar
+- `1fdab41` · 2026-04-07 08:56 — Archive next_steps to dated doc, rewrite live next_steps as concise status doc
+- `6c7e4cc` · 2026-04-07 08:48 — Fix notifications_sent index expression (IMMUTABLE) so DB migration completes
+- `7b77851` · 2026-04-07 08:44 — Email-first notifications + premium tier scaffolding (subscription_tier column, unified dispatche...
+<!-- shipped:end -->
 
-### Before Adam Demo
-- **Expense form UI** — backend + balances done; just needs a manual entry form.
-- **Live test of premium SMS path** — flip Andy's `subscription_tier='premium'`, post a chat, verify Twilio attempts (will still fail with 30034, but proves the swap is wired). Then revert to `'free'`.
+## ⚠️ Unfinished / WIP
 
-### High Impact (Next Session)
-- **🌟 Airbnb / vacation rental integration** — THE killer feature. For 10+ person groups, one person fronts $3-5K on their card → that single anchor expense drives the entire "who owes who" flow. Investigate Airbnb Affiliate API + VRBO/Vacasa fallbacks. Show "Stays" as a separate category from hotels.
-- **Carpool / pickup coordination** — flight times now stored per-member. Detect members landing at same airport within a few hours, surface "3 members arriving at PHX 2-4 PM" on the trip summary page.
-- **Itinerary editor** — items exist but no add/edit/reorder UI. "Add item" button + drag-and-drop.
-- **Auto-generate itinerary via AI** — when all watches are booked, LLM produces a day-by-day plan from flight times + hotel + destination research.
-- **Real flight time integration** — when Duffel/Travelpayouts return real offers, store actual times in the JSONB `data` column (currently random within realistic windows).
-- **Hotel check-in/out times** — store + display (typically 3-4 PM in / 10-11 AM out) for day-of coordination.
+<!-- wip:start -->
+**2 file(s) with uncommitted changes:**
+- ` M CLAUDE.md`
+- ` M next_steps.md`
 
-### Medium Impact
-- **Amadeus flight adapter** — free tier 2K searches/month.
-- **Kiwi Tequila adapter** — free for affiliates, multi-city/flexible routing.
-
-### Infrastructure
-- **`/admin/pool` page** — `pg_stat_activity` view, per-app counts, leak detection.
-- **`crab.cron_executions` table** — persistent execution log for cron health monitoring.
-
-### Future Thinking — Multi-Modal Trips (notes only, no scope)
-The current model assumes everyone flies + books a hotel. Real groups are messier:
-- **Getting there:** RV rentals (Outdoorsy/RVshare), Amtrak, carpooling, mixed-mode within one trip.
-- **Staying there:** vacation rentals (whole-home for big groups), staying with friends/family ("I'm crashing at my cousin's"), camping, hostels, timeshares, split stays.
-- The Big Insight: CrabAI shouldn't assume one transport / one accommodation per trip. Members should be able to mark "I have my own accommodation" and be excluded from hotel splits while still in activity/meal splits. The expense math has to account for all of it.
-
----
-
-## Reference
-
-### API Cost Awareness
-
-| API | Monthly Cost | Status |
-|---|---|---|
-| Duffel | ~$0 (no bookings) | Demoted to fallback |
-| Travelpayouts | $0 (affiliate) | Primary flight source |
-| Xotelo | N/A | Removed (RapidAPI auth required) |
-| LiteAPI | $0 (sandbox) | Hotel fallback |
-| LLM Router | $0 (free tier round-robin) | 15+ backends |
-| YouTube Data API | $0 (100k/day approved) | Active |
-| Twilio | ~$0.01/msg | A2P stuck in TCR queue; SMS deferred to Premium tier |
-| Gmail SMTP | $0 | Primary notification channel today (~500/day cap on personal account) |
-
-### DB Connection Budget
-
-| App | maxconn | | App | maxconn |
-|---|---|---|---|---|
-| galactica | 6 | | scatterbrain | 2 |
-| crab_travel | 6 | | stealth | 2 |
-| kumori | 3 | | kindness_social | 3 |
-| dandy | 2 | | ooqio | 2 |
-| 2manspades | 2 | | wattson | 2 |
-
-**Total: 30/50** — 20 headroom. All apps: `statement_timeout=30s`, `connect_timeout=10`.
-
-### Demo Trip Reference
-
-| Stage | Token | URL | Trip |
-|---|---|---|---|
-| Booked | `qL6zhRAI` | `crab.travel/demo` | Scottsdale, AZ (12 members, fully booked) |
-| Voting | `xL2aRt-k` | `crab.travel/demo/voting` | Reykjavik / Marrakech / Luang Prabang (50 members) |
-| Planning | `TpPeETPm` | `crab.travel/demo/planning` | Andes / Ushuaia (75 members) |
-
-Judy Tunaboat (`user_id=81869`) is a member of all bot trips, organizer of every 20th.
-
-### SMS / Twilio Resources (deferred but documented)
-
-- Campaign: `QE2c6890da8086d771620e9b13fadeba0b` (still IN_PROGRESS in TCR queue)
-- Phone: `+1 (425) 600-CRAB` (425-600-2722)
-- Compliance page: [crab.travel/sms](https://crab.travel/sms)
-- Full history: [`docs/twilio_a2p_campaign.md`](docs/twilio_a2p_campaign.md)
-- Provider escape hatch: [`docs/twilio_escape_hatch.md`](docs/twilio_escape_hatch.md) (Telgorithm needs sales call; Telnyx/Plivo same TCR queue as Twilio)
-- Health probe: scatterbrain `probe_twilio_a2p` runs daily 07:15 PT, alerts only on state change
+<!-- wip:end -->

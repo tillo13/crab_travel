@@ -1,5 +1,7 @@
 # Deployment & Git Rules
 
+**📋 Always read `next_steps.md` at the repo root first** — it's auto-maintained nightly with the latest shipped commits, pending queue (from `deploy --next`), and any uncommitted WIP or TODO markers.
+
 ## Deployment
 
 ```bash

@@ -80,7 +80,7 @@ def force_canonical_host():
     Without this, both hostnames serve 200 and pages get marked 'Duplicate without user-selected canonical'."""
     host = request.host.split(':')[0]
     if host == 'www.crab.travel':
-        return redirect(f'https://crab.travel{request.full_path.rstrip("?")}', code=301)
+        return redirect(f'https://crab.travel{request.full_path}', code=301)
 
 
 @app.before_request
