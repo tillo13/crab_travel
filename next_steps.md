@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-12 05:19*
+*Last refreshed: 2026-04-13 04:00*
 
 ## 🎯 Pending
 
@@ -62,6 +62,9 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `32e615c` · 2026-04-12 15:47 — chore: remove dead llm_usage_caps.py — replaced by litellm_plus_router DB-driven limits
+- `74ca5c8` · 2026-04-12 15:21 — refactor: replace llm_router with thin wrapper over shared litellm_plus_router
+- `d271488` · 2026-04-12 11:44 — Fix SEO: remove .rstrip from www redirect, add 301 to app.yaml
 - `6e7a2a4` · 2026-04-10 14:27 — Collapse vote-reminder dedup+cap into one LEFT JOIN scan (db-speed-first)
 - `2d09429` · 2026-04-10 14:20 — Fix pre_deploy_test command: python → python3
 - `6032280` · 2026-04-10 14:17 — Wire smoke_test.py as pre_deploy_test hook
@@ -74,16 +77,12 @@
 - `ee25e17` · 2026-04-07 16:33 — Fix demo stage toggles + contact form 500s
 - `c251c3f` · 2026-04-07 13:09 — fix: remove cross-site footer links + kumoridotai OAuth API send
 - `036b888` · 2026-04-07 09:21 — Add Demo link to navbar
-- `1fdab41` · 2026-04-07 08:56 — Archive next_steps to dated doc, rewrite live next_steps as concise status doc
-- `6c7e4cc` · 2026-04-07 08:48 — Fix notifications_sent index expression (IMMUTABLE) so DB migration completes
-- `7b77851` · 2026-04-07 08:44 — Email-first notifications + premium tier scaffolding (subscription_tier column, unified dispatche...
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**2 file(s) with uncommitted changes:**
-- ` M CLAUDE.md`
-- ` M next_steps.md`
+**1 file(s) with uncommitted changes:**
+- ` M utilities/litellm_plus_router.py`
 
 <!-- wip:end -->

@@ -3,7 +3,8 @@
     "app_name": "Crab Travel",
     "github_repo": "https://github.com/tillo13/crab_travel.git",
     "shared_files": [
-        {"src": "litellm/litellm_plus_router.py", "dst": "utilities/litellm_plus_router.py"}
+        {"src": "kumori_free_llm/kumori_free_llms.py", "dst": "utilities/kumori_free_llms.py"},
+        {"src": "kumori_free_llm/backend_registry.py", "dst": "utilities/backend_registry.py"}
     ],
     "custom_domain": "https://crab.travel",
     "cron_yaml": true,

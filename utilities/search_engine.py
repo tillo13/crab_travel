@@ -246,7 +246,7 @@ def _destination_iata(destination):
 
     # LLM lookup — use a free backend to resolve
     try:
-        from utilities.llm_router import generate
+        from utilities.kumori_free_llms import generate
         prompt = (
             f"What is the nearest major airport IATA code for: {destination}\n"
             "Reply with ONLY the 3-letter IATA code, nothing else. "

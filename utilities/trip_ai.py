@@ -1,6 +1,6 @@
 import json
 import logging
-from utilities.llm_router import generate as free_generate
+from utilities.kumori_free_llms import generate as free_generate
 
 logger = logging.getLogger(__name__)
 

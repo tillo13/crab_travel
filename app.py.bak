@@ -1,0 +1,3704 @@
+import json
+import logging
+import os
+import threading
+from datetime import timedelta
+from functools import wraps
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+from utilities.google_auth_utils import get_secret
+import psycopg2.extras
+from utilities.postgres_utils import (
+    get_db_connection,
+    init_database, upsert_user, get_user_profile, update_user_profile,
+    get_user_tokens, update_user_tokens, set_user_calendar_synced,
+    create_plan, get_plans_for_user, get_plan_by_id, get_plan_by_invite_token,
+    add_plan_member, get_plan_members, get_member_for_plan,
+    get_plan_preferences, upsert_plan_preferences, get_all_plan_preferences,
+    save_member_availability, get_plan_availability, get_availability_overlap,
+    create_destination_suggestion, update_destination_suggestion, update_destination_data,
+    get_destination_suggestions, get_destination_suggestion_by_id,
+    upsert_vote, delete_vote, get_vote_tallies, get_user_votes, clear_rank_from_others, lock_plan,
+    save_recommendations, get_recommendations, update_recommendation_status,
+    delete_recommendations_for_plan,
+    save_member_blackouts, get_member_blackouts,
+    save_member_tentative_dates, get_member_tentative_dates,
+    update_member_details,
+    delete_plan, delete_destination_suggestion,
+    create_message, get_plan_messages, delete_message,
+    update_plan_stage, get_plan_blackouts, get_plan_tentative_dates,
+)
+from utilities.invite_utils import generate_token
+from utilities.trip_ai import generate_recommendations, generate_destination_card, suggest_destinations
+from utilities.calendar_utils import get_calendar_events, compute_free_windows, refresh_access_token
+from utilities.search_engine import trigger_search, is_searching
+from utilities.postgres_utils import get_search_results, clear_search_results, get_deals_cache_grouped, log_invite_view, get_invite_view_stats, get_db_connection, get_all_member_votes
+from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
+
+# ── App setup ────────────────────────────────────────────────
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'crab-dev-secret-change-me')
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ── Auth setup ───────────────────────────────────────────────
+
+google_auth = None
+try:
+    client_id = get_secret('CRAB_GOOGLE_CLIENT_ID')
+    client_secret = get_secret('CRAB_GOOGLE_CLIENT_SECRET')
+    if client_id and client_secret:
+        from authlib.integrations.flask_client import OAuth
+        oauth = OAuth(app)
+        google_auth = oauth.register(
+            name='google',
+            client_id=client_id,
+            client_secret=client_secret,
+            server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+            client_kwargs={
+                'scope': 'openid email profile',
+            },
+        )
+except Exception as e:
+    logger.warning(f"⚠️ Auth not configured: {e}")
+
+AUTH_ENABLED = google_auth is not None
+
+
+@app.before_request
+def force_canonical_host():
+    """301 www.crab.travel → crab.travel so Google sees one canonical host.
+    Without this, both hostnames serve 200 and pages get marked 'Duplicate without user-selected canonical'."""
+    host = request.host.split(':')[0]
+    if host == 'www.crab.travel':
+        return redirect(f'https://crab.travel{request.full_path}', code=301)
+
+
+@app.before_request
+def check_apikey_auth():
+    """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing).
+    Sets session inline — no redirect needed, the request proceeds with auth."""
+    if 'apikey' not in request.args:
+        return
+    if session.get('user'):
+        return  # Already authed
+    apikey = request.args.get('apikey')
+    try:
+        expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
+    except Exception as e:
+        logger.warning(f"apikey auth: secret lookup failed: {e}")
+        return
+    if not expected or apikey != expected:
+        logger.warning(f"apikey auth: key mismatch (expected={expected is not None})")
+        return
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return
+    try:
+        from utilities.admin_utils import _get_user_session_data
+        user_data = _get_user_session_data(user_id)
+    except Exception as e:
+        logger.warning(f"apikey auth: user lookup failed: {e}")
+        return
+    if not user_data:
+        logger.warning(f"apikey auth: user {user_id} not found")
+        return
+    session.permanent = True
+    session['user'] = user_data
+    session.modified = True
+    logger.info(f"apikey auth: logged in as user {user_id}")
+
+
+@app.before_request
+def check_demo_exit():
+    """When a demo viewer navigates to a non-demo page, restore their real session."""
+    if '_demo_stashed_user' not in session:
+        return
+    # Stay in demo mode for bot trips, invite pages, summary pages, static, and API calls
+    path = request.path
+    if (path.startswith('/to/') or path.startswith('/plan/') or
+        path.startswith('/api/') or path.startswith('/static/') or
+        path.startswith('/demo') or path.startswith('/_ah/')):
+        return
+    # Leaving demo — restore real user
+    real_user = session.pop('_demo_stashed_user', None)
+    session.pop('_demo_viewer', None)
+    if real_user:
+        session['user'] = real_user
+    else:
+        session.pop('user', None)
+    session.modified = True
+    logger.info(f"Demo exit: restored real user on {path}")
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if AUTH_ENABLED and 'user' not in session:
+            logger.info(f"🚫 login_required blocked: session keys={list(session.keys())}, path={request.path}")
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated
+
+
+def api_auth_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── Database init ────────────────────────────────────────────
+
+try:
+    init_database()
+except Exception as e:
+    logger.warning(f"⚠️ Database init deferred: {e}")
+
+
+# ── Background job status (in-memory, same pattern as inroads) ────
+
+_rec_status = {}       # plan_id -> {status, count, error, updated_at}
+_rec_status_lock = threading.Lock()
+
+def _set_rec_status(plan_id, status, count=None, error=None):
+    with _rec_status_lock:
+        _rec_status[str(plan_id)] = {
+            'status': status,
+            'count': count,
+            'error': error,
+        }
+
+def _get_rec_status(plan_id):
+    with _rec_status_lock:
+        return _rec_status.get(str(plan_id))
+
+
+def _research_destination(plan_id, suggestion_id, destination_name, plan):
+    def _do_research():
+        try:
+            all_prefs = get_all_plan_preferences(plan_id)
+            airports = [m.get('home_airport') for m in all_prefs if m.get('home_airport')]
+            checkin = str(plan.get('start_date') or plan.get('travel_window_start') or '')
+            checkout = str(plan.get('end_date') or plan.get('travel_window_end') or '')
+            trigger_search(plan_id, destination_name, checkin or None, checkout or None, airports or None)
+            research = {'destination': destination_name}
+            travel_window = None
+            ws = plan.get('travel_window_start')
+            we = plan.get('travel_window_end')
+            if ws or we:
+                travel_window = {'start': str(ws) if ws else 'flexible', 'end': str(we) if we else 'flexible'}
+            group_vibes = plan.get('group_vibes')
+            card = generate_destination_card(destination_name, research, all_prefs, travel_window=travel_window, group_vibes=group_vibes)
+            update_data = {
+                'destination_data': {'research': research, 'card': card},
+                'avg_flight_cost': research.get('avg_flight_cost'),
+                'compatibility_score': card.get('compatibility_score') if card else None,
+                'status': 'ready',
+            }
+            update_destination_suggestion(suggestion_id, update_data)
+            logger.info(f"🔍 Destination researched: {destination_name} for plan {plan_id}")
+        except Exception as e:
+            logger.error(f"❌ Background research failed for {destination_name}: {e}")
+            update_destination_suggestion(suggestion_id, {'destination_data': {'error': str(e)}, 'status': 'error'})
+
+    threading.Thread(target=_do_research, daemon=True).start()
+
+
+# ── Refresh admin flag (once per session, or if missing) ─────
+@app.before_request
+def refresh_admin_flag():
+    user = session.get('user')
+    if user and 'id' in user and 'user_is_admin' not in session:
+        from utilities.admin_utils import is_admin as check_admin
+        session['user_is_admin'] = check_admin(user['id'])
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html', active_page=None), 404
+
+# ── Public routes ────────────────────────────────────────────
+
+@app.route('/sitemap.xml')
+def sitemap():
+    host = request.host_url.rstrip('/')
+    # Only public-facing content pages — no auth, admin, API, internal, or utility routes
+    public_pages = {
+        '/':                1.0,
+        '/about':           0.8,
+        '/live':            0.7,
+        '/demo':            0.7,
+        '/roadmap':         0.6,
+        '/contact':         0.6,
+        '/crab-animations': 0.5,
+        '/privacy':         0.3,
+        '/terms':           0.3,
+    }
+    lastmod = '2026-04-04'
+    urls = []
+    for path, priority in sorted(public_pages.items()):
+        urls.append(
+            f'  <url>\n'
+            f'    <loc>{host}{path}</loc>\n'
+            f'    <lastmod>{lastmod}</lastmod>\n'
+            f'    <priority>{priority}</priority>\n'
+            f'  </url>'
+        )
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + '\n'.join(urls) + '\n</urlset>'
+    return Response(xml, mimetype='application/xml')
+
+@app.route('/robots.txt')
+def robots():
+    host = request.host_url.rstrip('/')
+    content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\nFeed: {host}/feed.xml\n'
+    return Response(content, mimetype='text/plain')
+
+@app.route('/b4c9ebbc8faa4d7b8b2b8104b6511fee.txt')
+def indexnow_key():
+    return Response('b4c9ebbc8faa4d7b8b2b8104b6511fee', mimetype='text/plain')
+
+@app.route('/feed.xml')
+def atom_feed():
+    """Atom feed of roadmap and feature updates for search engine discovery."""
+    from datetime import datetime
+    now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>crab.travel</title>
+  <subtitle>Group trip planning without the chaos. Roadmap and feature updates.</subtitle>
+  <link href="https://crab.travel/"/>
+  <link href="https://crab.travel/feed.xml" rel="self"/>
+  <id>https://crab.travel/</id>
+  <updated>{now}</updated>
+  <entry>
+    <title>Interactive Demo Mode — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#demo-mode</id>
+    <updated>2026-03-20T00:00:00Z</updated>
+    <summary>Experience the full platform as Judy Tunaboat without signing up. Stage switcher shows Voting, Planning, and Booked phases of real demo trips.</summary>
+  </entry>
+  <entry>
+    <title>Travel Search &amp; Deals — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#travel-search</id>
+    <updated>2026-03-15T00:00:00Z</updated>
+    <summary>Four search adapters (Duffel, LiteAPI, Viator, Travelpayouts) running in parallel with real-time streaming results and cross-provider deduplication.</summary>
+  </entry>
+  <entry>
+    <title>CrabAI Destination Research — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#crabai-research</id>
+    <updated>2026-03-10T00:00:00Z</updated>
+    <summary>AI-generated destination cards with stays, activities, food, and local events. Group vibes filter and compatibility scoring based on collective preferences.</summary>
+  </entry>
+  <entry>
+    <title>Voting &amp; Availability — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#voting</id>
+    <updated>2026-03-05T00:00:00Z</updated>
+    <summary>Rank-order destination voting with live tallies and visual group availability calendar with three-tier date preferences.</summary>
+  </entry>
+  <entry>
+    <title>Trip Creation &amp; Invites — shipped</title>
+    <link href="https://crab.travel/roadmap"/>
+    <id>https://crab.travel/roadmap#trip-creation</id>
+    <updated>2026-03-01T00:00:00Z</updated>
+    <summary>Core trip loop: create a trip, share one link, everyone joins and fills out preferences. No app download or account required for members.</summary>
+  </entry>
+  <entry>
+    <title>Live Trip Bots</title>
+    <link href="https://crab.travel/live"/>
+    <id>https://crab.travel/live</id>
+    <updated>2026-03-25T00:00:00Z</updated>
+    <summary>Watch AI-powered bots plan trips in real time. Live demo of the full group planning experience with destination research and group chat.</summary>
+  </entry>
+  <entry>
+    <title>About crab.travel</title>
+    <link href="https://crab.travel/about"/>
+    <id>https://crab.travel/about</id>
+    <updated>2026-03-01T00:00:00Z</updated>
+    <summary>The story behind crab.travel: why group trip planning is broken and how we are fixing it with AI and collaborative tools.</summary>
+  </entry>
+</feed>'''
+    return Response(xml, mimetype='application/atom+xml')
+
+@app.route('/')
+def index():
+    return render_template('index.html', active_page='home')
+
+
+@app.route('/crab-animations')
+def crab_animations():
+    return render_template('crab_animations.html')
+
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'healthy'}), 200
+
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html', active_page=None)
+
+
+@app.route('/terms')
+def terms():
+    return render_template('terms.html', active_page=None)
+
+
+@app.route('/sms')
+def sms_info():
+    return render_template('sms.html', active_page=None)
+
+
+@app.route('/about')
+def about():
+    return render_template('about.html', active_page='about')
+
+
+@app.route('/roadmap')
+def roadmap():
+    return render_template('roadmap.html', active_page='about')
+
+
+@app.route('/api/roadmap/comments', methods=['GET'])
+def api_roadmap_comments_get():
+    """Fetch all comments for the roadmap page."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS crab.roadmap_comments (
+                id SERIAL PRIMARY KEY,
+                section_idx INTEGER NOT NULL,
+                author_name TEXT NOT NULL,
+                author_type TEXT DEFAULT 'anon',
+                comment_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cur.execute("""
+            SELECT id, section_idx, author_name, author_type, comment_text, created_at
+            FROM crab.roadmap_comments ORDER BY section_idx, created_at ASC
+        """)
+        comments = [dict(r) for r in cur.fetchall()]
+        for c in comments:
+            if c.get('created_at'):
+                c['created_at'] = c['created_at'].isoformat()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'comments': comments})
+    except Exception as e:
+        logger.error(f"Roadmap comments GET error: {e}")
+        return jsonify({'success': False, 'comments': []})
+
+
+@app.route('/api/roadmap/comments', methods=['POST'])
+def api_roadmap_comments_post():
+    """Post a comment to a roadmap section. Works for logged-in or anonymous users."""
+    data = request.get_json()
+    if not data or 'text' not in data:
+        return jsonify({'success': False}), 400
+
+    # Anti-bot: honeypot and timing check
+    honeypot = data.get('honeypot', '').strip()
+    time_open = data.get('time_open', 0)
+    if honeypot:
+        logger.warning(f"Roadmap spam blocked: honeypot from {request.remote_addr}")
+        return jsonify({'success': True, 'comment': {'id': 0, 'section_idx': 0, 'author_name': 'Guest', 'author_type': 'anon', 'comment_text': '', 'created_at': ''}}), 200
+    if time_open < 2000:
+        logger.warning(f"Roadmap spam blocked: too fast ({time_open}ms) from {request.remote_addr}")
+        return jsonify({'success': True, 'comment': {'id': 0, 'section_idx': 0, 'author_name': 'Guest', 'author_type': 'anon', 'comment_text': '', 'created_at': ''}}), 200
+
+    section_idx = int(data.get('section_idx', 0))
+    text = data['text'].strip()[:2000]
+    if not text:
+        return jsonify({'success': False}), 400
+
+    # Determine author
+    if 'user' in session and session['user'].get('name'):
+        author_name = session['user']['name']
+        author_type = 'user'
+    else:
+        anon_id = request.cookies.get('crab_anon')
+        if not anon_id:
+            import random
+            anon_id = f"anon_{random.randint(10000, 99999)}"
+        author_name = f"Guest {anon_id[-5:]}"
+        author_type = 'anon'
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO crab.roadmap_comments (section_idx, author_name, author_type, comment_text)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id, section_idx, author_name, author_type, comment_text, created_at
+        """, (section_idx, author_name, author_type, text))
+        conn.commit()
+        row = dict(cur.fetchone())
+        if row.get('created_at'):
+            row['created_at'] = row['created_at'].isoformat()
+        cur.close()
+        conn.close()
+
+        resp = jsonify({'success': True, 'comment': row})
+        if author_type == 'anon':
+            resp.set_cookie('crab_anon', anon_id, max_age=60*60*24*365, httponly=True, samesite='Lax')
+        return resp
+    except Exception as e:
+        logger.error(f"Roadmap comment POST error: {e}")
+        return jsonify({'success': False}), 500
+
+
+@app.route('/contact')
+def contact():
+    return render_template('contact.html', active_page=None)
+
+
+@app.route('/api/contact', methods=['POST'])
+def api_contact():
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip()
+        message = (data.get('message') or '').strip()
+
+        # Spam guard — honeypot field + obvious URL spam
+        if data.get('website') or data.get('url') or data.get('honeypot'):
+            logger.warning(f"Spam blocked: honeypot from {request.remote_addr}")
+            return jsonify({'error': 'Invalid submission'}), 400
+
+        if not email or not message:
+            return jsonify({'error': 'Email and message are required'}), 400
+
+        from utilities.gmail_utils import send_simple_email
+        subject = f"[crab] Contact: {email}"
+        body = f"""New contact from crab.travel:
+
+From: {email}
+IP: {request.remote_addr}
+User Agent: {request.headers.get('User-Agent', 'Unknown')}
+
+Message:
+{message}
+
+---
+Sent from crab.travel/contact
+"""
+        success = send_simple_email(subject=subject, body=body, to_email='andy.tillo@gmail.com', from_name='crab.travel')
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to send'}), 500
+    except Exception as e:
+        logger.error(f"Contact form error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Trip Summary routes ──────────────────────────────────────
+
+@app.route('/plan/<plan_id>/summary')
+def trip_summary(plan_id):
+    from utilities.postgres_utils import get_trip_summary, get_itinerary_items, get_expenses
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return render_template('404.html'), 404
+    # Auto-login as Judy on bot trips
+    _auto_login_demo_viewer(plan)
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return redirect(url_for('login'))
+    summary = get_trip_summary(plan_id)
+    itinerary = get_itinerary_items(plan_id)
+    expenses = get_expenses(plan_id)
+
+    # Compute "who owes who" balances from expenses
+    balances = []
+    if expenses and summary.get('member_count', 0) > 0:
+        member_count = summary['member_count']
+        # Track how much each person paid vs their fair share
+        paid_by = {}  # member_name -> total paid
+        for exp in expenses:
+            name = (exp.get('paid_by_name') or '').replace('[BOT] ', '')
+            paid_by[name] = paid_by.get(name, 0) + float(exp.get('amount', 0))
+        total_expenses = sum(paid_by.values())
+        fair_share = total_expenses / member_count
+
+        # People who paid more than their share are owed money
+        creditors = []  # (name, amount_owed_to_them)
+        debtors = []    # (name, amount_they_owe)
+        for name, paid in paid_by.items():
+            diff = paid - fair_share
+            if diff > 1:  # they overpaid — they're owed money
+                creditors.append([name, diff])
+            elif diff < -1:  # they underpaid — they owe
+                debtors.append([name, -diff])
+        # Everyone who didn't pay anything owes their fair share
+        all_member_names = set()
+        for mid, m in summary.get('members', {}).items():
+            clean = m['name'].replace('[BOT] ', '')
+            all_member_names.add(clean)
+        for name in all_member_names:
+            if name not in paid_by:
+                debtors.append([name, fair_share])
+
+        # Match debtors to creditors (simplified: greedy)
+        creditors.sort(key=lambda x: -x[1])
+        debtors.sort(key=lambda x: -x[1])
+        for debtor_name, debt in debtors:
+            remaining = debt
+            for cred in creditors:
+                if remaining <= 0.50:
+                    break
+                if cred[1] <= 0.50:
+                    continue
+                payment = min(remaining, cred[1])
+                balances.append({
+                    'from_name': debtor_name,
+                    'to_name': cred[0],
+                    'amount': round(payment, 0),
+                })
+                cred[1] -= payment
+                remaining -= payment
+
+    return render_template('trip_summary.html',
+        plan=plan, summary=summary, itinerary=itinerary, expenses=expenses, balances=balances)
+
+
+@app.route('/api/plan/<plan_id>/itinerary', methods=['POST'])
+@api_auth_required
+def api_add_itinerary_item(plan_id):
+    from utilities.postgres_utils import insert_itinerary_item
+    data = request.get_json()
+    if not data or not data.get('title') or not data.get('scheduled_date'):
+        return jsonify({'error': 'title and scheduled_date are required'}), 400
+    item = insert_itinerary_item(
+        plan_id=plan_id,
+        title=data['title'],
+        category=data.get('category', 'activity'),
+        scheduled_date=data['scheduled_date'],
+        scheduled_time=data.get('scheduled_time'),
+        duration_minutes=data.get('duration_minutes'),
+        location=data.get('location'),
+        url=data.get('url'),
+        notes=data.get('notes'),
+        added_by=data.get('added_by'),
+    )
+    if item:
+        # Convert non-serializable types
+        for k, v in item.items():
+            if hasattr(v, 'isoformat'):
+                item[k] = v.isoformat()
+        return jsonify({'success': True, 'item': item})
+    return jsonify({'error': 'Failed to add item'}), 500
+
+
+@app.route('/api/plan/<plan_id>/itinerary/<item_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_itinerary_item(plan_id, item_id):
+    from utilities.postgres_utils import delete_itinerary_item
+    success = delete_itinerary_item(item_id)
+    return jsonify({'success': success})
+
+
+# ── Admin routes ─────────────────────────────────────────────
+
+@app.route('/admin')
+@login_required
+def admin_panel():
+    from utilities.admin_utils import is_admin, get_admin_dashboard_data
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    data = get_admin_dashboard_data()
+    data['mimic_active'] = '_real_uid' in session
+    return render_template('admin.html', active_page='admin', **data)
+
+
+@app.route('/api/admin/users')
+@api_auth_required
+def api_admin_users():
+    from utilities.admin_utils import is_admin, get_admin_users
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    result = get_admin_users(
+        search=request.args.get('search'),
+        page=request.args.get('page', 1, type=int),
+        per_page=request.args.get('per_page', 50, type=int),
+        sort_by=request.args.get('sort', 'created_at'),
+        sort_dir=request.args.get('dir', 'desc'),
+    )
+    for u in result['users']:
+        for k in ('created_at', 'updated_at'):
+            if u.get(k):
+                u[k] = u[k].isoformat()
+    return jsonify(result)
+
+
+@app.route('/api/admin/plans')
+@api_auth_required
+def api_admin_plans():
+    from utilities.admin_utils import is_admin, get_admin_plans
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    result = get_admin_plans(
+        search=request.args.get('search'),
+        status=request.args.get('status'),
+        page=request.args.get('page', 1, type=int),
+        per_page=request.args.get('per_page', 50, type=int),
+        sort_by=request.args.get('sort', 'created_at'),
+        sort_dir=request.args.get('dir', 'desc'),
+    )
+    for p in result['plans']:
+        if p.get('created_at'):
+            p['created_at'] = p['created_at'].isoformat()
+    return jsonify(result)
+
+
+@app.route('/admin/mimic', methods=['GET', 'POST'])
+@login_required
+def admin_mimic():
+    from utilities.admin_utils import is_admin, handle_mimic_action
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    if request.method == 'POST':
+        action = request.form.get('action')
+        target = request.form.get('target_user_id')
+        handle_mimic_action(session, action, target, real_uid)
+        return redirect('/admin/mimic')
+    # GET — show user list
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT u.pk_id, u.email, u.full_name,
+               (SELECT COUNT(*) FROM crab.plan_members m WHERE m.user_id = u.pk_id) as plan_count
+        FROM crab.users u ORDER BY u.pk_id
+    """)
+    users = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('admin_mimic.html', users=users,
+                           mimic_active='_real_uid' in session)
+
+
+@app.route('/api/admin/test-email', methods=['POST'])
+@api_auth_required
+def api_admin_test_email():
+    from utilities.admin_utils import is_admin
+    from utilities.gmail_utils import send_simple_email
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    email = session['user']['email']
+    sent = send_simple_email(
+        subject="[crab.travel] Admin test email",
+        body="This is a test email from the crab.travel admin panel.\n\nIf you received this, the email pipeline is working.",
+        to_email=email,
+    )
+    if sent:
+        return jsonify({'success': True, 'to': email})
+    return jsonify({'success': False, 'error': 'Email send failed'}), 500
+
+
+@app.route('/api/admin/test-sms', methods=['POST'])
+@api_auth_required
+def api_admin_test_sms():
+    from utilities.admin_utils import is_admin
+    from utilities.sms_utils import send_sms
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT phone_number FROM crab.users WHERE pk_id = %s", (real_uid,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    phone = row[0] if row else None
+    if not phone:
+        return jsonify({'success': False, 'error': 'No phone number on your admin account'})
+    result = send_sms(phone, "[crab.travel] Admin test SMS — pipeline working")
+    if result:
+        return jsonify({'success': True, 'to': phone})
+    return jsonify({'success': False, 'error': 'SMS send failed (A2P may be pending)'})
+
+
+# ── Bot Login (secret-gated, no OAuth needed) ────────────────────────────────
+
+@app.route('/api/bot/login', methods=['POST'])
+def api_bot_login():
+    """Authenticate as a bot user. Gated by CRAB_BOT_SECRET."""
+    data = request.get_json(force=True)
+    secret = data.get('secret', '')
+    user_id = data.get('user_id')
+    expected = get_secret('CRAB_BOT_SECRET')
+    if not expected or secret != expected:
+        return jsonify({'error': 'Forbidden'}), 403
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    from utilities.admin_utils import _get_user_session_data
+    user_data = _get_user_session_data(int(user_id))
+    if not user_data:
+        return jsonify({'error': 'User not found'}), 404
+    session.permanent = True
+    session['user'] = user_data
+    return jsonify({'success': True, 'user': user_data})
+
+
+@app.route('/api/admin/smoke-test', methods=['POST'])
+@api_auth_required
+def api_admin_smoke_test():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+    import subprocess, time
+    start = time.time()
+    try:
+        result = subprocess.run(
+            ['python3', 'dev/smoke_test.py', '--quick'],
+            capture_output=True, text=True, timeout=30, cwd='/app' if os.path.exists('/app') else '.'
+        )
+        elapsed = round(time.time() - start, 1)
+        output = result.stdout + result.stderr
+        # Parse results from output
+        passed = output.count('✅')
+        failed = output.count('❌')
+        return jsonify({
+            'success': True, 'passed': passed, 'failed': failed,
+            'total': passed + failed, 'time': elapsed, 'output': output[-500:]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/admin/changelog')
+@login_required
+def admin_changelog():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    import requests as req
+    commits = []
+    try:
+        resp = req.get(
+            'https://api.github.com/repos/tillo13/crab_travel/commits',
+            params={'per_page': 50},
+            headers={'Accept': 'application/vnd.github.v3+json'},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            for c in resp.json():
+                msg = c['commit']['message']
+                lines = msg.split('\n')
+                title = lines[0]
+                body = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ''
+                commits.append({
+                    'sha': c['sha'][:7],
+                    'sha_full': c['sha'],
+                    'title': title,
+                    'body': body,
+                    'author': c['commit']['author']['name'],
+                    'date': c['commit']['author']['date'],
+                    'url': c['html_url'],
+                    'avatar': c['author']['avatar_url'] if c.get('author') else None,
+                })
+    except Exception:
+        pass
+    from datetime import datetime, timezone
+    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    return render_template('admin_changelog.html', active_page='admin', commits=commits, now_str=now_str)
+
+
+@app.route('/admin/ops')
+@login_required
+def admin_ops():
+    from utilities.admin_utils import is_admin, get_ops_data
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    data = get_ops_data()
+    return render_template('admin_ops.html', active_page='admin', **data)
+
+
+@app.route('/admin/speed')
+@login_required
+def admin_speed():
+    from utilities.admin_utils import is_admin
+    import json as json_lib
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, tested_by, results, slowest_page, slowest_time, all_ok, tested_at FROM crab.speed_test_runs ORDER BY tested_at DESC LIMIT 30")
+    history = cur.fetchall()
+    cur.close()
+    conn.close()
+    for run in history:
+        if isinstance(run['results'], str):
+            run['results'] = json_lib.loads(run['results'])
+    latest = history[0] if history else None
+    return render_template('admin_speed.html', active_page='admin', latest=latest, history=history)
+
+
+@app.route('/api/admin/speed-test', methods=['POST'])
+@api_auth_required
+def api_admin_speed_test():
+    from utilities.admin_utils import is_admin, get_admin_dashboard_data
+    import time as time_mod
+    import json as json_lib
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    THRESHOLD = 3.0
+    user_id = session['user']['id']
+    tests = [
+        ('Home /', 'index', lambda: render_template('index.html', active_page='home')),
+        ('Dashboard', 'get_plans_for_user', lambda: get_plans_for_user(user_id)),
+        ('Profile', 'get_user_profile', lambda: get_user_profile(user_id)),
+        ('Admin', 'get_admin_dashboard_data', lambda: get_admin_dashboard_data()),
+    ]
+    # Add plan-specific tests if user has plans
+    try:
+        plans = get_plans_for_user(user_id)
+        if plans:
+            plan_id = plans[0]['plan_id']
+            from utilities.postgres_utils import (
+                get_plan_blackouts, get_plan_tentative_dates,
+                get_vote_tallies as _gvt, get_user_votes as _guv,
+                upsert_vote as _uv, delete_vote as _dv, clear_rank_from_others as _crfo,
+                get_destination_suggestions as _gds,
+            )
+            tests.append(('Plan page', 'get_plan_by_id', lambda: get_plan_by_id(str(plan_id))))
+            tests.append(('Blackouts', 'get_plan_blackouts', lambda: get_plan_blackouts(plan_id)))
+            tests.append(('Tentative dates', 'get_plan_tentative_dates', lambda: get_plan_tentative_dates(plan_id)))
+            tests.append(('Vote tallies', 'get_vote_tallies', lambda: _gvt(plan_id, 'destination')))
+            tests.append(('My votes', 'get_user_votes', lambda: _guv(plan_id, user_id)))
+            tests.append(('Destinations', 'get_destination_suggestions', lambda: _gds(plan_id)))
+
+            # Round-trip rank vote: write, read, clean up
+            def _rank_roundtrip():
+                test_dest = '__smoke_test_dest__'
+                _uv(plan_id, user_id, 'destination', test_dest, 1)
+                v = _guv(plan_id, user_id)
+                assert v.get(f'destination:{test_dest}') == 1
+                _dv(plan_id, user_id, 'destination', test_dest)
+                return True
+            tests.append(('Rank vote roundtrip', 'upsert+read+delete', _rank_roundtrip))
+    except Exception:
+        pass
+
+    results = []
+    for label, func_name, fn in tests:
+        start = time_mod.time()
+        try:
+            fn()
+            elapsed = round(time_mod.time() - start, 3)
+            status = 'ok'
+        except Exception as e:
+            elapsed = round(time_mod.time() - start, 3)
+            status = str(e)[:100]
+        results.append({'page': label, 'function': func_name, 'time_s': elapsed, 'status': status})
+
+    results.sort(key=lambda x: x['time_s'], reverse=True)
+    slowest = results[0] if results else None
+    all_ok = all(r['status'] == 'ok' and r['time_s'] < THRESHOLD for r in results)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO crab.speed_test_runs (tested_by, results, slowest_page, slowest_time, all_ok) VALUES (%s, %s, %s, %s, %s)",
+        (real_uid, json_lib.dumps(results), slowest['page'] if slowest else None, slowest['time_s'] if slowest else 0, all_ok)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True, 'results': results, 'threshold_s': THRESHOLD, 'all_ok': all_ok})
+
+
+# ── Bot Testing (Crab Crawlers) — public + admin endpoints ───
+
+@app.route('/live')
+def live_page():
+    """Public page — anyone can watch the crabs crawl.
+    Pre-fetches initial data so page renders instantly (no blank flash).
+    Uses a SINGLE db connection to avoid pool exhaustion."""
+    import json as _json
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT 50")
+        runs = [dict(r) for r in cur.fetchall()]
+
+        _plan_ids = [str(r['plan_id']) for r in runs if r.get('plan_id')]
+        _plan_statuses = {}
+        if _plan_ids:
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s::uuid[])", (_plan_ids,))
+            _plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
+
+        for r in runs:
+            for k in ('started_at', 'finished_at'):
+                if r.get(k):
+                    r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
+            if r.get('plan_id'):
+                r['plan_id'] = str(r['plan_id'])
+            if r.get('run_id'):
+                r['run_id'] = str(r['run_id'])
+            summary = r.get('summary') or {}
+            r['trip_title'] = summary.get('title', '')
+            r['trip_destinations'] = summary.get('destinations', [])
+            r['trip_group_size'] = summary.get('group_size', 0)
+            r['trip_vibe'] = summary.get('vibe', '')
+            r['invite_token'] = summary.get('invite_token', '')
+            r['plan_status'] = _plan_statuses.get(r.get('plan_id'), None)
+
+        events = []
+        if runs:
+            active_runs = [r for r in runs if r['status'] == 'running']
+            target_runs = active_runs[:3] if active_runs else runs[:3]
+            target_ids = [r['run_id'] for r in target_runs]
+            if target_ids:
+                cur.execute("""
+                    SELECT * FROM crab.bot_events
+                    WHERE run_id = ANY(%s::uuid[])
+                    ORDER BY event_id DESC LIMIT 200
+                """, (target_ids,))
+                events = [dict(e) for e in cur.fetchall()]
+                for e in events:
+                    if e.get('created_at'):
+                        e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+                    if e.get('run_id'):
+                        e['run_id'] = str(e['run_id'])
+
+        cur.close()
+        conn.close()
+        initial_data = _json.dumps({'runs': runs, 'events': events})
+    except Exception:
+        initial_data = None
+    return render_template('admin_bots.html', active_page='live', initial_data=initial_data)
+
+
+@app.route('/admin/bots')
+@login_required
+def admin_bots():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    return render_template('admin_bots.html', active_page='admin', is_admin=True)
+
+
+@app.route('/api/live/status')
+def api_live_status():
+    """Public endpoint — bot run status for the /live page.
+    Uses a SINGLE db connection to avoid pool exhaustion from 3-sec polling."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # 1) Bot runs
+        cur.execute("""
+            SELECT * FROM crab.bot_runs ORDER BY started_at DESC LIMIT 50
+        """)
+        runs = [dict(r) for r in cur.fetchall()]
+
+        # 2) Plan statuses (single query, same connection)
+        plan_ids = [str(r['plan_id']) for r in runs if r.get('plan_id')]
+        plan_statuses = {}
+        if plan_ids:
+            cur.execute("SELECT plan_id, status FROM crab.plans WHERE plan_id = ANY(%s::uuid[])", (plan_ids,))
+            plan_statuses = {str(r['plan_id']): r['status'] for r in cur.fetchall()}
+
+        # 3) Serialize + extract summary info
+        for r in runs:
+            for k in ('started_at', 'finished_at'):
+                if r.get(k):
+                    r[k] = r[k].isoformat() if hasattr(r[k], 'isoformat') else str(r[k])
+            if r.get('plan_id'):
+                r['plan_id'] = str(r['plan_id'])
+            if r.get('run_id'):
+                r['run_id'] = str(r['run_id'])
+            summary = r.get('summary') or {}
+            r['trip_title'] = summary.get('title', '')
+            r['trip_destinations'] = summary.get('destinations', [])
+            r['trip_group_size'] = summary.get('group_size', 0)
+            r['trip_vibe'] = summary.get('vibe', '')
+            r['invite_token'] = summary.get('invite_token', '')
+            r['plan_status'] = plan_statuses.get(r.get('plan_id'), None)
+
+        # 4) Events (same connection)
+        events = []
+        if runs:
+            active_runs = [r for r in runs if r['status'] == 'running']
+            target_runs = active_runs[:3] if active_runs else runs[:3]
+            target_ids = [r['run_id'] for r in target_runs]
+            if target_ids:
+                cur.execute("""
+                    SELECT * FROM crab.bot_events
+                    WHERE run_id = ANY(%s::uuid[])
+                    ORDER BY event_id DESC LIMIT 200
+                """, (target_ids,))
+                events = [dict(e) for e in cur.fetchall()]
+                for e in events:
+                    if e.get('created_at'):
+                        e['created_at'] = e['created_at'].isoformat() if hasattr(e['created_at'], 'isoformat') else str(e['created_at'])
+                    if e.get('run_id'):
+                        e['run_id'] = str(e['run_id'])
+
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'data': {'runs': runs, 'events': events}})
+    except Exception as e:
+        logger.error(f"Live status API failed: {e}")
+        return jsonify({'success': False, 'error': 'temporarily unavailable'}), 503
+
+
+@app.route('/api/admin/bots/run', methods=['POST'])
+@api_auth_required
+def api_admin_bots_run():
+    from utilities.admin_utils import is_admin
+    from utilities.postgres_utils import get_bot_runs
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    # Check no run is already active
+    runs = get_bot_runs(limit=1)
+    if runs and runs[0]['status'] == 'running':
+        return jsonify({'error': 'A bot run is already in progress', 'run_id': str(runs[0]['run_id'])}), 409
+
+    data = request.get_json() or {}
+    mode = data.get('mode', 'quick')
+    if mode not in ('full', 'quick'):
+        mode = 'quick'
+
+    import subprocess
+    cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    flag = '--full' if mode == 'full' else '--quick'
+    subprocess.Popen(
+        ['python3', 'dev/trip_bots.py', flag],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.info(f"🦀 Bot run launched: {mode} mode by {session['user']['email']}")
+    return jsonify({'success': True, 'mode': mode})
+
+
+@app.route('/api/admin/bots/stop', methods=['POST'])
+@api_auth_required
+def api_admin_bots_stop():
+    from utilities.admin_utils import is_admin
+    from utilities.postgres_utils import get_bot_runs, update_bot_run
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    runs = get_bot_runs(limit=1)
+    if not runs or runs[0]['status'] != 'running':
+        return jsonify({'error': 'No active run to stop'}), 400
+
+    update_bot_run(str(runs[0]['run_id']), status='stopped')
+    logger.info(f"🛑 Bot run stopped by {session['user']['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/bots/cleanup', methods=['POST'])
+@api_auth_required
+def api_admin_bots_cleanup():
+    from utilities.admin_utils import is_admin
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return jsonify({'error': 'Admin only'}), 403
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM crab.plans WHERE title LIKE '[BOT]%%'")
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    logger.info(f"🧹 Bot cleanup: deleted {deleted} bot plans")
+    return jsonify({'success': True, 'deleted': deleted})
+
+
+# ── Auth routes ──────────────────────────────────────────────
+
+@app.route('/login')
+def login():
+    if not AUTH_ENABLED:
+        return redirect('/')
+    if 'user' in session:
+        return redirect('/dashboard')
+    return render_template('login.html', active_page='login')
+
+
+@app.route('/login/google')
+def login_google():
+    if not AUTH_ENABLED:
+        return redirect('/')
+    return google_auth.authorize_redirect(url_for('auth_callback', _external=True))
+
+
+@app.route('/auth/callback')
+def auth_callback():
+    if not AUTH_ENABLED:
+        return redirect('/')
+    try:
+        logger.info(f"🔑 Auth callback hit, args: {dict(request.args)}")
+        token = google_auth.authorize_access_token()
+        logger.info(f"🔑 Token received: {bool(token)}")
+        if token:
+            user_info = token.get('userinfo')
+            logger.info(f"🔑 User info: {user_info}")
+            if user_info:
+                access_token = token.get('access_token')
+                refresh_token = token.get('refresh_token')
+                db_user = upsert_user(user_info, access_token=access_token, refresh_token=refresh_token)
+                logger.info(f"🔑 DB user: {db_user}")
+                if db_user:
+                    session.permanent = True
+                    session['user'] = {
+                        'id': db_user['pk_id'],
+                        'email': db_user['email'],
+                        'name': db_user['full_name'],
+                        'picture': db_user['picture_url'],
+                        'home_airport': db_user.get('home_airport'),
+                    }
+                    session['user_is_admin'] = db_user.get('is_admin', False)
+                    logger.info(f"🔑 Session set for: {db_user['email']}")
+                    # Redirect to pending join if there was one
+                    pending_join = session.pop('pending_join', None)
+                    if pending_join:
+                        return redirect(f"/to/{pending_join}")
+                    return redirect('/dashboard')
+                else:
+                    logger.error("🔑 DB upsert returned None")
+            else:
+                logger.error("🔑 No userinfo in token")
+        else:
+            logger.error("🔑 No token received")
+    except Exception as e:
+        logger.error(f"❌ Auth callback error: {e}")
+    return redirect('/login')
+
+
+@app.route('/logout')
+def logout():
+    email = session.get('user', {}).get('email', 'unknown')
+    session.pop('user', None)
+    logger.info(f"🔑 Logout: {email}")
+    return redirect('/')
+
+
+# ── Dashboard ────────────────────────────────────────────────
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    user = session['user']
+    plans = get_plans_for_user(user['id'])
+    logger.info(f"📍 Dashboard: {user['email']}")
+    return render_template('dashboard.html', active_page='dashboard', user=user, plans=plans)
+
+
+# ── Profile ──────────────────────────────────────────────────
+
+@app.route('/profile')
+@login_required
+def profile():
+    user = session['user']
+    profile_data = get_user_profile(user['id'])
+    # Get phone/notification prefs from users table
+    user_phone = ''
+    notify_prefs = {'notify_chat': 'off', 'notify_updates': 'off', 'notify_channel': 'email'}
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT phone_number, notify_chat, notify_updates, notify_channel FROM crab.users WHERE pk_id = %s", (user['id'],))
+        row = cur.fetchone()
+        if row:
+            user_phone = row[0] or ''
+            notify_prefs = {
+                'notify_chat': row[1] or 'off',
+                'notify_updates': row[2] or 'off',
+                'notify_channel': row[3] or 'email',
+            }
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+    logger.info(f"📍 Profile: {user['email']}")
+    return render_template('profile.html', active_page='profile', user=user, profile=profile_data,
+                           user_phone=user_phone, notify_prefs=notify_prefs)
+
+
+@app.route('/profile/demo')
+def profile_demo():
+    """Public read-only preview of the Profile page.
+
+    Published for Twilio A2P 10DLC reviewers so the SMS consent Call-to-Action
+    can be verified without Google sign-in. The real form is /profile.
+    """
+    demo_user = {
+        'id': 0,
+        'name': 'Sample Reviewer',
+        'email': 'reviewer@crab.travel',
+        'picture': None,
+    }
+    demo_profile = {
+        'home_location': 'Scottsdale, AZ',
+        'home_airport': 'PHX',
+        'interests': ['hiking', 'food tours', 'live music'],
+        'travel_style': 'adventure,foodie',
+        'accommodation_preference': 'hotel',
+        'budget_comfort': 'moderate',
+        'dietary_needs': '',
+        'mobility_notes': '',
+        'bio': '',
+    }
+    demo_prefs = {'notify_chat': 'realtime', 'notify_updates': 'daily', 'notify_channel': 'sms'}
+    return render_template(
+        'profile.html',
+        active_page='profile',
+        display_user=demo_user,
+        profile=demo_profile,
+        user_phone='+1 (425) 555-0123',
+        notify_prefs=demo_prefs,
+        demo_mode=True,
+    )
+
+
+@app.route('/notifications/off/<member_token>')
+def unsubscribe_notifications(member_token):
+    """One-click email unsubscribe — sets notify_chat=off for this user."""
+    from utilities.postgres_utils import get_member_by_token
+    member = get_member_by_token(member_token)
+    if not member or not member.get('user_id'):
+        return render_template('404.html'), 404
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE crab.users SET notify_chat = 'off' WHERE pk_id = %s", (member['user_id'],))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Unsubscribe failed: {e}")
+        return render_template('404.html'), 500
+    return """<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed — crab.travel</title>
+    <style>body{font-family:system-ui;background:#1a0a0a;color:#f0eae0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+    .box{text-align:center;max-width:400px;padding:2rem}h1{font-size:1.5rem;margin-bottom:1rem}a{color:#e8593a}</style></head>
+    <body><div class="box"><h1>Unsubscribed</h1><p>You won't receive chat notifications anymore.</p>
+    <p style="margin-top:1rem"><a href="/profile">Re-enable in profile settings</a></p></div></body></html>"""
+
+
+@app.route('/api/profile', methods=['POST'])
+@api_auth_required
+def api_update_profile():
+    user = session['user']
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    # Auto-resolve airport from freeform location
+    from utilities.airport_utils import resolve_airport
+    location = data.get('home_airport') or data.get('home_location') or ''
+    if location:
+        result = resolve_airport(location)
+        if result:
+            data['home_airport'] = result['code']
+            data['home_location'] = location
+        else:
+            data['home_location'] = location
+            data['home_airport'] = None
+    success = update_user_profile(user['id'], data)
+    if success:
+        logger.info(f"💬 Profile updated: {user['email']}")
+        airport_info = resolve_airport(location) if location else None
+        return jsonify({'success': True, 'resolved_airport': airport_info})
+    return jsonify({'error': 'Update failed'}), 500
+
+
+@app.route('/api/airport/resolve')
+def api_resolve_airport():
+    """Live-resolve freeform text to nearest airport."""
+    from utilities.airport_utils import resolve_airport
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'result': None})
+    result = resolve_airport(q)
+    return jsonify({'result': result})
+
+
+# ── Plan routes ─────────────────────────────────────────────
+
+@app.route('/plan/new')
+@login_required
+def plan_new():
+    user = session['user']
+    logger.info(f"📍 New plan: {user['email']}")
+    return render_template('plan_new.html', active_page='dashboard', user=user)
+
+
+@app.route('/api/plan/create', methods=['POST'])
+@api_auth_required
+def api_create_plan():
+    user = session['user']
+    data = request.get_json()
+    if not data or not data.get('title'):
+        return jsonify({'error': 'Title is required'}), 400
+    invite_token = generate_token(6)
+    plan = create_plan(user['id'], data, invite_token)
+    if not plan:
+        return jsonify({'error': 'Failed to create plan'}), 500
+    # Add organizer as first member
+    member_token = generate_token()
+    add_plan_member(plan['plan_id'], user['name'], member_token, email=user['email'], user_id=user['id'], role='organizer')
+
+    # Create candidate destinations and kick off research
+    destinations = data.get('destinations', [])
+    for dest_name in destinations:
+        dest_name = dest_name.strip()
+        if not dest_name:
+            continue
+        suggestion = create_destination_suggestion(plan['plan_id'], user['id'], dest_name)
+        if suggestion:
+            # Auto-vote yes for the organizer on their own destinations
+            upsert_vote(plan['plan_id'], user['id'], 'destination', suggestion['suggestion_id'], 1)
+            _research_destination(plan['plan_id'], suggestion['suggestion_id'], dest_name, plan)
+
+    logger.info(f"💬 Plan created: {plan['title']} by {user['email']} with {len(destinations)} destinations")
+    return jsonify({'success': True, 'data': {'plan_id': str(plan['plan_id']), 'invite_token': plan['invite_token']}})
+
+
+@app.route('/api/plan/<plan_id>/delete', methods=['POST'])
+@api_auth_required
+def api_delete_plan(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    if plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can delete a plan'}), 403
+    success = delete_plan(plan_id, user['id'])
+    if success:
+        logger.info(f"🗑️ Plan deleted: {plan['title']} by {user['email']}")
+        return jsonify({'success': True})
+    return jsonify({'error': 'Delete failed'}), 500
+
+
+@app.route('/join/<invite_token>')
+@app.route('/in/<invite_token>')
+def join_plan(invite_token):
+    return redirect(f'/to/{invite_token}', code=301)
+
+
+def _auto_login_demo_viewer(plan):
+    """For bot trips, auto-login anonymous visitors as Judy Tunaboat so they get
+    the full interactive experience (comment, change dates, vote, etc.)."""
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        return
+    if session.get('user'):
+        return  # Already logged in as someone
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT pk_id, email, full_name, picture_url FROM crab.users WHERE google_id = %s",
+                    (DEMO_VIEWER_GOOGLE_ID,))
+        judy = cur.fetchone()
+        cur.close()
+        conn.close()
+        if judy:
+            session.permanent = True
+            session['user'] = {
+                'id': judy['pk_id'],
+                'email': judy['email'],
+                'name': judy['full_name'],
+                'picture': judy['picture_url'],
+            }
+            session['_demo_viewer'] = True
+            session.modified = True
+            logger.info(f"Auto-login demo viewer: {judy['full_name']} (user_id={judy['pk_id']})")
+    except Exception as e:
+        logger.warning(f"Demo viewer auto-login failed: {e}")
+
+
+DEMO_TRIPS = {
+    'booked':   {'token': 'qL6zhRAI', 'label': 'Booked Trip'},
+    'voting':   {'token': None, 'label': 'Voting Stage'},
+    'planning': {'token': None, 'label': 'Planning Stage'},
+}
+# Map UI stage names to DB status values used by bot trips
+_DEMO_STAGE_STATUS = {'voting': 'voting', 'planning': 'locked', 'booked': 'booked'}
+DEMO_DEFAULT_STAGE = 'booked'
+
+
+def _resolve_demo_token(stage):
+    """Return a bot trip invite_token for the given demo stage.
+    Falls back to the booked demo if no match is found."""
+    pinned = DEMO_TRIPS.get(stage, {}).get('token')
+    if pinned:
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM crab.plans WHERE invite_token = %s", (pinned,))
+            ok = cur.fetchone() is not None
+            cur.close(); conn.close()
+            if ok:
+                return pinned
+        except Exception as e:
+            logger.warning(f"Demo token check failed: {e}")
+    # Dynamic lookup by status — pick a stable representative bot trip
+    db_status = _DEMO_STAGE_STATUS.get(stage, 'booked')
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT invite_token FROM crab.plans "
+            "WHERE title LIKE '[BOT]%%' AND status = %s "
+            "ORDER BY plan_id ASC LIMIT 1",
+            (db_status,),
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.warning(f"Demo token dynamic lookup failed: {e}")
+    return DEMO_TRIPS[DEMO_DEFAULT_STAGE]['token']
+
+@app.route('/demo')
+@app.route('/demo/<stage>')
+def demo_mode(stage=None):
+    """Switch to Judy Tunaboat and redirect to a demo trip.
+    /demo → booked trip, /demo/voting → voting stage, /demo/planning → planning stage.
+    Stashes the real user so they auto-restore when navigating away."""
+    stage = stage or request.args.get('stage', DEMO_DEFAULT_STAGE)
+    if stage not in DEMO_TRIPS:
+        stage = DEMO_DEFAULT_STAGE
+    token = _resolve_demo_token(stage)
+
+    try:
+        real_user = session.get('user')
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT pk_id, email, full_name, picture_url FROM crab.users WHERE google_id = %s",
+                    (DEMO_VIEWER_GOOGLE_ID,))
+        judy = cur.fetchone()
+        cur.close()
+        conn.close()
+        if judy:
+            session['_demo_stashed_user'] = real_user
+            session['user'] = {
+                'id': judy['pk_id'],
+                'email': judy['email'],
+                'name': judy['full_name'],
+                'picture': judy['picture_url'],
+            }
+            session['_demo_viewer'] = True
+            session['_demo_stage'] = stage
+            session.permanent = True
+            session.modified = True
+    except Exception as e:
+        logger.warning(f"Demo mode switch failed: {e}")
+    return redirect(f'/to/{token}')
+
+
+@app.route('/to/<invite_token>')
+def invite_page(invite_token):
+    plan = get_plan_by_invite_token(invite_token)
+    if not plan:
+        return render_template('index.html', active_page='home', error='Plan not found'), 404
+
+    # Auto-login anonymous visitors as Judy Tunaboat on bot trips
+    _auto_login_demo_viewer(plan)
+
+    user = session.get('user')
+
+    # Track invite page view
+    log_invite_view(
+        plan['plan_id'],
+        user_id=user['id'] if user else None,
+        ip_address=request.remote_addr,
+        user_agent=request.headers.get('User-Agent'),
+        is_authenticated=user is not None,
+    )
+
+    destinations = get_destination_suggestions(plan['plan_id'])
+    members = get_plan_members(plan['plan_id'])
+    vote_tallies = get_vote_tallies(plan['plan_id'], 'destination')
+
+    is_member = False
+    member = None
+    my_votes = {}
+    blackouts = []
+    tentative_dates = []
+    member_airport = None
+    member_flexible = False
+
+    profile_completed = False
+    if user:
+        member = get_member_for_plan(plan['plan_id'], user['id'])
+        is_member = member is not None
+        my_votes = get_user_votes(plan['plan_id'], user['id'])
+        profile = get_user_profile(user['id'])
+        profile_completed = bool(profile and profile.get('profile_completed'))
+        if member:
+            blackouts = get_member_blackouts(plan['plan_id'], user['id'])
+            tentative_dates = get_member_tentative_dates(plan['plan_id'], user['id'])
+            member_airport = member.get('home_airport') or user.get('home_airport')
+            member_flexible = member.get('is_flexible', False)
+        else:
+            # Pre-fill from profile even if not yet a member
+            member_airport = user.get('home_airport')
+    else:
+        session['pending_join'] = invite_token
+
+    # Serialize destinations for client-side board rendering
+    def _default_ser(o):
+        if hasattr(o, 'isoformat'):
+            return o.isoformat()
+        return str(o)
+    destinations_json = json.dumps(destinations, default=_default_ser)
+
+    # Helper to strip [BOT] prefix from names
+    def _clean(name):
+        return (name or '').replace('[BOT] ', '')
+
+    # Calendar data — all members' blackouts + tentative dates
+    is_organizer = user is not None and user['id'] == plan['organizer_id']
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+
+    # Always load calendar data for all members (bot trips + logged-in users)
+    if user is not None or is_bot_trip:
+        all_blackouts = get_plan_blackouts(plan['plan_id'])
+        all_tentative = get_plan_tentative_dates(plan['plan_id'])
+    else:
+        all_blackouts = []
+        all_tentative = []
+    calendar_json = json.dumps({
+        'blackouts': [{'name': _clean(b['full_name']), 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+        'tentative': [{'name': _clean(t['full_name']), 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
+        'members': [{'name': _clean(m['display_name']), 'is_flexible': m.get('is_flexible', False)} for m in members],
+    }, default=_default_ser)
+
+    # Per-member profile data for clickable member cards
+    all_prefs = get_all_plan_preferences(plan['plan_id'])
+    members_detail_json = json.dumps([{
+        'member_id': p['member_id'],
+        'name': _clean(p['display_name']),
+        'role': p.get('role', 'member'),
+        'airport': p.get('home_airport', ''),
+        'budget_min': p.get('budget_min'),
+        'budget_max': p.get('budget_max'),
+        'accommodation': p.get('accommodation_style', ''),
+        'dietary': p.get('dietary_needs', ''),
+        'interests': p.get('interests', []),
+        'mobility': p.get('mobility_notes', ''),
+        'room_pref': p.get('room_preference', ''),
+        'completed': p.get('completed', False),
+    } for p in all_prefs], default=_default_ser)
+
+    # Fetch watch data for locked plans
+    watches_json = '[]'
+    if plan.get('status') == 'locked' or plan.get('locked_destination'):
+        from utilities.postgres_utils import get_watches_for_plan, get_watch_history
+        watches = get_watches_for_plan(plan['plan_id'])
+        watches_data = []
+        for w in watches:
+            history = get_watch_history(w['pk_id'], limit=20)
+            watch_data = w.get('data') or {}
+            rec = w.get('recommendation') or {}
+            watches_data.append({
+                'pk_id': w['pk_id'], 'member_id': w['member_id'],
+                'member_name': w['member_name'], 'watch_type': w['watch_type'],
+                'origin': w.get('origin'), 'destination': w['destination'],
+                'checkin': w['checkin'].isoformat() if w.get('checkin') else None,
+                'checkout': w['checkout'].isoformat() if w.get('checkout') else None,
+                'status': w['status'],
+                'best_price': float(w['best_price_usd']) if w.get('best_price_usd') else None,
+                'last_price': float(w['last_price_usd']) if w.get('last_price_usd') else None,
+                'deep_link': w.get('deep_link'),
+                'last_checked': w['last_checked_at'].isoformat() if w.get('last_checked_at') else None,
+                'history': [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history],
+                'booked_price': watch_data.get('booked_price'),
+                'confirmation': watch_data.get('confirmation'),
+                'departure_time': watch_data.get('departure_time'),
+                'arrival_time': watch_data.get('arrival_time'),
+                'return_departure_time': watch_data.get('return_departure_time'),
+                'return_arrival_time': watch_data.get('return_arrival_time'),
+                'recommendation': rec if rec else None,
+            })
+        watches_json = json.dumps(watches_data, default=_default_ser)
+
+    # Show "Viewing as" banner for demo viewer on bot trips
+    viewing_as = None
+    if user and is_member and (session.get('_demo_viewer') or is_bot_trip):
+        viewing_as = user.get('name', 'Demo User')
+
+    # Booked trip summary stats (for header display)
+    booked_summary = None
+    if plan.get('status') in ('locked', 'booked') or plan.get('locked_destination'):
+        try:
+            from utilities.postgres_utils import get_trip_summary
+            booked_summary = get_trip_summary(plan['plan_id'])
+        except Exception:
+            pass
+
+    return render_template('invite.html',
+        plan=plan, destinations=destinations, members=members,
+        vote_tallies=vote_tallies, my_votes=my_votes,
+        user=user, is_member=is_member, member=member,
+        blackouts=blackouts, tentative_dates=tentative_dates,
+        member_airport=member_airport,
+        member_flexible=member_flexible,
+        needs_login=(user is None and not is_bot_trip),
+        is_organizer=is_organizer,
+        is_bot_trip=is_bot_trip,
+        profile_completed=profile_completed,
+        destinations_json=destinations_json,
+        calendar_json=calendar_json if not (user is None and not is_bot_trip) else '{}',
+        watches_json=watches_json,
+        members_detail_json=members_detail_json,
+        viewing_as=viewing_as,
+        booked_summary=booked_summary,
+        demo_stage=session.get('_demo_stage'),
+    )
+
+
+@app.route('/api/plan/<plan_id>/join-full', methods=['POST'])
+@api_auth_required
+def api_join_full(plan_id):
+    user = session['user']
+    data = request.get_json() or {}
+
+    # Join or get existing membership
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        member_token = generate_token()
+        member = add_plan_member(
+            plan_id, user['name'], member_token,
+            email=user['email'], user_id=user['id'],
+        )
+        if not member:
+            return jsonify({'error': 'Failed to join'}), 500
+        logger.info(f"👋 Joined plan: {user['name']} → plan {plan_id}")
+
+    # Update airport + flexible — resolve freeform location to IATA code
+    from utilities.airport_utils import resolve_airport
+    location_input = data.get('home_airport', '').strip()
+    is_flexible = data.get('is_flexible', False)
+    resolved = resolve_airport(location_input) if location_input else None
+    airport_code = resolved['code'] if resolved else (location_input.upper() if len(location_input) == 3 else None)
+    update_member_details(member['pk_id'], home_airport=airport_code or location_input or None, is_flexible=is_flexible)
+
+    # Also save to user profile so it carries across plans
+    if location_input:
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE crab.users SET home_airport = %s, home_location = %s WHERE pk_id = %s AND (home_airport IS NULL OR home_airport = '')",
+                        (airport_code, location_input, user['id']))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+    # Save blackouts
+    blackouts = data.get('blackouts', [])
+    if blackouts or not is_flexible:
+        save_member_blackouts(plan_id, user['id'], blackouts)
+
+    # Save tentative dates
+    tentative = data.get('tentative_dates', [])
+    if tentative or not is_flexible:
+        save_member_tentative_dates(plan_id, user['id'], tentative)
+
+    # Save votes
+    votes = data.get('votes', {})
+    for target_id, vote_val in votes.items():
+        if vote_val in (1, -1):
+            upsert_vote(plan_id, user['id'], 'destination', target_id, vote_val)
+
+    return jsonify({'success': True, 'data': {'plan_id': str(plan_id), 'member_id': member['pk_id']}})
+
+
+@app.route('/api/plan/<plan_id>/calendar')
+@api_auth_required
+def api_plan_calendar(plan_id):
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Not found'}), 404
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    members = get_plan_members(plan_id)
+    all_blackouts = get_plan_blackouts(plan_id)
+    all_tentative = get_plan_tentative_dates(plan_id)
+    return jsonify({
+        'blackouts': [{'name': b['full_name'], 'start': b['blackout_start'].isoformat(), 'end': b['blackout_end'].isoformat()} for b in all_blackouts],
+        'tentative': [{'name': t['full_name'], 'start': t['date_start'].isoformat(), 'end': t['date_end'].isoformat(), 'preference': t.get('preference', 'works')} for t in all_tentative],
+        'members': [{'name': m['display_name'], 'is_flexible': m.get('is_flexible', False)} for m in members],
+    })
+
+
+@app.route('/plan/<plan_id>')
+@login_required
+def view_plan(plan_id):
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return redirect('/dashboard')
+
+    user = session['user']
+    is_organizer = user['id'] == plan['organizer_id']
+
+    # Access check: must be organizer or authed member
+    has_access = is_organizer
+    if not has_access:
+        member = get_member_for_plan(plan_id, user['id'])
+        has_access = member is not None
+    if not has_access:
+        return redirect(f"/join/{plan['invite_token']}")
+
+    members = get_plan_members(plan_id)
+    all_prefs = get_all_plan_preferences(plan_id)
+    recs = get_recommendations(plan_id)
+    destinations = get_destination_suggestions(plan_id)
+    view_stats = get_invite_view_stats(plan_id) if is_organizer else None
+    member_votes = {}
+    vote_tallies = None
+    if is_organizer:
+        raw_votes = get_all_member_votes(plan_id)
+        # Build a set of user_ids who have voted
+        voted_user_ids = set()
+        for uid, mv in raw_votes.items():
+            if mv.get('votes'):
+                voted_user_ids.add(uid)
+        member_votes = {'voted_user_ids': voted_user_ids, 'raw': raw_votes}
+        vote_tallies = get_vote_tallies(plan_id, 'destination')
+    return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
+                           recs=recs, destinations=destinations, is_organizer=is_organizer, user=user,
+                           view_stats=view_stats, member_votes=member_votes, vote_tallies=vote_tallies)
+
+
+def _resolve_member(plan_id):
+    user = session.get('user')
+    if user:
+        return get_member_for_plan(plan_id, user['id'])
+    return None
+
+
+@app.route('/plan/<plan_id>/preferences')
+def plan_preferences(plan_id):
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return redirect('/dashboard')
+    member = _resolve_member(plan_id)
+    if not member:
+        return redirect(f"/join/{plan['invite_token']}")
+    prefs = get_plan_preferences(member['pk_id'])
+    user = session.get('user')
+    return render_template('preferences.html', plan=plan, member=member, prefs=prefs, user=user)
+
+
+@app.route('/api/plan/<plan_id>/preferences', methods=['POST'])
+def api_update_preferences(plan_id):
+    member = _resolve_member(plan_id)
+    if not member:
+        return jsonify({'error': 'Access denied'}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    success = upsert_plan_preferences(member['pk_id'], data)
+    if success:
+        logger.info(f"💬 Preferences saved: {member['display_name']} for plan {plan_id}")
+        return jsonify({'success': True})
+    return jsonify({'error': 'Save failed'}), 500
+
+
+# ── Calendar routes ─────────────────────────────────────────
+
+@app.route('/api/calendar/sync', methods=['POST'])
+@api_auth_required
+def api_sync_calendar():
+    user = session['user']
+    tokens = get_user_tokens(user['id'])
+    if not tokens or not tokens.get('google_access_token'):
+        return jsonify({'error': 'No calendar access. Please re-login with Google.'}), 400
+
+    access_token = tokens['google_access_token']
+
+    # Try fetching events — if 401, refresh token
+    from datetime import datetime
+    time_min = datetime.utcnow()
+    time_max = time_min + timedelta(days=180)  # next 6 months
+
+    events = get_calendar_events(access_token, time_min, time_max)
+    if events is None and tokens.get('google_refresh_token'):
+        # Token expired — refresh it
+        new_token = refresh_access_token(
+            tokens['google_refresh_token'],
+            get_secret('CRAB_GOOGLE_CLIENT_ID'),
+            get_secret('CRAB_GOOGLE_CLIENT_SECRET'),
+        )
+        if new_token:
+            update_user_tokens(user['id'], new_token)
+            events = get_calendar_events(new_token, time_min, time_max)
+
+    if events is None:
+        return jsonify({'error': 'Calendar access expired. Please re-login.'}), 401
+
+    windows = compute_free_windows(events, time_min, time_max)
+    set_user_calendar_synced(user['id'])
+
+    logger.info(f"📅 Calendar synced for {user['email']}: {len(events)} events, {len(windows)} free windows")
+    return jsonify({
+        'success': True,
+        'data': {
+            'event_count': len(events),
+            'free_windows': windows,
+        }
+    })
+
+
+@app.route('/api/plan/<plan_id>/sync-calendar', methods=['POST'])
+@api_auth_required
+def api_sync_plan_calendar(plan_id):
+    """Sync current user's calendar and save availability for this plan."""
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member of this plan'}), 403
+
+    tokens = get_user_tokens(user['id'])
+    if not tokens or not tokens.get('google_access_token'):
+        return jsonify({'error': 'No calendar access. Please re-login.'}), 400
+
+    access_token = tokens['google_access_token']
+    from datetime import datetime
+    time_min = datetime.utcnow()
+    time_max = time_min + timedelta(days=180)
+
+    events = get_calendar_events(access_token, time_min, time_max)
+    if events is None and tokens.get('google_refresh_token'):
+        new_token = refresh_access_token(
+            tokens['google_refresh_token'],
+            get_secret('CRAB_GOOGLE_CLIENT_ID'),
+            get_secret('CRAB_GOOGLE_CLIENT_SECRET'),
+        )
+        if new_token:
+            update_user_tokens(user['id'], new_token)
+            events = get_calendar_events(new_token, time_min, time_max)
+
+    if events is None:
+        return jsonify({'error': 'Calendar access expired. Please re-login.'}), 401
+
+    windows = compute_free_windows(events, time_min, time_max)
+    save_member_availability(plan_id, user['id'], windows, source='calendar')
+    set_user_calendar_synced(user['id'])
+
+    logger.info(f"📅 Plan calendar synced: {user['email']} for plan {plan_id}")
+    return jsonify({'success': True, 'data': {'windows': len(windows)}})
+
+
+@app.route('/api/plan/<plan_id>/availability')
+@api_auth_required
+def api_plan_availability(plan_id):
+    """Get group availability overlap for this plan."""
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    overlap = get_availability_overlap(plan_id)
+    return jsonify({'success': True, 'data': {'windows': overlap}})
+
+
+# ── Destination suggestion routes ───────────────────────────
+
+@app.route('/api/plan/<plan_id>/suggest-destination', methods=['POST'])
+@api_auth_required
+def api_suggest_destination(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        # Auto-join the plan when suggesting a destination
+        member_token = generate_token()
+        member = add_plan_member(
+            plan_id, user['name'], member_token,
+            email=user['email'], user_id=user['id'],
+        )
+        if not member:
+            return jsonify({'error': 'Failed to join plan'}), 500
+        logger.info(f"👋 Auto-joined plan via suggestion: {user['name']} → plan {plan_id}")
+
+    data = request.get_json()
+    destination_name = data.get('destination') if data else None
+    if not destination_name:
+        return jsonify({'error': 'Destination name required'}), 400
+
+    is_organizer = user['id'] == plan['organizer_id']
+
+    # Create the suggestion — organizer auto-approves, others go pending
+    suggestion = create_destination_suggestion(plan_id, user['id'], destination_name)
+    if not suggestion:
+        return jsonify({'error': 'Failed to create suggestion'}), 500
+
+    # Auto-vote yes for whoever suggests a destination
+    upsert_vote(plan_id, user['id'], 'destination', suggestion['suggestion_id'], 1)
+
+    if is_organizer:
+        # Organizer: immediately start researching
+        _research_destination(plan_id, suggestion['suggestion_id'], destination_name, plan)
+        return jsonify({
+            'success': True,
+            'data': {
+                'suggestion_id': str(suggestion['suggestion_id']),
+                'status': 'researching',
+            }
+        })
+    else:
+        # Non-organizer: mark as pending for coordinator approval
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE crab.destination_suggestions SET status = 'pending' WHERE suggestion_id = %s",
+                        (suggestion['suggestion_id'],))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({
+            'success': True,
+            'data': {
+                'suggestion_id': str(suggestion['suggestion_id']),
+                'status': 'pending',
+            }
+        })
+
+
+@app.route('/api/plan/<plan_id>/approve-suggestion', methods=['POST'])
+@api_auth_required
+def api_approve_suggestion(plan_id):
+    """Organizer approves a pending destination suggestion — triggers research."""
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can approve suggestions'}), 403
+    data = request.get_json() or {}
+    suggestion_id = data.get('suggestion_id')
+    action = data.get('action', 'approve')
+    if not suggestion_id:
+        return jsonify({'error': 'suggestion_id required'}), 400
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        if action == 'reject':
+            cur.execute("DELETE FROM crab.destination_suggestions WHERE suggestion_id = %s AND plan_id = %s",
+                        (suggestion_id, plan_id))
+        else:
+            cur.execute("UPDATE crab.destination_suggestions SET status = 'researching' WHERE suggestion_id = %s AND plan_id = %s",
+                        (suggestion_id, plan_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Approve suggestion failed: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    if action == 'approve':
+        # Get the destination name and kick off research
+        suggestions = get_destination_suggestions(plan_id)
+        dest = next((s for s in suggestions if str(s['suggestion_id']) == str(suggestion_id)), None)
+        if dest:
+            _research_destination(plan_id, suggestion_id, dest['destination_name'], plan)
+    return jsonify({'success': True, 'action': action})
+
+
+@app.route('/api/plan/<plan_id>/suggest-anywhere', methods=['POST'])
+@api_auth_required
+def api_suggest_anywhere(plan_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    all_prefs = get_all_plan_preferences(plan_id)
+    suggestions = suggest_destinations(all_prefs)
+    logger.info(f"🤖 AI suggested {len(suggestions)} destinations for plan {plan_id}")
+    return jsonify({'success': True, 'data': {'suggestions': suggestions}})
+
+
+@app.route('/api/plan/<plan_id>/destinations')
+@api_auth_required
+def api_get_destinations(plan_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    suggestions = get_destination_suggestions(plan_id)
+    return jsonify({'success': True, 'data': {'destinations': suggestions}})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_destination(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can delete destinations'}), 403
+
+    success = delete_destination_suggestion(suggestion_id)
+    if not success:
+        return jsonify({'error': 'Failed to delete destination'}), 500
+
+    logger.info(f"🗑️ Destination {suggestion_id} deleted from plan {plan_id} by {user['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/pin', methods=['POST'])
+@api_auth_required
+def api_add_pin(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can add pins'}), 403
+
+    data = request.get_json()
+    name = (data.get('name') or '').strip() if data else ''
+    if not name:
+        return jsonify({'error': 'Name required'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    category = data.get('category', 'things_to_do')
+    if category not in ('stays', 'things_to_do', 'food_and_drink', 'upcoming_events'):
+        return jsonify({'error': 'Invalid category'}), 400
+
+    pin = {'name': name, 'description': data.get('description', ''), 'image_search': name}
+    url = (data.get('url') or '').strip()
+    if url:
+        pin['url'] = url
+    price_map = {'stays': '$$', 'things_to_do': '$$', 'food_and_drink': '$$', 'upcoming_events': ''}
+    pin['price_hint'] = price_map.get(category, '')
+
+    dest_data = suggestion.get('destination_data') or {}
+    card = dest_data.get('card', {})
+    items = card.get(category, [])
+    items.insert(0, pin)  # Add to top
+    card[category] = items
+    dest_data['card'] = card
+    update_destination_data(suggestion_id, dest_data)
+
+    logger.info(f"📌 Custom pin added: {name} to {suggestion['destination_name']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/pin', methods=['DELETE'])
+@api_auth_required
+def api_delete_pin(plan_id, suggestion_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can remove pins'}), 403
+
+    data = request.get_json()
+    category = data.get('category')  # stays, things_to_do, food_and_drink, upcoming_events
+    idx = data.get('index')
+    if category is None or idx is None:
+        return jsonify({'error': 'category and index required'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    card = dest_data.get('card', {})
+    items = card.get(category, [])
+    if 0 <= idx < len(items):
+        removed = items.pop(idx)
+        card[category] = items
+        dest_data['card'] = card
+        update_destination_data(suggestion_id, dest_data)
+        logger.info(f"🗑️ Pin removed: {removed.get('name', '?')} from {suggestion['destination_name']}")
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/media', methods=['POST'])
+@api_auth_required
+def api_add_media(plan_id, suggestion_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    data = request.get_json()
+    url = (data.get('url') or '').strip() if data else ''
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+
+    # Basic URL validation
+    if not url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'Invalid URL'}), 400
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    custom_media = dest_data.get('custom_media', [])
+    custom_media.append({
+        'url': url,
+        'caption': (data.get('caption') or '').strip(),
+        'added_by': user.get('full_name', user['email']),
+    })
+    dest_data['custom_media'] = custom_media
+    update_destination_data(suggestion_id, dest_data)
+
+    logger.info(f"🎬 Media added to {suggestion['destination_name']} by {user['email']}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/plan/<plan_id>/destination/<suggestion_id>/media/<int:media_idx>', methods=['DELETE'])
+@api_auth_required
+def api_remove_media(plan_id, suggestion_id, media_idx):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or str(plan['organizer_id']) != str(user['id']):
+        return jsonify({'error': 'Only the organizer can remove media'}), 403
+
+    suggestion = get_destination_suggestion_by_id(suggestion_id)
+    if not suggestion or str(suggestion['plan_id']) != str(plan_id):
+        return jsonify({'error': 'Destination not found'}), 404
+
+    dest_data = suggestion.get('destination_data') or {}
+    custom_media = dest_data.get('custom_media', [])
+    if 0 <= media_idx < len(custom_media):
+        custom_media.pop(media_idx)
+        dest_data['custom_media'] = custom_media
+        update_destination_data(suggestion_id, dest_data)
+
+    return jsonify({'success': True})
+
+
+# ── Voting + Lock-in routes ─────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/vote', methods=['POST'])
+@api_auth_required
+def api_vote(plan_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+
+    target_type = data.get('target_type')  # 'destination', 'date_window'
+    target_id = data.get('target_id')
+    vote_val = data.get('vote')  # positive int = rank (1=1st, 2=2nd...), 0 = unvote
+
+    if target_type not in ('destination', 'date_window'):
+        return jsonify({'error': 'Invalid target_type'}), 400
+    if not isinstance(vote_val, int) or vote_val < 0:
+        return jsonify({'error': 'Vote must be 0 or a positive integer'}), 400
+    if not target_id:
+        return jsonify({'error': 'target_id required'}), 400
+
+    if vote_val == 0:
+        success = delete_vote(plan_id, user['id'], target_type, target_id)
+    else:
+        # Clear this rank from other destinations for this user, then set it
+        clear_rank_from_others(plan_id, user['id'], target_type, target_id, vote_val)
+        success = upsert_vote(plan_id, user['id'], target_type, target_id, vote_val)
+    if success:
+        tallies = get_vote_tallies(plan_id, target_type)
+        my_votes = get_user_votes(plan_id, user['id'])
+        return jsonify({'success': True, 'data': {'tallies': tallies, 'my_votes': my_votes}})
+    return jsonify({'error': 'Vote failed'}), 500
+
+
+@app.route('/api/plan/<plan_id>/votes')
+@api_auth_required
+def api_get_votes(plan_id):
+    user = session['user']
+    member = get_member_for_plan(plan_id, user['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    tallies = get_vote_tallies(plan_id)
+    my_votes = get_user_votes(plan_id, user['id'])
+    return jsonify({'success': True, 'data': {'tallies': tallies, 'my_votes': my_votes}})
+
+
+@app.route('/api/plan/<plan_id>/stage', methods=['POST'])
+@api_auth_required
+def api_update_stage(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can change the stage'}), 403
+    data = request.get_json() or {}
+    stage = data.get('stage')
+    if stage not in ('voting', 'planning', 'locked', 'booked', 'completed'):
+        return jsonify({'error': 'Invalid stage'}), 400
+    update_plan_stage(plan_id, stage)
+    return jsonify({'success': True, 'stage': stage})
+
+
+@app.route('/api/plan/<plan_id>/lock', methods=['POST'])
+@api_auth_required
+def api_lock_plan(plan_id):
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan or plan['organizer_id'] != user['id']:
+        return jsonify({'error': 'Only the organizer can lock the plan'}), 403
+
+    data = request.get_json()
+    if not data or not data.get('destination'):
+        return jsonify({'error': 'Destination required'}), 400
+
+    success = lock_plan(plan_id, data['destination'], data.get('start_date'), data.get('end_date'))
+    if success:
+        logger.info(f"🔒 Plan locked: {plan['title']} → {data['destination']}")
+        # Auto-create per-member price watches in background
+        from utilities.watch_engine import create_watches_for_plan
+        threading.Thread(target=create_watches_for_plan, args=(plan_id,), daemon=True).start()
+        return jsonify({'success': True})
+    return jsonify({'error': 'Lock failed'}), 500
+
+
+# ── Watch routes ────────────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/watches')
+def api_get_watches(plan_id):
+    """Get all member watches for a plan, grouped by member."""
+    from utilities.postgres_utils import get_watches_for_plan, get_watch_history
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    # Allow unauthenticated access for bot trips
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+    watches = get_watches_for_plan(plan_id)
+    # Group by member and attach recent history for sparklines
+    members = {}
+    for w in watches:
+        mid = w['member_id']
+        if mid not in members:
+            members[mid] = {
+                'member_id': mid,
+                'member_name': w['member_name'],
+                'watches': [],
+            }
+        history = get_watch_history(w['pk_id'], limit=20)
+        w['history'] = [{'price': float(h['price_usd']), 'at': h['observed_at'].isoformat()} for h in history]
+        # Convert decimals for JSON
+        for field in ('best_price_usd', 'last_price_usd'):
+            if w.get(field) is not None:
+                w[field] = float(w[field])
+        members[mid]['watches'].append(w)
+
+    return jsonify({'success': True, 'data': {'members': list(members.values())}})
+
+
+@app.route('/api/plan/<plan_id>/watches/<int:watch_id>/status', methods=['POST'])
+@api_auth_required
+def api_update_watch_status(plan_id, watch_id):
+    """Update watch status (mark as booked, paused, or active)."""
+    from utilities.postgres_utils import update_watch_status
+    data = request.get_json()
+    new_status = data.get('status') if data else None
+    if new_status not in ('active', 'paused', 'booked'):
+        return jsonify({'error': 'Invalid status'}), 400
+    # Capture optional booking details
+    booked_price = data.get('booked_price') if data else None
+    confirmation = data.get('confirmation') if data else None
+    success = update_watch_status(watch_id, new_status,
+                                  booked_price=booked_price,
+                                  confirmation=confirmation)
+    # Auto-transition plan to 'booked' when ALL watches are booked
+    plan_auto_booked = False
+    if success and new_status == 'booked':
+        from utilities.postgres_utils import get_watches_for_plan
+        all_watches = get_watches_for_plan(plan_id)
+        if all_watches and all(w['status'] == 'booked' for w in all_watches):
+            update_plan_stage(plan_id, 'booked')
+            plan_auto_booked = True
+            logger.info(f"All watches booked — plan {plan_id} auto-transitioned to 'booked'")
+    return jsonify({'success': success, 'plan_booked': plan_auto_booked})
+
+
+@app.route('/api/plan/<plan_id>/leave', methods=['POST'])
+@api_auth_required
+def api_leave_plan(plan_id):
+    """Leave a trip — removes the current user from the plan."""
+    from utilities.postgres_utils import remove_plan_member
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    removed = remove_plan_member(plan_id, user['pk_id'])
+    if removed:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Could not leave trip (you may be the organizer)'}), 400
+
+
+@app.route('/api/plan/<plan_id>/watches/<int:watch_id>/history')
+def api_get_watch_history(plan_id, watch_id):
+    """Price history for a single watch (sparkline data)."""
+    from utilities.postgres_utils import get_watch_history
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    is_bot_trip = plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+    history = get_watch_history(watch_id, limit=int(request.args.get('limit', 50)))
+    return jsonify({
+        'success': True,
+        'data': [{'price': float(h['price_usd']), 'source': h['source'],
+                   'at': h['observed_at'].isoformat()} for h in history]
+    })
+
+
+# ── Recommendation routes ───────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/generate', methods=['POST'])
+@api_auth_required
+def api_generate_recs(plan_id):
+    """Kick off rec generation in background — returns immediately."""
+    user = session['user']
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+
+    current = _get_rec_status(plan_id)
+    if current and current['status'] == 'generating':
+        return jsonify({'success': True, 'data': {'status': 'generating'}})
+
+    _set_rec_status(plan_id, 'generating')
+
+    def _do_generate():
+        try:
+            all_prefs = get_all_plan_preferences(plan_id)
+            recs, error = generate_recommendations(plan, all_prefs)
+            if error:
+                _set_rec_status(plan_id, 'error', error=error)
+                return
+            if not recs:
+                _set_rec_status(plan_id, 'error', error='No recommendations generated')
+                return
+            delete_recommendations_for_plan(plan_id)
+            save_recommendations(plan_id, recs)
+            _set_rec_status(plan_id, 'done', count=len(recs))
+            logger.info(f"🤖 Generated {len(recs)} recs for {plan['title']}")
+        except Exception as e:
+            logger.error(f"❌ Rec generation failed for {plan_id}: {e}")
+            _set_rec_status(plan_id, 'error', error=str(e))
+
+    threading.Thread(target=_do_generate, daemon=True).start()
+    logger.info(f"🤖 Rec generation started in background: {plan['title']} by {user['email']}")
+    return jsonify({'success': True, 'data': {'status': 'generating'}})
+
+
+@app.route('/api/plan/<plan_id>/generate/status')
+@api_auth_required
+def api_generate_recs_status(plan_id):
+    """Poll this to check if background rec generation is done."""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    status = _get_rec_status(plan_id)
+    if not status:
+        # No active job — check if recs already exist
+        recs = get_recommendations(plan_id)
+        if recs:
+            return jsonify({'success': True, 'data': {'status': 'done', 'count': len(recs)}})
+        return jsonify({'success': True, 'data': {'status': 'idle'}})
+
+    return jsonify({'success': True, 'data': status})
+
+
+@app.route('/api/recommendation/<recommendation_id>/status', methods=['POST'])
+@api_auth_required
+def api_update_rec_status(recommendation_id):
+    data = request.get_json()
+    status = data.get('status') if data else None
+    if status not in ('approved', 'rejected', 'suggested'):
+        return jsonify({'error': 'Invalid status'}), 400
+    success = update_recommendation_status(recommendation_id, status)
+    if success:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Update failed'}), 500
+
+
+# ── Search routes ────────────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/search/trigger', methods=['POST'])
+@api_auth_required
+def api_search_trigger(plan_id):
+    """Trigger background search fan-out for this plan."""
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    destination = plan.get('destination') or plan.get('locked_destination')
+    if not destination:
+        return jsonify({'error': 'No destination set on plan yet'}), 400
+
+    checkin = str(plan.get('start_date') or plan.get('locked_start_date') or '')
+    checkout = str(plan.get('end_date') or plan.get('locked_end_date') or '')
+
+    all_prefs = get_all_plan_preferences(plan_id)
+    origin_airports = [p['home_airport'] for p in all_prefs if p.get('home_airport')]
+    guests = len(all_prefs) or 2
+
+    trigger_search(plan_id, destination, checkin or None, checkout or None,
+                   origin_airports or None, guests)
+
+    logger.info(f"🔍 Search triggered: {destination} for plan {plan_id}")
+    return jsonify({'success': True, 'data': {'status': 'searching', 'destination': destination}})
+
+
+@app.route('/api/plan/<plan_id>/search/status')
+@api_auth_required
+def api_search_status(plan_id):
+    """Quick poll: is the search still running? How many results so far?"""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    results = get_search_results(plan_id, limit=1000)
+    return jsonify({'success': True, 'data': {
+        'searching': is_searching(plan_id),
+        'count': len(results),
+    }})
+
+
+@app.route('/api/plan/<plan_id>/search/results')
+@api_auth_required
+def api_search_results(plan_id):
+    """Return all accumulated search results (for initial page load)."""
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+    result_type = request.args.get('type')  # flight | hotel | activity | car
+    since_id = int(request.args.get('since_id', 0))
+    results = get_search_results(plan_id, result_type=result_type, since_id=since_id)
+    return jsonify({'success': True, 'data': {
+        'results': results,
+        'searching': is_searching(plan_id),
+    }})
+
+
+@app.route('/api/plan/<plan_id>/search/stream')
+@api_auth_required
+def api_search_stream(plan_id):
+    """
+    SSE endpoint — pushes new search_results rows to connected clients as they land.
+    Frontend connects once; new cards appear automatically as adapters return data.
+    Closes when all adapters finish (searching=False and no new rows for 3 cycles).
+    """
+    member = get_member_for_plan(plan_id, session['user']['id'])
+    if not member:
+        return jsonify({'error': 'Not a member'}), 403
+
+    import time
+
+    def generate():
+        last_id = int(request.args.get('since_id', 0))
+        idle_cycles = 0
+
+        while True:
+            new_rows = get_search_results(plan_id, since_id=last_id, limit=50)
+            if new_rows:
+                idle_cycles = 0
+                for row in new_rows:
+                    last_id = row['pk_id']
+                    yield f"data: {json.dumps(row)}\n\n"
+            else:
+                idle_cycles += 1
+
+            # Done when search finished and no new rows for 3 seconds
+            if not is_searching(plan_id) and idle_cycles >= 3:
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                break
+
+            time.sleep(1)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
+
+
+# ── Deals routes ─────────────────────────────────────────────
+
+@app.route('/api/deals')
+@login_required
+def api_deals():
+    """Global hot deals feed — reads from nightly cache, grouped by source tab."""
+    try:
+        group_size = int(request.args.get('group_size', 15))
+        group_size = max(2, min(group_size, 100))
+        origin = request.args.get('origin', '').strip() or None
+
+        from utilities.deals_engine import resolve_iata
+        iata = resolve_iata(origin) if origin else None
+
+        cache = get_deals_cache_grouped(origin=iata)
+        tabs = cache.get('tabs', []) if isinstance(cache, dict) else []
+        last_updated = cache.get('last_updated') if isinstance(cache, dict) else None
+
+        # Cache empty — fall back to live fetch so the first visit still works
+        if not tabs:
+            logger.info("💡 Deals cache empty — falling back to live fetch")
+            tabs = get_hot_deals_grouped(group_size=group_size, origin=origin)
+
+        # Annotate group totals (cache stores raw prices)
+        for tab in tabs:
+            for d in tab['deals']:
+                d['group_size'] = group_size
+                if d.get('deal_type') != 'hotel':
+                    d['total_for_group'] = round(d['price_per_person'] * group_size, 2)
+
+        return jsonify({'success': True, 'data': {'tabs': tabs, 'group_size': group_size, 'last_updated': last_updated}})
+    except Exception as e:
+        logger.error(f"❌ api_deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/crawl')
+def task_crawl():
+    """Cron job — run one random bot trip (Crab Crawlers)."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        # Auto-fail bot runs stuck in "running" for > 1 hour
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE crab.bot_runs SET status='failed', finished_at=NOW()
+                WHERE status='running' AND started_at < NOW() - INTERVAL '1 hour'
+            """)
+            stuck = cur.rowcount
+            if stuck:
+                logger.info(f"🧹 Auto-failed {stuck} stuck bot runs")
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Stuck run cleanup failed: {e}")
+
+        import subprocess
+        cwd = '/app' if os.path.exists('/app') else os.path.dirname(os.path.abspath(__file__))
+        # Run one random trip + nurture past trips (block until done so App Engine
+        # keeps the instance alive — Popen-detached subprocesses get SIGKILLed when
+        # the instance scales down off-hours, leaving runs stuck and auto-failed).
+        try:
+            subprocess.run(
+                ['python3', '-c',
+                 'import sys; sys.path.insert(0,"."); '
+                 'from dev.trip_bots import build_random_trip, nurture_past_trips; '
+                 'from utilities.google_auth_utils import get_secret; '
+                 's = get_secret("CRAB_BOT_SECRET"); '
+                 'build_random_trip("https://crab.travel", s); '
+                 'nurture_past_trips("https://crab.travel", s, max_trips=5)'],
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=540,  # 9 min — under App Engine cron 10-min request deadline
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ Bot run subprocess hit 540s timeout")
+        # Prune old bot plans (keep last 100, never prune booked trips)
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                DELETE FROM crab.plans WHERE plan_id IN (
+                    SELECT plan_id FROM crab.plans
+                    WHERE title LIKE '[BOT]%%'
+                      AND status NOT IN ('booked', 'completed')
+                    ORDER BY created_at DESC
+                    OFFSET 100
+                )
+            """)
+            pruned = cur.rowcount
+            if pruned:
+                logger.info(f"🧹 Pruned {pruned} old bot plans")
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+        logger.info("🦀 Crab Crawl cron triggered — random trip starting")
+        return jsonify({'success': True, 'message': 'Crawl started'})
+    except Exception as e:
+        logger.error(f"❌ Crawl cron failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/refresh-deals')
+def task_refresh_deals():
+    """Nightly cron job — refresh deals cache from all sources for all hubs."""
+    # App Engine cron jobs set this header; reject external calls
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        total = refresh_deals_cache()
+        logger.info(f"✅ /tasks/refresh-deals complete: {total} deals cached")
+        return jsonify({'success': True, 'deals_upserted': total})
+    except Exception as e:
+        logger.error(f"❌ refresh-deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/vote-reminders')
+def task_vote_reminders():
+    """Cron job — email/SMS reminders to plan members who haven't voted yet.
+
+    Idempotent via crab.notifications_sent (max one reminder per plan/user/day).
+    """
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.notification_utils import notify_vote_reminder
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Plans currently in voting/planning stage with at least one destination suggestion
+        cur.execute("""
+            SELECT DISTINCT p.plan_id
+            FROM crab.plans p
+            JOIN crab.destination_suggestions d ON d.plan_id = p.plan_id
+            WHERE p.status IN ('planning', 'voting')
+              AND p.title NOT LIKE '[BOT]%%'
+        """)
+        plan_ids = [r['plan_id'] for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        total = 0
+        for pid in plan_ids:
+            try:
+                total += notify_vote_reminder(pid) or 0
+            except Exception as e:
+                logger.warning(f"vote reminder failed for plan {pid}: {e}")
+        logger.info(f"✅ /tasks/vote-reminders complete: {total} reminders across {len(plan_ids)} plans")
+        return jsonify({'success': True, 'reminders_sent': total, 'plans_scanned': len(plan_ids)})
+    except Exception as e:
+        logger.error(f"❌ vote-reminders failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/check-watches')
+def task_check_watches():
+    """Cron job — check all active member watches for price changes."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.watch_engine import check_all_watches
+        summary = check_all_watches()
+        logger.info(f"✅ /tasks/check-watches complete: {summary}")
+        return jsonify({'success': True, **summary})
+    except Exception as e:
+        logger.error(f"❌ check-watches failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plan/<plan_id>/deals')
+@api_auth_required
+def api_plan_deals(plan_id):
+    """Hot deals for a plan's Deal Desk — reads from cache, flat list sorted by price."""
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'success': False, 'error': 'Plan not found'}), 404
+    try:
+        group_size = plan.get('headcount') or int(request.args.get('group_size', 15))
+        limit = int(request.args.get('limit', 20))
+
+        cache = get_deals_cache_grouped()
+        tabs = cache.get('tabs', []) if isinstance(cache, dict) else []
+
+        # Flatten all tabs into one sorted list
+        all_deals = []
+        for tab in tabs:
+            all_deals.extend(tab.get('deals', []))
+        all_deals.sort(key=lambda d: d['price_per_person'])
+
+        # Annotate group totals
+        for d in all_deals[:limit]:
+            d['group_size'] = group_size
+            if d.get('deal_type') != 'hotel':
+                d['total_for_group'] = round(d['price_per_person'] * group_size, 2)
+
+        # Fall back to live fetch if cache empty
+        if not all_deals:
+            all_deals = get_hot_deals(group_size=group_size, limit=limit)
+
+        return jsonify({'success': True, 'data': {'deals': all_deals[:limit], 'group_size': group_size}})
+    except Exception as e:
+        logger.error(f"❌ api_plan_deals failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── YouTube search ─────────────────────────────────────────────
+
+@app.route('/api/youtube-search')
+def api_youtube_search():
+    q = request.args.get('q', '')
+    max_results = min(int(request.args.get('max_results', 6)), 12)
+    if not q:
+        return jsonify({'success': False, 'videos': []})
+    try:
+        yt_key = get_secret('CRAB_YOUTUBE_API_KEY')
+    except Exception:
+        yt_key = None
+    if not yt_key:
+        return jsonify({'success': False, 'videos': [], 'error': 'no_key'})
+    try:
+        import requests as http_requests
+        resp = http_requests.get('https://www.googleapis.com/youtube/v3/search', params={
+            'part': 'snippet',
+            'q': q,
+            'type': 'video',
+            'maxResults': max_results,
+            'key': yt_key,
+            'videoEmbeddable': 'true',
+        }, timeout=8)
+        data = resp.json()
+        videos = []
+        for item in data.get('items', []):
+            videos.append({
+                'id': item['id']['videoId'],
+                'title': item['snippet']['title'],
+                'thumbnail': item['snippet']['thumbnails'].get('medium', {}).get('url', ''),
+                'channel': item['snippet']['channelTitle'],
+            })
+        return jsonify({'success': True, 'videos': videos})
+    except Exception as e:
+        logger.error(f"YouTube search failed: {e}")
+        return jsonify({'success': False, 'videos': [], 'error': str(e)})
+
+
+# ── Pexels photo search ───────────────────────────────────────
+
+@app.route('/api/photo-search')
+def api_photo_search():
+    q = request.args.get('q', '')
+    per_page = min(int(request.args.get('per_page', 8)), 15)
+    if not q:
+        return jsonify({'success': False, 'photos': []})
+    try:
+        pexels_key = get_secret('CRAB_PEXELS_API_KEY')
+    except Exception:
+        pexels_key = None
+    if not pexels_key:
+        return jsonify({'success': False, 'photos': [], 'error': 'no_key'})
+    try:
+        import requests as http_requests
+        resp = http_requests.get('https://api.pexels.com/v1/search', params={
+            'query': q,
+            'per_page': per_page,
+            'orientation': 'landscape',
+        }, headers={'Authorization': pexels_key}, timeout=8)
+        data = resp.json()
+        photos = []
+        for p in data.get('photos', []):
+            photos.append({
+                'id': p['id'],
+                'url': p['src']['medium'],
+                'full': p['src'].get('large2x') or p['src'].get('original', p['src']['medium']),
+                'alt': p.get('alt', ''),
+                'photographer': p.get('photographer', ''),
+            })
+        return jsonify({'success': True, 'photos': photos})
+    except Exception as e:
+        logger.error(f"Pexels search failed: {e}")
+        return jsonify({'success': False, 'photos': [], 'error': str(e)})
+
+
+# ── Chat / Messages routes ────────────────────────────────────
+
+@app.route('/api/plan/<plan_id>/messages')
+def api_get_messages(plan_id):
+    # Allow unauthenticated access for bot trips (public voyeur mode)
+    plan = get_plan_by_id(plan_id)
+    is_bot_trip = plan and plan.get('title', '').startswith('[BOT]')
+    if not is_bot_trip:
+        if AUTH_ENABLED and 'user' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+    messages = get_plan_messages(plan_id)
+    # Organize into threads: top-level messages + replies nested under parent
+    top_level = []
+    replies_map = {}
+    for m in messages:
+        m['message_id'] = str(m['message_id'])
+        m['plan_id'] = str(m['plan_id'])
+        m['parent_id'] = str(m['parent_id']) if m['parent_id'] else None
+        m['created_at'] = m['created_at'].isoformat() if m['created_at'] else None
+        if m['parent_id']:
+            replies_map.setdefault(m['parent_id'], []).append(m)
+        else:
+            top_level.append(m)
+
+    for msg in top_level:
+        msg['replies'] = replies_map.get(msg['message_id'], [])
+        msg['reply_count'] = len(msg['replies'])
+
+    return jsonify({'success': True, 'data': {'messages': top_level}})
+
+
+@app.route('/api/plan/<plan_id>/messages', methods=['POST'])
+@api_auth_required
+def api_post_message(plan_id):
+    user = session['user']
+    data = request.get_json()
+    content = (data.get('content') or '').strip() if data else ''
+    if not content:
+        return jsonify({'error': 'Message content required'}), 400
+    if len(content) > 2000:
+        return jsonify({'error': 'Message too long (max 2000 chars)'}), 400
+
+    parent_id = data.get('parent_id')
+    display_name = user.get('name', user.get('email', 'Anonymous'))
+
+    msg = create_message(plan_id, user['id'], display_name, content, parent_id=parent_id)
+    if not msg:
+        return jsonify({'error': 'Failed to send message'}), 500
+
+    msg['message_id'] = str(msg['message_id'])
+    msg['plan_id'] = str(msg['plan_id'])
+    msg['parent_id'] = str(msg['parent_id']) if msg['parent_id'] else None
+    msg['created_at'] = msg['created_at'].isoformat() if msg['created_at'] else None
+    msg['user_picture'] = user.get('picture')
+
+    # Send notifications to members (async, don't block response).
+    # Routes via the unified dispatcher: email always, SMS only if the trip's
+    # organizer is on subscription_tier='premium'.
+    try:
+        from utilities.notification_utils import notify_chat_message
+        import threading
+        threading.Thread(
+            target=notify_chat_message,
+            args=(plan_id, display_name, content, user['id']),
+            kwargs={'message_id': msg['message_id']},
+            daemon=True,
+        ).start()
+    except Exception as e:
+        logger.warning(f"Notification dispatch failed: {e}")
+
+    return jsonify({'success': True, 'data': {'message': msg}})
+
+
+@app.route('/api/plan/<plan_id>/messages/<message_id>', methods=['DELETE'])
+@api_auth_required
+def api_delete_message(plan_id, message_id):
+    user = session['user']
+    success = delete_message(message_id, user['id'])
+    return jsonify({'success': success})
+
+
+# ── Twilio SMS Webhook (inbound) ─────────────────────────────
+
+@app.route('/api/sms/inbound', methods=['POST'])
+def sms_inbound():
+    """Handle inbound SMS replies from Twilio and post them to the user's most recent plan chat."""
+    from_number = request.form.get('From', '')
+    body = request.form.get('Body', '').strip()
+    if not from_number or not body:
+        return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Find user by phone number
+        cur.execute("SELECT pk_id, full_name FROM crab.users WHERE phone_number = %s", (from_number,))
+        user_row = cur.fetchone()
+        if user_row:
+            user_id, display_name = user_row
+            # Find their most recent plan
+            cur.execute("""
+                SELECT m.plan_id FROM crab.plan_members m
+                JOIN crab.plans p ON p.plan_id = m.plan_id
+                WHERE m.user_id = %s
+                ORDER BY p.updated_at DESC LIMIT 1
+            """, (user_id,))
+            plan_row = cur.fetchone()
+            if plan_row:
+                plan_id = str(plan_row[0])
+                create_message(plan_id, user_id, display_name, f"[via SMS] {body}")
+                logger.info(f"📱 SMS→Chat: {display_name} in plan {plan_id}")
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"SMS inbound error: {e}")
+
+    # Always return valid TwiML
+    return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
+
+
+# ── Demo viewer seed ──────────────────────────────────────────
+
+DEMO_VIEWER_GOOGLE_ID = 'demo_viewer_judy_tunaboat'
+DEMO_VIEWER_NAME = 'Judy Tunaboat'
+
+@app.route('/tasks/seed-demo-viewer')
+def task_seed_demo_viewer():
+    """One-time task: create demo viewer 'Judy Tunaboat' and add her to ALL trips with availability."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.invite_utils import generate_token
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # 1. Upsert Judy Tunaboat user
+        cur.execute("""
+            INSERT INTO crab.users (google_id, email, full_name, picture_url, home_airport)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (google_id) DO UPDATE SET
+                full_name = EXCLUDED.full_name,
+                home_airport = EXCLUDED.home_airport,
+                updated_at = NOW()
+            RETURNING pk_id
+        """, (DEMO_VIEWER_GOOGLE_ID, 'judy@tunaboat.crab.travel', DEMO_VIEWER_NAME, None, 'SEA'))
+        judy_id = cur.fetchone()['pk_id']
+
+        # 1b. Ensure Scottsdale AZ is in the demo trip's destination suggestions
+        demo_plan_id = '25438c20-0bb3-4137-9f5f-2ebdbeb0010b'
+        cur.execute("""
+            SELECT pk_id FROM crab.destination_suggestions
+            WHERE plan_id = %s AND destination_name = 'Scottsdale, AZ'
+        """, (demo_plan_id,))
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO crab.destination_suggestions (plan_id, suggested_by, destination_name, status)
+                VALUES (%s, %s, 'Scottsdale, AZ', 'ready')
+            """, (demo_plan_id, judy_id))
+
+        # Ensure demo trip statuses match their stage
+        cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s AND status != 'booked'", (demo_plan_id,))
+        # Set voting demo trip status
+        cur.execute("""
+            UPDATE crab.plans SET status = 'voting', locked_destination = NULL
+            WHERE invite_token = 'xL2aRt-k'
+        """)
+        # Set planning demo trip status
+        cur.execute("""
+            UPDATE crab.plans SET status = 'planning'
+            WHERE invite_token = 'TpPeETPm'
+        """)
+
+        # 1c. Seed destination card data for ALL destinations on demo trip
+        demo_cards = {
+            'Salvador, Brazil': {
+                'card': {
+                    'summary': 'Vibrant Afro-Brazilian culture meets stunning tropical beaches in Salvador, Bahia. The historic Pelourinho district is a UNESCO World Heritage Site with colorful colonial architecture, incredible street food, and live music on every corner. Perfect for groups who love culture, dancing, and beach days.',
+                    'highlights': ['Pelourinho historic district', 'Beaches: Porto da Barra & Farol da Barra', 'Afro-Brazilian cuisine & acarajé', 'Capoeira & live samba'],
+                    'best_dates': 'Year-round tropical weather. Carnival (February) is legendary but crowded. May-June ideal for smaller crowds.',
+                    'weather_note': 'Tropical — 77-86°F year-round, brief afternoon showers. Pack light layers and sunscreen.',
+                    'estimated_total_per_person': '$1,200-2,000',
+                    'compatibility_score': 78,
+                    'concerns': ['Language barrier (Portuguese)', 'Petty theft in tourist areas'],
+                    'stays': [
+                        {'name': 'Fera Palace Hotel', 'price_hint': '$$', 'description': 'Art deco landmark overlooking the Bay of All Saints. Rooftop pool with panoramic views.', 'location': 'Pelourinho'},
+                        {'name': 'Vila Galé Salvador', 'price_hint': '$$', 'description': 'Beachfront resort with all-inclusive option, perfect for groups who want pool + beach access.', 'location': 'Ondina Beach'},
+                        {'name': 'Casa do Amarelindo', 'price_hint': '$$$', 'description': 'Boutique pousada in a restored colonial mansion. Intimate rooftop terrace and homemade breakfast.', 'location': 'Santo Antônio'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Pelourinho Walking Tour', 'category': 'culture', 'price_hint': '$', 'description': 'Wander the cobblestone streets of this UNESCO district — churches, street art, and live drumming.', 'group_vibe': 'chill'},
+                        {'name': 'Capoeira Class', 'category': 'activity', 'price_hint': '$', 'description': 'Learn the Afro-Brazilian martial art/dance from local masters. No experience needed.', 'group_vibe': 'active'},
+                        {'name': 'Mercado Modelo', 'category': 'culture', 'price_hint': 'Free', 'description': 'Iconic market for crafts, souvenirs, and local snacks. Haggling encouraged.', 'group_vibe': 'chill'},
+                        {'name': 'Sunset at Farol da Barra', 'category': 'activity', 'price_hint': 'Free', 'description': 'Watch the sun set from the lighthouse point — Salvador\'s most iconic sunset spot.', 'group_vibe': 'chill'},
+                        {'name': 'Baiana Cooking Class', 'category': 'food', 'price_hint': '$$', 'description': 'Learn to make moqueca, acarajé, and other Bahian dishes with a local chef.', 'group_vibe': 'chill'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Restaurante Paraíso Tropical', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Best moqueca in Salvador — rich seafood stew with dendê oil and coconut milk.'},
+                        {'name': 'Acarajé da Dinha', 'category': 'street_food', 'price_hint': '$', 'description': 'Legendary street-side acarajé (black-eyed pea fritters stuffed with shrimp and vatapá).'},
+                        {'name': 'Bar Ulisses', 'category': 'bar', 'price_hint': '$', 'description': 'No-frills locals bar in Pelourinho. Cold beer, friendly crowd, and occasional live forró music.'},
+                    ],
+                    'upcoming_events': [],
+                },
+                'research': {'status': 'complete'},
+            },
+            'Lapland, Finland': {
+                'card': {
+                    'summary': 'Arctic wilderness at its most magical — Northern Lights, husky sledding, ice hotels, and endless snow-covered forests. Lapland is a once-in-a-lifetime group adventure for those who want something truly different. Summer offers midnight sun and hiking; winter is pure frozen wonderland.',
+                    'highlights': ['Northern Lights viewing', 'Husky & reindeer sledding', 'Glass igloo stays', 'Arctic sauna + ice swimming'],
+                    'best_dates': 'December-March for snow & Northern Lights. June-August for midnight sun. September for fall colors + early auroras.',
+                    'weather_note': 'Winter: -4 to -22°F. Bring serious layers. Summer: 50-70°F with 24hr daylight.',
+                    'estimated_total_per_person': '$2,500-4,000',
+                    'compatibility_score': 72,
+                    'concerns': ['Extreme cold requires proper gear', 'Remote location — limited nightlife', 'Expensive region'],
+                    'stays': [
+                        {'name': 'Arctic TreeHouse Hotel', 'price_hint': '$$$', 'description': 'Glass-walled suites perched in the treetops — watch the Northern Lights from bed.', 'location': 'Rovaniemi'},
+                        {'name': 'Kakslauttanen Arctic Resort', 'price_hint': '$$$', 'description': 'Famous glass igloos and log cabins. Group-friendly with shared saunas and dining.', 'location': 'Saariselkä'},
+                        {'name': 'Wilderness Hotel Muotka', 'price_hint': '$$', 'description': 'Cozy aurora cabins on a frozen lake. Includes guided husky safaris.', 'location': 'Inari'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Husky Safari', 'category': 'activity', 'price_hint': '$$', 'description': 'Mush your own team of huskies across frozen landscapes. 2-4 hour options available.', 'group_vibe': 'active'},
+                        {'name': 'Northern Lights Hunt', 'category': 'activity', 'price_hint': '$$', 'description': 'Guided snowmobile or bus chase across the tundra to find clear skies for aurora viewing.', 'group_vibe': 'adventurous'},
+                        {'name': 'Ice Swimming & Sauna', 'category': 'activity', 'price_hint': '$', 'description': 'Traditional Finnish experience: hot sauna then plunge into a hole cut in a frozen lake.', 'group_vibe': 'active'},
+                        {'name': 'Reindeer Farm Visit', 'category': 'culture', 'price_hint': '$', 'description': 'Meet Sámi reindeer herders, learn about indigenous culture, and take a reindeer sleigh ride.', 'group_vibe': 'chill'},
+                        {'name': 'Snowmobile Safari', 'category': 'activity', 'price_hint': '$$', 'description': 'Rip across frozen lakes and through snowy forests at speed. Helmets and suits provided.', 'group_vibe': 'adventurous'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Nili Restaurant', 'category': 'restaurant', 'price_hint': '$$$', 'description': 'Lappish fine dining — reindeer, Arctic char, cloudberries. Atmospheric log cabin setting.'},
+                        {'name': 'Café & Bar 21', 'category': 'bar', 'price_hint': '$$', 'description': 'Warm craft cocktails after a cold day. Try the cloudberry gin and tonic.'},
+                        {'name': 'Kotahovi', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Eat in a traditional Lappish kota (tent) around an open fire. Salmon cooked on cedar planks.'},
+                    ],
+                    'upcoming_events': [],
+                },
+                'research': {'status': 'complete'},
+            },
+            'Scottsdale, AZ': {
+                'card': {
+                    'summary': 'Sun-drenched desert paradise with world-class golf, spa resorts, and stunning Sonoran Desert landscapes. Old Town Scottsdale has a walkable nightlife and gallery scene, while the surrounding desert offers hiking, Jeep tours, and hot air balloon rides. Perfect for groups who want poolside relaxation mixed with adventure.',
+                    'highlights': ['Old Town nightlife & galleries', 'Camelback Mountain hike', 'Desert Botanical Garden', 'Championship golf courses', 'Spa & resort pool days'],
+                    'best_dates': 'October-April for ideal weather (70-85°F). May gets hot. Summer is 105°F+ but resort prices drop 50%.',
+                    'weather_note': 'May: 90-100°F, sunny, low humidity. Perfect pool weather. Mornings ideal for hiking.',
+                    'estimated_total_per_person': '$1,800-3,000',
+                    'compatibility_score': 91,
+                    'concerns': ['Hot in summer months', 'Need a car for some activities'],
+                    'stays': [
+                        {'name': 'The Scott Resort & Spa', 'price_hint': '$$', 'description': 'Stylish mid-century modern resort steps from Old Town. Two pools, great restaurant, walkable.', 'location': 'Old Town'},
+                        {'name': 'Mountain Shadows', 'price_hint': '$$$', 'description': 'Sleek boutique resort at the base of Camelback Mountain. Infinity pool with sunset views.', 'location': 'Paradise Valley'},
+                        {'name': 'Hotel Valley Ho', 'price_hint': '$$', 'description': 'Retro-chic landmark with massive pool scene and OH Pool bar. Walking distance to everything.', 'location': 'Old Town'},
+                        {'name': 'Civana Wellness Resort', 'price_hint': '$$$', 'description': 'Full wellness resort with yoga, meditation, spa, and farm-to-table dining. Desert serenity.', 'location': 'Carefree'},
+                    ],
+                    'things_to_do': [
+                        {'name': 'Camelback Mountain Sunrise Hike', 'category': 'activity', 'price_hint': 'Free', 'description': 'Iconic scramble with 360° views of the Valley. Go at sunrise to beat the heat.', 'group_vibe': 'active'},
+                        {'name': 'Old Town Gallery Walk', 'category': 'culture', 'price_hint': 'Free', 'description': 'Thursday night art walks through 100+ galleries. Wine, art, and people-watching.', 'group_vibe': 'chill'},
+                        {'name': 'Desert Jeep Tour', 'category': 'activity', 'price_hint': '$$', 'description': 'Off-road through the Sonoran Desert — saguaros, coyotes, and stunning red rock formations.', 'group_vibe': 'adventurous'},
+                        {'name': 'Hot Air Balloon Ride', 'category': 'activity', 'price_hint': '$$$', 'description': 'Float over the desert at sunrise. Includes champagne toast on landing.', 'group_vibe': 'chill'},
+                        {'name': 'Topgolf Scottsdale', 'category': 'activity', 'price_hint': '$$', 'description': 'Multi-level driving range with games, food, and drinks. Great group activity day or night.', 'group_vibe': 'active'},
+                        {'name': 'Salt River Tubing', 'category': 'activity', 'price_hint': '$', 'description': 'Float down the Salt River on inner tubes with coolers. Classic Arizona group activity.', 'group_vibe': 'chill'},
+                    ],
+                    'food_and_drink': [
+                        {'name': 'Citizen Public House', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Craft cocktails and elevated pub food. Try the pork belly and smoked salmon flatbread.'},
+                        {'name': 'Diego Pops', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Colorful modern Mexican with an Instagram-worthy patio. Great margaritas and street tacos.'},
+                        {'name': 'The Montauk', 'category': 'bar', 'price_hint': '$$', 'description': 'Rooftop bar in Old Town with fire pits, string lights, and craft cocktails. Perfect for groups.'},
+                        {'name': 'Hash Kitchen', 'category': 'restaurant', 'price_hint': '$$', 'description': 'Brunch destination with a DIY Bloody Mary bar. Weekend wait is worth it.'},
+                    ],
+                    'upcoming_events': [
+                        {'name': 'Scottsdale ArtWalk', 'date': 'Every Thursday', 'description': 'Free weekly gallery walk through the Arts District. Wine and live music at most galleries.'},
+                    ],
+                },
+                'research': {'status': 'complete'},
+            },
+        }
+
+        # Update each destination's card data
+        for dest_name, dest_data in demo_cards.items():
+            cur.execute("""
+                UPDATE crab.destination_suggestions
+                SET destination_data = %s
+                WHERE plan_id = %s AND destination_name = %s AND (destination_data IS NULL OR destination_data->'card'->>'summary' = '' OR destination_data->'card'->>'summary' IS NULL)
+            """, (psycopg2.extras.Json(dest_data), demo_plan_id, dest_name))
+
+        # Add votes for destinations that don't have them (Salvador, Lapland, Scottsdale)
+        cur.execute("SELECT suggestion_id, destination_name FROM crab.destination_suggestions WHERE plan_id = %s", (demo_plan_id,))
+        demo_dests = {r['destination_name']: r['suggestion_id'] for r in cur.fetchall()}
+
+        # Get some member user_ids to create votes from
+        cur.execute("SELECT user_id FROM crab.plan_members WHERE plan_id = %s AND user_id IS NOT NULL LIMIT 12", (demo_plan_id,))
+        voter_ids = [r['user_id'] for r in cur.fetchall()]
+
+        # Clear and re-seed all votes for demo trip destinations
+        cur.execute("DELETE FROM crab.votes WHERE plan_id = %s AND target_type = 'destination'", (demo_plan_id,))
+
+        vote_weights = {
+            'Scottsdale, AZ': [1,1,1,1,1,1,2,2,3],
+            'Sagano, Japan': [1,1,2,2,2,3,3,4],
+            'Salvador, Brazil': [1,2,2,3,3,3,4],
+            'Lapland, Finland': [2,3,3,4,4],
+        }
+        for dest_name, sug_id in demo_dests.items():
+            ranks = vote_weights.get(dest_name, [2,3])
+            for i, uid in enumerate(voter_ids[:len(ranks)]):
+                cur.execute("""
+                    INSERT INTO crab.votes (plan_id, user_id, target_type, target_id, vote)
+                    VALUES (%s, %s, 'destination', %s, %s)
+                    ON CONFLICT (plan_id, user_id, target_type, target_id) DO NOTHING
+                """, (demo_plan_id, uid, str(sug_id), ranks[i]))
+
+        # 2. Reset any plans Judy currently owns back to a bot user
+        cur.execute("""
+            UPDATE crab.plans SET organizer_id = (
+                SELECT u.pk_id FROM crab.users u WHERE u.google_id LIKE 'bot_%%' LIMIT 1
+            ) WHERE organizer_id = %s
+        """, (judy_id,))
+        reset_count = cur.rowcount
+
+        # 3. Get ALL plans
+        cur.execute("SELECT plan_id, status, organizer_id FROM crab.plans ORDER BY created_at DESC")
+        plans = cur.fetchall()
+
+        joined = 0
+        owned = 0
+        for i, plan in enumerate(plans):
+            plan_id = plan['plan_id']
+
+            # Make Judy the organizer of every 20th plan (so demo visitors occasionally see organizer view)
+            if i % 20 == 0 and plan['organizer_id'] != judy_id:
+                cur.execute("UPDATE crab.plans SET organizer_id = %s WHERE plan_id = %s", (judy_id, plan_id))
+                owned += 1
+
+            # Skip if already a member
+            cur.execute("SELECT pk_id FROM crab.plan_members WHERE plan_id = %s AND user_id = %s", (plan_id, judy_id))
+            if cur.fetchone():
+                continue
+
+            cur.execute("""
+                INSERT INTO crab.plan_members (plan_id, user_id, display_name, email, member_token, role, home_airport, is_flexible)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (plan_id, judy_id, DEMO_VIEWER_NAME, 'judy@tunaboat.crab.travel',
+                  generate_token(), 'member', 'SEA', False))
+
+            # Add tentative dates — grab the plan's date window from existing member data
+            cur.execute("""
+                SELECT MIN(date_start) as earliest, MAX(date_end) as latest
+                FROM crab.member_tentative_dates WHERE plan_id = %s
+            """, (plan_id,))
+            dates = cur.fetchone()
+            if dates and dates['earliest'] and dates['latest']:
+                cur.execute("""
+                    INSERT INTO crab.member_tentative_dates (plan_id, user_id, date_start, date_end, preference)
+                    VALUES (%s, %s, %s, %s, 'ideal')
+                """, (plan_id, judy_id, dates['earliest'], dates['latest']))
+
+            # Add a blackout range too (a few days before the trip window)
+            cur.execute("""
+                SELECT MIN(date_start) as earliest FROM crab.member_tentative_dates
+                WHERE plan_id = %s AND user_id != %s
+            """, (plan_id, judy_id))
+            trip_start = cur.fetchone()
+            if trip_start and trip_start['earliest']:
+                from datetime import timedelta
+                blk_end = trip_start['earliest'] - timedelta(days=1)
+                blk_start = blk_end - timedelta(days=3)
+                cur.execute("""
+                    INSERT INTO crab.member_blackouts (plan_id, user_id, blackout_start, blackout_end)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (plan_id, judy_id, blk_start, blk_end))
+
+            joined += 1
+
+        # (Chat messages are seeded via /tasks/seed-demo-chat which uses the LLM router)
+
+        # Seed expenses on the booked demo trip
+        cur.execute("SELECT COUNT(*) as cnt FROM crab.expenses WHERE plan_id = %s", (demo_plan_id,))
+        if cur.fetchone()['cnt'] == 0:
+            # Get some member pk_ids for paid_by
+            cur.execute("""
+                SELECT pk_id, display_name FROM crab.plan_members
+                WHERE plan_id = %s AND user_id IS NOT NULL
+                ORDER BY joined_at LIMIT 12
+            """, (demo_plan_id,))
+            demo_members = cur.fetchall()
+            member_map = {m['display_name'].replace('[BOT] ', ''): m['pk_id'] for m in demo_members}
+
+            # Pick a few members to be the ones who front money
+            payers = list(member_map.items())[:5]
+            demo_expenses = [
+                (payers[0][1], 'Hotel — The Scott Resort (3 nights)', 1971, 'lodging'),
+                (payers[1][1], 'Desert Jeep Tour (12 people)', 480, 'activity'),
+                (payers[2][1], 'Costco run — drinks, snacks, sunscreen', 215, 'food'),
+                (payers[3][1], 'D-backs tickets (12 seats, Section 130)', 600, 'tickets'),
+                (payers[0][1], 'Dinner reservation deposit — Citizen Public House', 350, 'food'),
+                (payers[4][1], 'SUV rental (Turo, 4 days)', 320, 'transport'),
+            ]
+            for paid_by_id, title, amount, category in demo_expenses:
+                cur.execute("""
+                    INSERT INTO crab.expenses (plan_id, paid_by, title, amount, category, split_type)
+                    VALUES (%s, %s, %s, %s, %s, 'equal')
+                """, (demo_plan_id, paid_by_id, title, amount, category))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info(f"✅ Demo viewer {DEMO_VIEWER_NAME} seeded (user_id={judy_id}, joined {joined}, owns {owned})")
+        return jsonify({'success': True, 'user_id': judy_id, 'plans_joined': joined, 'plans_owned': owned, 'total_plans': len(plans)})
+    except Exception as e:
+        logger.error(f"❌ Seed demo viewer failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/seed-booked-trips')
+def task_seed_booked_trips():
+    """Promote a handful of bot-generated plans from 'locked' to 'booked' so /live has content."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+
+    TARGET_BOOKED = 5  # how many plans to promote
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        import random as _rnd
+        from datetime import timedelta
+
+        def _humanize_watches(cur, plan_id):
+            """Seed realistic prices + varied dates + flight times on watches.
+            Real humans fly in/out on different days/times and don't all stay the full trip."""
+            import json as _json
+            # Get trip date range
+            cur.execute("SELECT start_date, end_date FROM crab.plans WHERE plan_id = %s", (plan_id,))
+            plan_row = cur.fetchone()
+            trip_start = plan_row['start_date'] if plan_row and plan_row.get('start_date') else None
+            trip_end = plan_row['end_date'] if plan_row and plan_row.get('end_date') else None
+            trip_days = (trip_end - trip_start).days if trip_start and trip_end else 3
+
+            # Realistic flight time windows (hour, minute) — weighted toward common slots
+            DEPART_SLOTS = [
+                (6, 0), (6, 30), (7, 15), (7, 45), (8, 20), (9, 0), (9, 50),
+                (10, 30), (11, 15), (12, 0), (13, 10), (14, 0), (14, 45),
+                (15, 30), (16, 15), (17, 0), (17, 45), (18, 30), (19, 20), (20, 15),
+            ]
+
+            def _rand_flight_time():
+                h, m = _rnd.choice(DEPART_SLOTS)
+                return f"{h:02d}:{m:02d}"
+
+            def _arrival_time(dep_str, flight_hrs):
+                dh, dm = int(dep_str[:2]), int(dep_str[3:])
+                total = dh * 60 + dm + int(flight_hrs * 60)
+                ah, am = (total // 60) % 24, total % 60
+                return f"{ah:02d}:{am:02d}"
+
+            cur.execute("""
+                SELECT pk_id, watch_type, checkin, checkout
+                FROM crab.member_watches WHERE plan_id = %s
+            """, (plan_id,))
+            watches = cur.fetchall()
+            for w in watches:
+                is_flight = w['watch_type'] == 'flight'
+                price = _rnd.randint(180, 650) if is_flight else _rnd.randint(120, 400)
+                conf = f"CRAB{_rnd.randint(100000, 999999)}"
+
+                # Randomize dates — ~50% get varied dates for realism
+                new_checkin = w['checkin']
+                new_checkout = w['checkout']
+                if trip_start and trip_end and trip_days >= 3:
+                    roll = _rnd.random()
+                    if is_flight:
+                        if roll < 0.25:
+                            new_checkin = trip_start - timedelta(days=1)
+                        elif roll < 0.45:
+                            new_checkin = trip_start + timedelta(days=1)
+                        roll2 = _rnd.random()
+                        if roll2 < 0.30:
+                            new_checkout = trip_end - timedelta(days=1)
+                        elif roll2 < 0.40:
+                            new_checkout = trip_end + timedelta(days=1)
+                    else:
+                        if roll < 0.25:
+                            new_checkin = trip_start - timedelta(days=1)
+                        elif roll < 0.45:
+                            new_checkin = trip_start + timedelta(days=1)
+                        roll2 = _rnd.random()
+                        if roll2 < 0.30:
+                            new_checkout = trip_end - timedelta(days=1)
+                        elif roll2 < 0.40:
+                            new_checkout = trip_end + timedelta(days=1)
+                        if _rnd.random() < 0.10 and trip_days >= 4:
+                            mid = trip_start + timedelta(days=trip_days // 2)
+                            if _rnd.random() < 0.5:
+                                new_checkout = mid
+                            else:
+                                new_checkin = mid
+
+                # Build data JSONB with times for flights
+                extra_data = {'booked_price': price, 'confirmation': conf}
+                if is_flight:
+                    dep = _rand_flight_time()
+                    flight_hrs = _rnd.uniform(1.5, 5.5)
+                    arr = _arrival_time(dep, flight_hrs)
+                    extra_data['departure_time'] = dep
+                    extra_data['arrival_time'] = arr
+                    # Return flight gets its own times
+                    ret_dep = _rand_flight_time()
+                    ret_arr = _arrival_time(ret_dep, flight_hrs + _rnd.uniform(-0.5, 0.5))
+                    extra_data['return_departure_time'] = ret_dep
+                    extra_data['return_arrival_time'] = ret_arr
+
+                cur.execute("""
+                    UPDATE crab.member_watches
+                    SET status = 'booked',
+                        best_price_usd = %s, last_price_usd = %s,
+                        best_price_at = NOW(), last_checked_at = NOW(),
+                        checkin = COALESCE(%s, checkin),
+                        checkout = COALESCE(%s, checkout),
+                        data = COALESCE(data, '{}') || %s::jsonb
+                    WHERE pk_id = %s
+                """, (price, price, new_checkin, new_checkout, _json.dumps(extra_data), w['pk_id']))
+            return len(watches)
+
+        # Fix existing booked plans missing flight times, varied dates, or $0 watches (batch of 10)
+        cur.execute("""
+            SELECT DISTINCT p.plan_id FROM crab.plans p
+            JOIN crab.member_watches w ON w.plan_id = p.plan_id
+            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
+              AND (w.status = 'active' OR COALESCE(w.best_price_usd, 0) = 0
+                   OR (w.watch_type = 'flight' AND NOT jsonb_exists(COALESCE(w.data, '{}'), 'departure_time')))
+            LIMIT 25
+        """)
+        stale_plans = [r['plan_id'] for r in cur.fetchall()]
+        stale_fixed = 0
+        for pid in stale_plans:
+            stale_fixed += _humanize_watches(cur, pid)
+        if stale_fixed:
+            logger.info(f"Humanized {stale_fixed} watches on {len(stale_plans)} existing booked plans")
+
+        # Get all booked bot plans for itinerary seeding below
+        cur.execute("""
+            SELECT DISTINCT p.plan_id FROM crab.plans p
+            WHERE p.title LIKE '[BOT]%%' AND p.status = 'booked'
+        """)
+        all_booked = [r['plan_id'] for r in cur.fetchall()]
+
+        # Commit watches first so itinerary failures don't roll them back
+        conn.commit()
+
+        # Seed itineraries on booked plans that don't have one yet
+        # Each trip gets its own connection so failures are isolated
+        itineraries_added = 0
+        from utilities.llm_router import generate as llm_generate
+        import json as _json
+        from datetime import date as _date
+        import re as _re
+
+        MAX_ITINERARIES_PER_RUN = 10  # YouTube quota now 100k/day (approved 2026-04-06); LLM is the bottleneck
+        for pid in all_booked:
+            if itineraries_added >= MAX_ITINERARIES_PER_RUN:
+                break
+            iconn = None
+            try:
+                iconn = get_db_connection()
+                icur = iconn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                icur.execute("SELECT COUNT(*) as cnt FROM crab.itinerary_items WHERE plan_id = %s", (pid,))
+                if icur.fetchone()['cnt'] > 0:
+                    icur.close(); iconn.close()
+                    continue
+                icur.execute("""
+                    SELECT p.title, p.destination, p.start_date, p.end_date,
+                           br.summary->>'destinations' as summary_dests
+                    FROM crab.plans p
+                    LEFT JOIN crab.bot_runs br ON br.plan_id = p.plan_id
+                    WHERE p.plan_id = %s LIMIT 1
+                """, (pid,))
+                pinfo = icur.fetchone()
+                if not pinfo:
+                    icur.close(); iconn.close()
+                    continue
+                dest = pinfo.get('destination') or ''
+                if not dest and pinfo.get('summary_dests'):
+                    try:
+                        dests_list = _json.loads(pinfo['summary_dests'])
+                        dest = dests_list[0] if dests_list else ''
+                    except Exception:
+                        pass
+                if not dest:
+                    icur.close(); iconn.close()
+                    continue
+                trip_title = (pinfo['title'] or '').replace('[BOT] ', '')
+                s_date = pinfo['start_date'] or _date(2026, 5, 20)
+                e_date = pinfo['end_date'] or (s_date + timedelta(days=3))
+                num_days = max((e_date - s_date).days, 2)
+
+                prompt = f"""Generate a {num_days}-day itinerary for a group trip to {dest}. Trip: "{trip_title}", dates {s_date} to {e_date}.
+
+Create 3-5 items per day. Respond ONLY with a JSON array (no extra text):
+[{{"day":1,"time":"09:00","title":"item","category":"activity","duration":60,"location":"place","notes":"note"}}]
+
+Categories: activity, food, transport, culture, nightlife, relaxation.
+Use REAL place names and restaurants for {dest}. Day 1 = arrival. Last day = departure."""
+
+                # Try up to 2 LLM calls if JSON parsing fails
+                items = None
+                for attempt in range(2):
+                    text, backend = llm_generate(prompt, max_tokens=1500, temperature=0.9)
+                    if not text:
+                        continue
+                    try:
+                        # Extract JSON from response
+                        if '```' in text:
+                            text = text.split('```')[1]
+                            if text.startswith('json'):
+                                text = text[4:]
+                        # Try to find the JSON array even if there's extra text
+                        match = _re.search(r'\[.*\]', text, _re.DOTALL)
+                        if match:
+                            text = match.group(0)
+                        items = _json.loads(text.strip())
+                        if isinstance(items, list) and len(items) > 0:
+                            break
+                        items = None
+                    except (_json.JSONDecodeError, Exception):
+                        items = None
+
+                if not items:
+                    icur.close(); iconn.close()
+                    continue
+
+                for item in items:
+                    day_num = item.get('day', 1)
+                    if not isinstance(day_num, int):
+                        day_num = 1
+                    sched_date = s_date + timedelta(days=min(day_num - 1, num_days - 1))
+                    time_str = item.get('time', '')
+                    # Validate time format
+                    if time_str and not _re.match(r'^\d{1,2}:\d{2}', str(time_str)):
+                        time_str = None
+                    icur.execute("""
+                        INSERT INTO crab.itinerary_items
+                            (plan_id, title, category, scheduled_date, scheduled_time,
+                             duration_minutes, location, notes)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        pid,
+                        str(item.get('title', 'Activity'))[:200],
+                        str(item.get('category', 'activity'))[:30],
+                        sched_date, time_str,
+                        item.get('duration') if isinstance(item.get('duration'), (int, float)) else None,
+                        str(item.get('location', ''))[:200],
+                        str(item.get('notes', ''))[:500],
+                    ))
+                iconn.commit()
+                itineraries_added += 1
+                logger.info(f"  📅 Itinerary seeded for {trip_title}: {len(items)} items via {backend}")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Itinerary failed for {pid}: {e}")
+                if iconn:
+                    try:
+                        iconn.rollback()
+                    except Exception:
+                        pass
+            finally:
+                if iconn:
+                    try:
+                        iconn.close()
+                    except Exception:
+                        pass
+
+        # Find bot-generated plans at 'locked' status that have bot_runs with 'passed'
+        cur.execute("""
+            SELECT p.plan_id, p.title, p.status
+            FROM crab.plans p
+            JOIN crab.bot_runs br ON br.plan_id = p.plan_id
+            WHERE p.status = 'locked' AND br.status = 'passed'
+            ORDER BY br.finished_at DESC
+            LIMIT %s
+        """, (TARGET_BOOKED,))
+        candidates = cur.fetchall()
+
+        promoted = []
+        for plan in candidates:
+            cur.execute("UPDATE crab.plans SET status = 'booked' WHERE plan_id = %s", (plan['plan_id'],))
+            n = _humanize_watches(cur, plan['plan_id'])
+            promoted.append({'plan_id': str(plan['plan_id']), 'title': plan['title'], 'watches_booked': n})
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({'success': True, 'promoted': promoted, 'count': len(promoted),
+                        'stale_fixed': stale_fixed, 'itineraries_added': itineraries_added})
+    except Exception as e:
+        logger.error(f"Seed booked trips failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/tasks/seed-demo-chat')
+def task_seed_demo_chat():
+    """Use the LLM router to generate fun chat messages for demo trips."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+
+    from utilities.llm_router import generate as llm_generate
+    results = {}
+
+    demo_trip_configs = {
+        'qL6zhRAI': {
+            'stage': 'booked',
+            'context': 'A group of 12 friends just booked a trip to Scottsdale, AZ for May 20-23. They voted on 4 destinations (Scottsdale won over Sagano Japan, Salvador Brazil, and Lapland Finland). Flights and hotels are booked. They\'re excited and planning activities.',
+        },
+        'xL2aRt-k': {
+            'stage': 'voting',
+            'context': 'A group of 50 coworkers is voting on where to go. The 3 options are Reykjavik Iceland, Marrakech Morocco, and Luang Prabang Laos. Voting is still open. People are debating and campaigning for their favorites.',
+        },
+        'TpPeETPm': {
+            'stage': 'planning',
+            'context': 'A group of 75 adventure lovers chose to explore the Andes — Ushuaia Argentina is the destination. Flights are being researched, people are figuring out logistics, packing, and activities like glacier treks.',
+        },
+    }
+
+    for trip_token, config in demo_trip_configs.items():
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("SELECT plan_id, title FROM crab.plans WHERE invite_token = %s", (trip_token,))
+            plan = cur.fetchone()
+            if not plan:
+                results[trip_token] = 'plan not found'
+                cur.close(); conn.close()
+                continue
+
+            # Get member names
+            cur.execute("""
+                SELECT display_name, user_id FROM crab.plan_members
+                WHERE plan_id = %s AND user_id IS NOT NULL
+                ORDER BY joined_at LIMIT 15
+            """, (plan['plan_id'],))
+            members = cur.fetchall()
+            member_names = [m['display_name'].replace('[BOT] ', '') for m in members]
+            name_to_uid = {m['display_name'].replace('[BOT] ', ''): m['user_id'] for m in members}
+
+            # Make sure Judy is in the list
+            if DEMO_VIEWER_NAME not in member_names:
+                member_names.append(DEMO_VIEWER_NAME)
+
+            prompt = f"""Generate a group chat thread for a trip planning app. The trip: "{plan['title']}"
+
+Context: {config['context']}
+
+Members in the chat: {', '.join(member_names[:12])}
+
+Write 15-20 chat messages as a JSON array. Each message is {{"name": "FirstName LastName", "text": "message"}}.
+
+Rules:
+- Use the EXACT member names listed above
+- Include Judy Tunaboat in 2-3 messages
+- Make it feel like a real group chat — casual, fun, some jokes, some practical planning
+- Include at least 2-3 genuinely funny/witty messages (dry humor, playful roasts, running jokes)
+- Mix short messages (1-5 words) with longer ones
+- Some people should reply to each other, reference what others said
+- No emojis in every message — use them sparingly like real people
+- Stage is "{config['stage']}" so the tone should match (voting=debating, planning=logistics, booked=excited/celebrating)
+
+Return ONLY the JSON array, no other text."""
+
+            text, backend = llm_generate(prompt, max_tokens=1500, temperature=0.9, caller='demo_chat_seed')
+
+            if not text:
+                results[trip_token] = f'LLM returned None (backend={backend})'
+                cur.close(); conn.close()
+                continue
+
+            # Parse the JSON from LLM response
+            import re
+            json_match = re.search(r'\[.*\]', text, re.DOTALL)
+            if not json_match:
+                results[trip_token] = f'No JSON array found in LLM response (backend={backend}, len={len(text)})'
+                cur.close(); conn.close()
+                continue
+
+            messages = json.loads(json_match.group(0))
+
+            # Clear existing messages and insert new ones
+            cur.execute("DELETE FROM crab.messages WHERE plan_id = %s", (plan['plan_id'],))
+
+            inserted = 0
+            for msg in messages:
+                name = msg.get('name', '')
+                text_content = msg.get('text', '')
+                if not name or not text_content:
+                    continue
+                uid = name_to_uid.get(name, name_to_uid.get(DEMO_VIEWER_NAME))
+                if not uid:
+                    uid = members[0]['user_id'] if members else 1
+                cur.execute("""
+                    INSERT INTO crab.messages (plan_id, user_id, display_name, content)
+                    VALUES (%s, %s, %s, %s)
+                """, (plan['plan_id'], uid, name, text_content))
+                inserted += 1
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            results[trip_token] = f'OK: {inserted} messages via {backend}'
+
+        except Exception as e:
+            results[trip_token] = f'error: {str(e)[:200]}'
+
+    return jsonify({'success': True, 'results': results})
+
+
+# ── Warmup ────────────────────────────────────────────────────
+
+@app.route('/_ah/warmup')
+def warmup():
+    """App Engine warmup handler — pre-test the DB pool so first real requests don't fail."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
+        conn.close()
+        logger.info("✅ Warmup: DB pool healthy")
+        return 'ok', 200
+    except Exception as e:
+        logger.error(f"❌ Warmup: DB pool test failed: {e}")
+        return f'pool error: {e}', 500
+
+
+# ── Run ──────────────────────────────────────────────────────
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 3000))
+    app.run(host='0.0.0.0', port=port, debug=True)

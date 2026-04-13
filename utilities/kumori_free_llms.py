@@ -1,15 +1,15 @@
 """
-litellm_plus_router.py — Combined super router for all kumori apps.
+kumori_free_llms.py — Combined super router for all kumori apps.
 
-All of scatterbrain's routing powers (round-robin, RPM throttle, cross-app
-daily caps, grok/deepseek via kindness-worker, paid fallbacks) PLUS the
-LiteLLM gateway as an additional fallback tier with spend tracking.
+Round-robin free backends, RPM throttle, cross-app daily caps,
+grok/deepseek via kindness-worker, LiteLLM gateway fallback,
+paid fallbacks, and haiku last resort.
 
-Lives in _infrastructure/litellm/. Any kumori app can import and use it.
+Lives in _infrastructure/kumori_free_llm/. Any kumori app can import and use it.
 Self-contained — NO imports from utilities.* — all deps injected via init().
 
 Usage:
-    from litellm_plus_router import init, generate
+    from kumori_free_llms import init, generate
 
     init(
         app_name='scatterbrain',
@@ -30,6 +30,19 @@ import urllib.request
 import urllib.error
 from datetime import date
 
+try:
+    from utilities.backend_registry import (
+        BACKENDS, LITELLM_BACKENDS, PAID_BACKENDS,
+        FALLBACK_LIMITS as _FALLBACK_LIMITS,
+        EVAL_POOL_FREE,
+    )
+except ImportError:
+    from backend_registry import (
+        BACKENDS, LITELLM_BACKENDS, PAID_BACKENDS,
+        FALLBACK_LIMITS as _FALLBACK_LIMITS,
+        EVAL_POOL_FREE,
+    )
+
 logger = logging.getLogger(__name__)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -45,49 +58,6 @@ _litellm_key = None         # LiteLLM virtual key for this app
 _initialized = False
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Backend definitions
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BACKENDS = [
-    # Tier 1: Groq (fast, generous free tier — all share one API key / 30 RPM pool)
-    # gateway_model: if direct call fails (Cloudflare, etc.), retry through LiteLLM gateway
-    {'name': 'groq', 'url': 'https://api.groq.com/openai/v1/chat/completions', 'model': 'llama-3.3-70b-versatile', 'secret': 'KINDNESS_GROQ_API_KEY', 'gateway_model': 'groq-llama-70b'},
-    {'name': 'groq-kimi', 'url': 'https://api.groq.com/openai/v1/chat/completions', 'model': 'moonshotai/kimi-k2-instruct', 'secret': 'KINDNESS_GROQ_API_KEY', 'gateway_model': 'groq-kimi'},
-    {'name': 'groq-qwen', 'url': 'https://api.groq.com/openai/v1/chat/completions', 'model': 'qwen/qwen3-32b', 'secret': 'KINDNESS_GROQ_API_KEY', 'gateway_model': 'groq-qwen'},
-    {'name': 'groq-gptoss', 'url': 'https://api.groq.com/openai/v1/chat/completions', 'model': 'openai/gpt-oss-120b', 'secret': 'KINDNESS_GROQ_API_KEY', 'gateway_model': 'groq-gptoss'},
-    # Tier 1: Cerebras
-    {'name': 'cerebras', 'url': 'https://api.cerebras.ai/v1/chat/completions', 'model': 'llama3.1-8b', 'secret': 'KINDNESS_CEREBRAS_API_KEY', 'gateway_model': 'cerebras-llama'},
-    # Tier 2: Gemini (multiple models for separate quota pools) + llm7
-    {'name': 'gemini', 'type': 'gemini', 'secret': 'KINDNESS_GEMINI_API_KEY', 'gemini_model': 'gemini-2.5-flash', 'gateway_model': 'gemini-flash'},
-    {'name': 'gemini-lite', 'type': 'gemini', 'secret': 'KINDNESS_GEMINI_API_KEY', 'gemini_model': 'gemini-2.5-flash-lite'},
-    {'name': 'gemma', 'type': 'gemini', 'secret': 'KINDNESS_GEMINI_API_KEY', 'gemini_model': 'gemma-3-4b-it'},
-    {'name': 'llm7', 'url': 'https://api.llm7.io/v1/chat/completions', 'model': 'deepseek-r1', 'secret': None, 'gateway_model': 'llm7-deepseek'},
-    # Tier 3: OpenRouter free slots (share one key / ~50/day pool)
-    {'name': 'openrouter-gemma', 'url': 'https://openrouter.ai/api/v1/chat/completions', 'model': 'google/gemma-3-4b-it:free', 'secret': 'KINDNESS_OPENROUTER_API_KEY', 'gateway_model': 'openrouter-gemma'},
-    {'name': 'openrouter-llama', 'url': 'https://openrouter.ai/api/v1/chat/completions', 'model': 'meta-llama/llama-3.2-3b-instruct:free', 'secret': 'KINDNESS_OPENROUTER_API_KEY', 'gateway_model': 'openrouter-llama'},
-    {'name': 'openrouter-gemma-nano', 'url': 'https://openrouter.ai/api/v1/chat/completions', 'model': 'google/gemma-3n-e2b-it:free', 'secret': 'KINDNESS_OPENROUTER_API_KEY', 'gateway_model': 'openrouter-gemma-nano'},
-    # Tier 3: NVIDIA NIM (5K LIFETIME credits — precious)
-    {'name': 'nvidia', 'url': 'https://integrate.api.nvidia.com/v1/chat/completions', 'model': 'meta/llama-3.3-70b-instruct', 'secret': 'KINDNESS_NVIDIA_API_KEY', 'gateway_model': 'nvidia-llama'},
-    # Tier 3: Grok + DeepSeek via kindness-worker (free, zero-auth, slow)
-    {'name': 'grok', 'type': 'grok'},              # grok-3-auto (default)
-    {'name': 'grok_fast', 'type': 'grok_fast'},     # grok-3-fast — faster, less capable
-    {'name': 'grok4', 'type': 'grok4'},             # grok-4 — most capable
-    {'name': 'deepseek', 'type': 'deepseek'},
-    # Tier 3: Mistral (2 RPM — slow but free)
-    {'name': 'mistral', 'url': 'https://api.mistral.ai/v1/chat/completions', 'model': 'mistral-small-latest', 'secret': 'KINDNESS_MISTRAL_API_KEY', 'gateway_model': 'mistral-small'},
-]
-
-# LiteLLM gateway backends — tried after all direct+gateway-fallback attempts fail.
-# One call triggers the gateway's own fallback chain (config.yaml).
-LITELLM_BACKENDS = [
-    {'name': 'litellm-gateway', 'type': 'litellm', 'litellm_model': 'groq-llama-70b'},
-]
-
-PAID_BACKENDS = [
-    {'name': 'gpt4o-mini', 'url': 'https://api.openai.com/v1/chat/completions', 'model': 'gpt-4o-mini', 'secret': 'KINDNESS_OPENAI_API_KEY'},
-    {'name': 'gpt4o', 'url': 'https://api.openai.com/v1/chat/completions', 'model': 'gpt-4o', 'secret': 'KINDNESS_OPENAI_API_KEY'},
-]
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Provider limits — loaded from kumori_llm_provider_limits table at init.
 # Fallback defaults used if DB is unavailable.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -101,32 +71,6 @@ _last_call_time = {}    # backend_name -> timestamp
 _call_counter = 0       # round-robin rotation
 _backoff_until = {}     # backend_name -> timestamp when it becomes available again
 DB_SYNC_INTERVAL = 300
-
-# Hardcoded fallbacks — used ONLY when DB is unavailable
-_FALLBACK_LIMITS = {
-    'groq': {'daily_limit': 1000, 'rpm_spacing_sec': 4.0, 'backoff_sec': 120, 'enabled': True},
-    'groq-kimi': {'daily_limit': 1000, 'rpm_spacing_sec': 4.0, 'backoff_sec': 120, 'enabled': True},
-    'groq-qwen': {'daily_limit': 1000, 'rpm_spacing_sec': 4.0, 'backoff_sec': 120, 'enabled': True},
-    'groq-gptoss': {'daily_limit': 200, 'rpm_spacing_sec': 4.0, 'backoff_sec': 120, 'enabled': True},
-    'cerebras': {'daily_limit': 10, 'rpm_spacing_sec': 3.0, 'backoff_sec': 120, 'enabled': True, 'conservation': True},
-    'gemini': {'daily_limit': 20, 'rpm_spacing_sec': 10.0, 'backoff_sec': 300, 'enabled': True},
-    'gemini-lite': {'daily_limit': 500, 'rpm_spacing_sec': 5.0, 'backoff_sec': 300, 'enabled': True},
-    'gemma': {'daily_limit': 500, 'rpm_spacing_sec': 5.0, 'backoff_sec': 300, 'enabled': True},
-    'llm7': {'daily_limit': 300, 'rpm_spacing_sec': 4.0, 'backoff_sec': 120, 'enabled': True},
-    'openrouter-gemma': {'daily_limit': 50, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'openrouter-llama': {'daily_limit': 50, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'openrouter-gemma-nano': {'daily_limit': 50, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'nvidia': {'daily_limit': 50, 'rpm_spacing_sec': 5.0, 'backoff_sec': 120, 'enabled': True, 'lifetime_limit': 5000, 'conservation': True},
-    'grok': {'daily_limit': 100, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'grok_fast': {'daily_limit': 100, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'grok4': {'daily_limit': 100, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'deepseek': {'daily_limit': 100, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120, 'enabled': True},
-    'mistral': {'daily_limit': 100, 'rpm_spacing_sec': 60.0, 'backoff_sec': 120, 'enabled': True},
-    'litellm-gateway': {'daily_limit': 500, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True},
-    'gpt4o-mini': {'daily_limit': 50, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True},
-    'gpt4o': {'daily_limit': 20, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True},
-    'haiku': {'daily_limit': 10, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True},
-}
 
 
 def _get_limit(backend_name, field, default=None):
@@ -356,11 +300,11 @@ def _try_gemini(prompt, max_tokens, temperature, model_name='gemini-2.5-flash'):
     return response.text.strip()
 
 
-def _try_grok(prompt, max_tokens, temperature):
-    """Grok via kindness-worker (ECDSA zero-auth, free)."""
+def _try_worker(worker_type, prompt, max_tokens, temperature):
+    """Route through kindness-worker Cloud Run (grok, grok_fast, grok4, deepseek)."""
     url = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
     payload = json.dumps({
-        'backend': 'grok',
+        'backend': worker_type,
         'messages': [{'role': 'user', 'content': prompt}],
         'max_tokens': max_tokens, 'temperature': temperature,
     }).encode()
@@ -371,49 +315,46 @@ def _try_grok(prompt, max_tokens, temperature):
         return text if text else None
 
 
-def _try_grok_fast(prompt, max_tokens, temperature):
-    """Grok-3-fast via kindness-worker (ECDSA zero-auth, free, faster variant)."""
-    url = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
+def _try_cloudflare(backend, prompt, max_tokens, temperature):
+    """Cloudflare Workers AI — non-OpenAI response format (result.response)."""
+    key = _get_key(backend['secret'])
+    if not key:
+        return None
     payload = json.dumps({
-        'backend': 'grok_fast',
         'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': max_tokens, 'temperature': temperature,
+        'max_tokens': max_tokens,
     }).encode()
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    req = urllib.request.Request(
+        backend['url'], data=payload,
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
-        text = data.get('text', '')
-        return text if text else None
+        text = data.get('result', {}).get('response', '')
+        return text.strip() if text.strip() else None
 
 
-def _try_grok4(prompt, max_tokens, temperature):
-    """Grok-4 via kindness-worker (ECDSA zero-auth, free, most capable)."""
-    url = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
+def _try_cohere(backend, prompt, max_tokens, temperature):
+    """Cohere v2 chat — non-OpenAI response format (message.content[0].text)."""
+    key = _get_key(backend['secret'])
+    if not key:
+        return None
     payload = json.dumps({
-        'backend': 'grok4',
+        'model': backend['model'],
         'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': max_tokens, 'temperature': temperature,
+        'max_tokens': max_tokens,
     }).encode()
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    req = urllib.request.Request(
+        backend['url'], data=payload,
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
-        text = data.get('text', '')
-        return text if text else None
-
-
-def _try_deepseek(prompt, max_tokens, temperature):
-    """DeepSeek via kindness-worker (PoW bypass, free)."""
-    url = 'https://kindness-worker-243380010344.us-central1.run.app/chat'
-    payload = json.dumps({
-        'backend': 'deepseek',
-        'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': max_tokens, 'temperature': temperature,
-    }).encode()
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read())
-        text = data.get('text', '')
-        return text if text else None
+        content = data.get('message', {}).get('content', [{}])
+        text = content[0].get('text', '') if content else ''
+        return text.strip() if text.strip() else None
 
 
 def _try_litellm_gateway(backend, prompt, max_tokens, temperature):
@@ -476,6 +417,9 @@ def _try_haiku(prompt, max_tokens, temperature):
         return data['content'][0]['text']
 
 
+# Worker backend types — dispatched to _try_worker
+_WORKER_TYPES = {'grok', 'grok_fast', 'grok4', 'deepseek'}
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Core dispatch
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -506,14 +450,12 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
         btype = backend.get('type')
         if btype == 'gemini':
             text = _try_gemini(prompt, max_tokens, temperature, backend.get('gemini_model', 'gemini-2.5-flash'))
-        elif btype == 'grok':
-            text = _try_grok(prompt, max_tokens, temperature)
-        elif btype == 'grok_fast':
-            text = _try_grok_fast(prompt, max_tokens, temperature)
-        elif btype == 'grok4':
-            text = _try_grok4(prompt, max_tokens, temperature)
-        elif btype == 'deepseek':
-            text = _try_deepseek(prompt, max_tokens, temperature)
+        elif btype in _WORKER_TYPES:
+            text = _try_worker(btype, prompt, max_tokens, temperature)
+        elif btype == 'cloudflare':
+            text = _try_cloudflare(backend, prompt, max_tokens, temperature)
+        elif btype == 'cohere':
+            text = _try_cohere(backend, prompt, max_tokens, temperature)
         elif btype == 'litellm':
             text = _try_litellm_gateway(backend, prompt, max_tokens, temperature)
         else:
@@ -640,7 +582,7 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
         _caps_db_write_fn = _db_write
         _caps_db_read_fn = _db_read
         _sync_from_db()
-        logger.info(f"litellm_plus_router: caps DB sync enabled for {app_name}")
+        logger.info(f"kumori_free_llms: caps DB sync enabled for {app_name}")
 
     # Resolve LiteLLM gateway URL + key
     _litellm_url = litellm_url
@@ -657,7 +599,7 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
                 try:
                     _litellm_key = get_secret_fn(key_name)
                     if _litellm_key:
-                        logger.info(f"litellm_plus_router: using {key_name} for gateway auth")
+                        logger.info(f"kumori_free_llms: using {key_name} for gateway auth")
                         break
                 except Exception:
                     continue
@@ -666,13 +608,14 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
 
     if _litellm_url:
         _litellm_url = _litellm_url.rstrip('/')
-        logger.info(f"litellm_plus_router: gateway at {_litellm_url}")
+        logger.info(f"kumori_free_llms: gateway at {_litellm_url}")
     else:
-        logger.info("litellm_plus_router: no gateway URL — direct backends only")
+        logger.info("kumori_free_llms: no gateway URL — direct backends only")
 
     _initialized = True
-    logger.info(f"litellm_plus_router initialized: app={app_name}, policy={policy}, "
-                f"gateway={'yes' if _litellm_url else 'no'}, db_caps={'yes' if db_cursor_fn else 'no'}")
+    logger.info(f"kumori_free_llms initialized: app={app_name}, policy={policy}, "
+                f"backends={len(BACKENDS)}, gateway={'yes' if _litellm_url else 'no'}, "
+                f"db_caps={'yes' if db_cursor_fn else 'no'}")
 
 
 def generate(prompt, max_tokens=500, temperature=1.0, caller=None):
@@ -690,13 +633,13 @@ def generate(prompt, max_tokens=500, temperature=1.0, caller=None):
     global _call_counter
 
     if not _initialized:
-        logger.error("litellm_plus_router.generate() called before init()")
+        logger.error("kumori_free_llms.generate() called before init()")
         return None, None
 
     caller = caller or _app_name or 'unknown'
     policy = getattr(generate, '_policy_override', None) or _policy
 
-    # ── Tier: Direct free backends (round-robin) ──
+    # -- Tier: Direct free backends (round-robin) --
     n = len(BACKENDS)
     start_idx = _call_counter % n
     _call_counter += 1
@@ -707,24 +650,24 @@ def generate(prompt, max_tokens=500, temperature=1.0, caller=None):
         if text:
             return text, backend['name']
 
-    # ── Tier: LiteLLM gateway ──
+    # -- Tier: LiteLLM gateway --
     for backend in LITELLM_BACKENDS:
         text = _try_backend(backend, prompt, max_tokens, temperature, caller)
         if text:
             return text, backend['name']
 
-    # ── Silent policy stops here ──
+    # -- Silent policy stops here --
     if policy == 'silent':
         logger.warning(f"All free backends failed, policy=silent — returning None (caller={caller})")
         return None, None
 
-    # ── Tier: Paid backends ──
+    # -- Tier: Paid backends --
     for backend in PAID_BACKENDS:
         text = _try_backend(backend, prompt, max_tokens, temperature, caller)
         if text:
             return text, backend['name']
 
-    # ── Tier: Haiku last resort ──
+    # -- Tier: Haiku last resort --
     if not _check_daily_cap('haiku'):
         logger.warning("All backends at daily cap — cannot serve request")
         return None, None
@@ -791,7 +734,7 @@ def chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None, c
     Returns: (response_text, actual_backend_used)
     """
     if not _initialized:
-        logger.error("litellm_plus_router.chat() called before init()")
+        logger.error("kumori_free_llms.chat() called before init()")
         return None, backend_name
 
     _ensure_backend_index()
@@ -810,16 +753,6 @@ def chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None, c
     return None, backend_name
 
 
-# Eval pool — every free backend that can reliably return a short answer.
-# Order is randomized per call so eval load is spread across providers.
-# Paid backends are NEVER used for eval.
-EVAL_POOL_FREE = [
-    'cerebras', 'mistral', 'groq', 'groq-kimi', 'groq-qwen', 'groq-gptoss',
-    'llm7', 'nvidia', 'gemini', 'gemini-lite', 'gemma', 'openrouter-gemma',
-    'openrouter-llama', 'openrouter-gemma-nano',
-]
-
-
 def chat_eval(prompt, system="Return ONLY a number 1-10.", caller=None):
     """
     Evaluation call — low tokens, low temperature, randomized free-tier pool.
@@ -828,7 +761,7 @@ def chat_eval(prompt, system="Return ONLY a number 1-10.", caller=None):
     Returns: (response_text, backend_name)
     """
     if not _initialized:
-        logger.error("litellm_plus_router.chat_eval() called before init()")
+        logger.error("kumori_free_llms.chat_eval() called before init()")
         return None, 'eval'
 
     import random
