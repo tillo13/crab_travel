@@ -90,7 +90,7 @@ def _get_api_key():
     return _api_key
 
 
-def generate_text(prompt, system=None, max_tokens=4096, temperature=0.7):
+def generate_text(prompt, system=None, max_tokens=4096, temperature=0.7, user_id=None):
     api_key = _get_api_key()
     start = time.time()
     body = {
@@ -115,5 +115,5 @@ def generate_text(prompt, system=None, max_tokens=4096, temperature=0.7):
     tokens_out = data['usage']['output_tokens']
     logger.info(f"Claude: {tokens_in}->{tokens_out} tokens, {elapsed:.1f}s")
     log_api_usage(MODEL, data['usage'], feature='generate_text',
-                  duration_ms=int(elapsed * 1000))
+                  duration_ms=int(elapsed * 1000), user_id=user_id)
     return text, tokens_in, tokens_out
