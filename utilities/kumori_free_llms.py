@@ -368,6 +368,7 @@ def _try_litellm_gateway(backend, prompt, max_tokens, temperature):
         'messages': [{'role': 'user', 'content': prompt}],
         'max_tokens': max_tokens,
         'temperature': temperature,
+        'metadata': {'app_name': _app_name or 'unknown'},
     }).encode()
 
     req = urllib.request.Request(

@@ -122,7 +122,6 @@ MODELS = [
     {'name': 'groq-gptoss-20b',   'provider': 'groq', 'model_id': 'openai/gpt-oss-20b',                        'display': 'GPT-OSS 20B (Groq)',         'gateway_model': 'groq-gptoss-20b',      'naming': ('groq', 'gptoss-20b'),     'assign': True},
     {'name': 'groq-llama-8b',     'provider': 'groq', 'model_id': 'llama-3.1-8b-instant',                      'display': 'Llama 3.1 8B (Groq)',        'gateway_model': 'groq-llama-8b',        'naming': ('groq', 'llama8b'),        'assign': True},
     {'name': 'groq-allam',        'provider': 'groq', 'model_id': 'allam-2-7b',                                'display': 'Allam 2 7B (Groq)',          'gateway_model': 'groq-allam',           'naming': ('groq', 'allam-7b')},
-    {'name': 'groq-kimi-0905',    'provider': 'groq', 'model_id': 'moonshotai/kimi-k2-instruct-0905',          'display': 'Kimi K2 0905 (Groq)',        'gateway_model': 'groq-kimi-0905',       'naming': ('groq', 'kimi-0905')},
 
     # ── Cerebras ──
     {'name': 'cerebras',            'provider': 'cerebras', 'model_id': 'llama3.1-8b',                          'display': 'Llama 3.1 8B (Cerebras)',    'gateway_model': 'cerebras-llama',       'naming': ('cerebras', 'llama8b'),     'assign': True, 'overrides': {'daily_limit': 10, 'conservation': True}},
