@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-13 04:00*
+*Last refreshed: 2026-04-15 05:02*
 
 ## 🎯 Pending
 
@@ -62,6 +62,8 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `fcab2bb` · 2026-04-13 20:34 — fix: accept and pass user_id to log_api_usage in generate_text
+- `a0a8507` · 2026-04-13 16:08 — refactor: crab_travel kumori compliance — split app.py, postgres_utils.py, trip_bots.py; eliminat...
 - `32e615c` · 2026-04-12 15:47 — chore: remove dead llm_usage_caps.py — replaced by litellm_plus_router DB-driven limits
 - `74ca5c8` · 2026-04-12 15:21 — refactor: replace llm_router with thin wrapper over shared litellm_plus_router
 - `d271488` · 2026-04-12 11:44 — Fix SEO: remove .rstrip from www redirect, add 301 to app.yaml
@@ -73,16 +75,13 @@
 - `a7e1658` · 2026-04-09 08:44 — Update Twilio A2P cost table with verified usage numbers
 - `d011be9` · 2026-04-09 08:36 — Twilio A2P attempt 7: update docs for /profile/demo CTA strategy
 - `bb60eed` · 2026-04-09 08:32 — Add /profile/demo public CTA preview for Twilio A2P reviewer
-- `0e80e2c` · 2026-04-07 16:36 — Inline contact-form spam guard (kumori module not bundled)
-- `ee25e17` · 2026-04-07 16:33 — Fix demo stage toggles + contact form 500s
-- `c251c3f` · 2026-04-07 13:09 — fix: remove cross-site footer links + kumoridotai OAuth API send
-- `036b888` · 2026-04-07 09:21 — Add Demo link to navbar
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**1 file(s) with uncommitted changes:**
-- ` M utilities/litellm_plus_router.py`
+**2 file(s) with uncommitted changes:**
+- ` M next_steps.md`
+- ` M utilities/kumori_free_llms.py`
 
 <!-- wip:end -->
