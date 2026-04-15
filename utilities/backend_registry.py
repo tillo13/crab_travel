@@ -4,6 +4,10 @@ backend_registry.py — Single source of truth for all kumori LLM backends.
 Pure data + derivation. No I/O, no state, no side effects.
 Adding a new backend = adding one row to MODELS.
 
+⚠️  SOURCE LIVES IN _infrastructure/kumori_free_llm/.
+    After editing, run _infrastructure/kumori_free_llm/sync_downstream.sh
+    to propagate to crab_travel, kindness_social, scatterbrain.
+
 Used by:
   - kumori_free_llms.py (router) — BACKENDS, FALLBACK_LIMITS, EVAL_POOL
   - kindness_social model_registry.py — display names, model IDs
