@@ -14,7 +14,10 @@ cron:
   schedule: every 8 hours
   timezone: America/Los_Angeles
 
-- description: "Email/SMS reminders to members who haven't voted yet"
-  url: /tasks/vote-reminders
-  schedule: every day 09:00
-  timezone: America/Los_Angeles
+# Disabled until crab.travel is in prod — burst sends (3 emails in 6s to the
+# same inbox across plans) got flagged by Gmail's spam filter. Re-enable after
+# reworking to batch per-user across plans.
+# - description: "Email/SMS reminders to members who haven't voted yet"
+#   url: /tasks/vote-reminders
+#   schedule: every day 09:00
+#   timezone: America/Los_Angeles
