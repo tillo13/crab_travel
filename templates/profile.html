@@ -150,7 +150,7 @@
       <label class="flex items-start gap-2.5 cursor-pointer">
         <input type="checkbox" name="sms_consent" id="sms-consent" class="mt-0.5 accent-crab-coral"
           {% if notify_prefs.notify_channel in ['sms', 'both'] %}checked{% endif %}>
-        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive SMS/text messages from crab.travel, including trip chat messages, voting reminders, and status updates. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <a href="/terms" class="underline text-crab-coral">Terms</a> &amp; <a href="/privacy" class="underline text-crab-coral">Privacy</a>.</span>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive recurring automated SMS/text messages from crab.travel at the phone number provided above, including trip chat messages, voting reminders, and status updates. Consent is not a condition of any purchase or subscription. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <a href="/terms" class="underline text-crab-coral">Terms</a> &amp; <a href="/privacy" class="underline text-crab-coral">Privacy</a>.</span>
       </label>
     </div>
 
@@ -163,12 +163,14 @@
           <input type="radio" name="notify_channel" value="{{ ch }}" class="peer hidden"
             {% if notify_prefs.notify_channel == ch %}checked{% endif %}>
           <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">
-            {{ label }}{% if premium %} <span class="ml-1 text-[9px] uppercase tracking-widest font-semibold text-crab-teal align-middle">Premium</span>{% endif %}
+            {{ label }}{% if premium and not demo_mode %} <span class="ml-1 text-[9px] uppercase tracking-widest font-semibold text-crab-teal align-middle">Premium</span>{% endif %}
           </span>
         </label>
         {% endfor %}
       </div>
+      {% if not demo_mode %}
       <p class="text-[11px] text-crab-sand-dim mt-2 opacity-70">SMS is a <strong>Premium</strong> feature available to trip organizers on the Premium plan — <a href="/sms" class="text-crab-coral hover:underline">learn more</a>. Free accounts get full email notifications today; SMS turns on automatically when you upgrade.</p>
+      {% endif %}
     </div>
 
     <!-- Chat messages frequency -->

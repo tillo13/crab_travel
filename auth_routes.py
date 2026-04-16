@@ -192,7 +192,7 @@ def profile_demo():
         'mobility_notes': '',
         'bio': '',
     }
-    demo_prefs = {'notify_chat': 'realtime', 'notify_updates': 'daily', 'notify_channel': 'sms'}
+    demo_prefs = {'notify_chat': 'realtime', 'notify_updates': 'daily', 'notify_channel': 'email'}
     return render_template(
         'profile.html',
         active_page='profile',
