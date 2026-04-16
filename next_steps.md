@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-15 05:02*
+*Last refreshed: 2026-04-16 04:32*
 
 ## 🎯 Pending
 
@@ -62,6 +62,10 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `2f08196` · 2026-04-15 20:29 — Twilio A2P attempt 8 prep: uncheck demo consent box, hide Premium badge on demo, add 'not a condi...
+- `af35c9a` · 2026-04-15 07:29 — utilities: sync backend_registry banner from _infrastructure
+- `48e2017` · 2026-04-15 07:03 — kumori_free_llms: tag gateway requests with metadata.app_name
+- `a549b1b` · 2026-04-15 06:13 — pick up new LITELLM_GATEWAY_URL (llm.kumori.ai)
 - `fcab2bb` · 2026-04-13 20:34 — fix: accept and pass user_id to log_api_usage in generate_text
 - `a0a8507` · 2026-04-13 16:08 — refactor: crab_travel kumori compliance — split app.py, postgres_utils.py, trip_bots.py; eliminat...
 - `32e615c` · 2026-04-12 15:47 — chore: remove dead llm_usage_caps.py — replaced by litellm_plus_router DB-driven limits
@@ -73,15 +77,10 @@
 - `a5d9459` · 2026-04-10 14:13 — Add reminder cap smoke test + fix section 4 cleanup timeout
 - `f9c7425` · 2026-04-10 09:20 — Cap vote reminders at 3 per plan/user — stop nagging after 3 days
 - `a7e1658` · 2026-04-09 08:44 — Update Twilio A2P cost table with verified usage numbers
-- `d011be9` · 2026-04-09 08:36 — Twilio A2P attempt 7: update docs for /profile/demo CTA strategy
-- `bb60eed` · 2026-04-09 08:32 — Add /profile/demo public CTA preview for Twilio A2P reviewer
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**2 file(s) with uncommitted changes:**
-- ` M next_steps.md`
-- ` M utilities/kumori_free_llms.py`
-
+_(clean working tree, no TODO markers in recent files)_
 <!-- wip:end -->
