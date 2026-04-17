@@ -151,7 +151,7 @@ Standard React-DnD or similar. Not hard once the backend is in place.
 
 ### PRIORITY 4.5: OpenCrab route-explorer (new skill — 2026-04-17)
 
-**Name:** The on-VPS agent is now branded **OpenCrab** (was "Pincer" in the price-drop-watch skill). New skills use OpenCrab. Legacy paths (`~/.openclaw/pincer/`, `pincer-dashboard.service`) stay until a dedicated rename pass.
+**Name:** The on-VPS agent is branded **OpenCrab**. All paths/files/env renamed 2026-04-17. Only leftover: root-owned `pincer-dashboard.service` systemd unit (cosmetic — runs the same script; rename needs sudo).
 
 **Why this exists:** Reddit deep-dive (2026-04-17) confirmed that OpenClaw's actual differentiator isn't LLM access (crab already has `kumori_free_llms` at `app.py:756`) or one-shot search (crab already has 4 adapters: Duffel, LiteAPI, Viator, Travelpayouts in `utilities/search_engine.trigger_search`). It's **stateful, conversational, multi-skill pursuit of an unbooked goal** over time. The current `price-drop-watch` skill is underutilization — it replicates what a 50-line cron could do.
 

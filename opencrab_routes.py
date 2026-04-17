@@ -269,6 +269,7 @@ def opencrab_plans_eligible():
               AND w.checkin >= CURRENT_DATE
               AND w.checkin <= CURRENT_DATE + (%s || ' days')::interval
               AND COALESCE(p.status, '') <> 'booked'
+              AND p.title NOT LIKE '[BOT]%%'
             GROUP BY p.plan_id, p.title
             ORDER BY MIN(w.checkin) ASC
             LIMIT %s
