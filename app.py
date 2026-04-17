@@ -743,6 +743,7 @@ from destinations_routes import bp as destinations_bp
 from watches_routes import bp as watches_bp
 from admin_routes import bp as admin_bp
 from tasks_routes import bp as tasks_bp
+from opencrab_routes import bp as opencrab_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
@@ -750,6 +751,7 @@ app.register_blueprint(destinations_bp)
 app.register_blueprint(watches_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(tasks_bp)
+app.register_blueprint(opencrab_bp)
 
 # ── Eagerly init kumori_free_llms at startup ─────────────────
 
