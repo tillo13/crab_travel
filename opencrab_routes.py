@@ -257,8 +257,12 @@ def opencrab_plans_eligible():
                        'origin', w.origin,
                        'destination', w.destination,
                        'checkin', w.checkin,
-                       'checkout', w.checkout
-                   )) AS flight_watches
+                       'checkout', w.checkout,
+                       'last_price_usd', w.last_price_usd,
+                       'best_price_usd', w.best_price_usd,
+                       'last_checked_at', w.last_checked_at,
+                       'deep_link', w.deep_link
+                   ) ORDER BY w.last_price_usd NULLS LAST) AS flight_watches
             FROM crab.plans p
             JOIN crab.member_watches w ON w.plan_id = p.plan_id
             WHERE w.watch_type = 'flight'
