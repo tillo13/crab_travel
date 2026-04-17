@@ -229,6 +229,60 @@ def opencrab_notify():
     }), 200
 
 
+@bp.route('/api/opencrab/plans-eligible', methods=['POST'])
+@bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
+def opencrab_plans_eligible():
+    """Return plans eligible for today's OpenCrab pass.
+
+    Criteria: plan has at least one flight watch, trip is in the future and
+    within max_days_out, and (for this test phase) the plan was bot-seeded.
+    Server-side filter only — OpenCrab never gets raw member PII.
+    """
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+
+    body = request.get_json(silent=True) or {}
+    max_days_out = int(body.get('max_days_out', 120))
+    limit = min(int(body.get('limit', 40)), 100)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT p.plan_id, p.title,
+                   MIN(w.checkin) AS trip_date,
+                   (MIN(w.checkin) - CURRENT_DATE) AS days_out,
+                   json_agg(json_build_object(
+                       'watch_id', w.pk_id,
+                       'origin', w.origin,
+                       'destination', w.destination,
+                       'checkin', w.checkin,
+                       'checkout', w.checkout
+                   )) AS flight_watches
+            FROM crab.plans p
+            JOIN crab.member_watches w ON w.plan_id = p.plan_id
+            WHERE w.watch_type = 'flight'
+              AND w.checkin >= CURRENT_DATE
+              AND w.checkin <= CURRENT_DATE + (%s || ' days')::interval
+              AND COALESCE(p.status, '') <> 'booked'
+            GROUP BY p.plan_id, p.title
+            ORDER BY MIN(w.checkin) ASC
+            LIMIT %s
+        """, (max_days_out, limit))
+        plans = []
+        for row in cur.fetchall():
+            plans.append({
+                'plan_id': str(row['plan_id']),
+                'plan_title': row['title'] or 'Untitled trip',
+                'trip_date': row['trip_date'].isoformat() if row['trip_date'] else None,
+                'days_out': int(row['days_out']) if row['days_out'] is not None else None,
+                'flight_watches': row['flight_watches'] or [],
+            })
+        return jsonify({'plans': plans, 'count': len(plans)}), 200
+    finally:
+        conn.close()
+
+
 @bp.route('/api/opencrab/status', methods=['GET'])
 @bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
 def opencrab_status():
