@@ -8,6 +8,7 @@ venv*/
 .idea/
 node_modules/
 .claude/
+_private/
 
 # ── Media (audio/video) — NEVER commit, use external storage ──
 *.mp4

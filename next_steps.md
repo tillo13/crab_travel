@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-16 04:32*
+*Last refreshed: 2026-04-17 04:00*
 
 ## 🎯 Pending
 
@@ -62,6 +62,8 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `6907a79` · 2026-04-16 14:44 — disable vote-reminder cron
+- `a203b5b` · 2026-04-16 14:44 — disable vote-reminder cron until prod — burst sends (3 emails in 6s to same inbox across plans) g...
 - `2f08196` · 2026-04-15 20:29 — Twilio A2P attempt 8 prep: uncheck demo consent box, hide Premium badge on demo, add 'not a condi...
 - `af35c9a` · 2026-04-15 07:29 — utilities: sync backend_registry banner from _infrastructure
 - `48e2017` · 2026-04-15 07:03 — kumori_free_llms: tag gateway requests with metadata.app_name
@@ -75,12 +77,13 @@
 - `2d09429` · 2026-04-10 14:20 — Fix pre_deploy_test command: python → python3
 - `6032280` · 2026-04-10 14:17 — Wire smoke_test.py as pre_deploy_test hook
 - `a5d9459` · 2026-04-10 14:13 — Add reminder cap smoke test + fix section 4 cleanup timeout
-- `f9c7425` · 2026-04-10 09:20 — Cap vote reminders at 3 per plan/user — stop nagging after 3 days
-- `a7e1658` · 2026-04-09 08:44 — Update Twilio A2P cost table with verified usage numbers
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-_(clean working tree, no TODO markers in recent files)_
+**2 file(s) with uncommitted changes:**
+- ` M .gitignore`
+- `?? docs/20260416_next_steps.md`
+
 <!-- wip:end -->

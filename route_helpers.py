@@ -37,3 +37,28 @@ def api_auth_required(f):
             return jsonify({'error': 'Not authenticated'}), 401
         return f(*args, **kwargs)
     return decorated
+
+
+def bearer_auth_required(secret_name):
+    """Bearer-token auth for server-to-server callers (e.g. OpenCrab VPS).
+    Expects `Authorization: Bearer <token>` matching the GCP secret named by secret_name.
+    """
+    def wrapper(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            from utilities.google_auth_utils import get_secret
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'Missing bearer token'}), 401
+            supplied = auth_header[len('Bearer '):].strip()
+            try:
+                expected = get_secret(secret_name)
+            except Exception as e:
+                logger.error(f"bearer_auth: secret lookup failed for {secret_name}: {e}")
+                return jsonify({'error': 'Auth misconfigured'}), 500
+            if not expected or supplied != expected:
+                logger.warning(f"bearer_auth: token mismatch on {request.path}")
+                return jsonify({'error': 'Invalid bearer token'}), 401
+            return f(*args, **kwargs)
+        return decorated
+    return wrapper

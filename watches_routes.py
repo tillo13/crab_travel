@@ -50,7 +50,7 @@ from utilities.calendar_utils import get_calendar_events, compute_free_windows, 
 from utilities.search_engine import trigger_search, is_searching
 from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
-from route_helpers import login_required, api_auth_required, AUTH_ENABLED
+from route_helpers import login_required, api_auth_required, bearer_auth_required, AUTH_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,132 @@ def api_update_watch_status(plan_id, watch_id):
             plan_auto_booked = True
             logger.info(f"All watches booked — plan {plan_id} auto-transitioned to 'booked'")
     return jsonify({'success': success, 'plan_booked': plan_auto_booked})
+
+
+@bp.route('/api/watches/<int:watch_id>/explore', methods=['POST'])
+@bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
+def api_watch_explore(watch_id):
+    """Deep route exploration for a single watch — called by OpenCrab VPS.
+
+    Looks up the watch's origin/destination/dates, fans out a cartesian product
+    of (origin_expansions × dest_expansions × date_shifts) across all search
+    adapters, and returns structured results. Read-only — writes nothing to
+    member_watches. Rate-limit enforced: max 50 combos per call.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from datetime import datetime, timedelta
+    from utilities.adapters import ALL_ADAPTERS
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT pk_id, plan_id, watch_type, origin, destination, checkin, checkout
+        FROM crab.member_watches WHERE pk_id = %s
+    """, (watch_id,))
+    watch = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not watch:
+        return jsonify({'error': 'Watch not found'}), 404
+    if watch['watch_type'] != 'flight':
+        return jsonify({'error': f"Explore supports watch_type='flight' only (got {watch['watch_type']})"}), 400
+    if not watch['checkin']:
+        return jsonify({'error': 'Watch has no checkin date'}), 400
+
+    body = request.get_json(silent=True) or {}
+    origin_expansions = body.get('origin_expansions') or ([watch['origin']] if watch['origin'] else [])
+    dest_expansions = body.get('dest_expansions') or [watch['destination']]
+    date_shift_days = max(0, min(int(body.get('date_shift_days', 0)), 7))
+    max_per_combo = max(1, min(int(body.get('max_per_combo', 3)), 10))
+
+    if not origin_expansions:
+        return jsonify({'error': 'No origins provided and watch has no origin'}), 400
+
+    # Build date-shift offsets: 0, +1, -1, +2, -2, ...
+    shifts = [0]
+    for n in range(1, date_shift_days + 1):
+        shifts.extend([n, -n])
+
+    base_checkin = watch['checkin']
+    base_checkout = watch['checkout']
+
+    combos = []
+    for origin in origin_expansions:
+        for dest in dest_expansions:
+            for shift in shifts:
+                depart = base_checkin + timedelta(days=shift)
+                ret = (base_checkout + timedelta(days=shift)) if base_checkout else None
+                combos.append({
+                    'origin': origin,
+                    'destination': dest,
+                    'depart_date': depart.isoformat(),
+                    'return_date': ret.isoformat() if ret else None,
+                })
+                if len(combos) >= 50:
+                    break
+            if len(combos) >= 50:
+                break
+        if len(combos) >= 50:
+            break
+
+    def _run_combo(combo):
+        combo_results = []
+        for AdapterCls in ALL_ADAPTERS:
+            adapter = AdapterCls()
+            try:
+                flights = adapter.search_flights(
+                    origin=combo['origin'],
+                    destination=combo['destination'],
+                    depart_date=combo['depart_date'],
+                    return_date=combo['return_date'],
+                ) or []
+            except Exception as e:
+                logger.warning(f"explore: {AdapterCls.__name__} failed for {combo}: {e}")
+                flights = []
+            for f in flights[:max_per_combo]:
+                f['combo_key'] = f"{combo['origin']}-{combo['destination']}-{combo['depart_date']}"
+                combo_results.append(f)
+        return combo, combo_results
+
+    all_results = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_run_combo, c) for c in combos]
+        for fut in as_completed(futures):
+            _, results = fut.result()
+            all_results.extend(results)
+
+    # Dedup by canonical_key, keep cheapest
+    by_key = {}
+    for r in all_results:
+        key = r.get('canonical_key') or f"{r.get('origin')}-{r.get('destination')}-{r.get('airline')}"
+        existing = by_key.get(key)
+        if existing is None or (r.get('price_usd') or 9e9) < (existing.get('price_usd') or 9e9):
+            by_key[key] = r
+    deduped = sorted(by_key.values(), key=lambda x: x.get('price_usd') or 9e9)
+
+    watch_baseline = None
+    try:
+        from utilities.postgres_utils import get_watch_history
+        history = get_watch_history(watch_id, limit=1)
+        if history:
+            watch_baseline = float(history[0]['price_usd'])
+    except Exception:
+        pass
+
+    return jsonify({
+        'success': True,
+        'watch': {
+            'id': watch['pk_id'],
+            'origin': watch['origin'],
+            'destination': watch['destination'],
+            'checkin': watch['checkin'].isoformat() if watch['checkin'] else None,
+            'checkout': watch['checkout'].isoformat() if watch['checkout'] else None,
+            'baseline_price': watch_baseline,
+        },
+        'combos_searched': len(combos),
+        'results_count': len(deduped),
+        'results': deduped[:50],
+    })
 
 
 @bp.route('/api/plan/<plan_id>/watches/<int:watch_id>/history')
