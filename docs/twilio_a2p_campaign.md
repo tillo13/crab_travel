@@ -1,7 +1,10 @@
 # Twilio A2P 10DLC Campaign — Full Documentation
 
-**Last updated:** 2026-04-09
-**Status:** IN_PROGRESS (attempt 7, submitted 2026-04-09)
+**Last updated:** 2026-04-18
+**Status:** ✅ **APPROVED** (attempt 8 cleared) — SMS sending is live end-to-end
+
+> Attempt 8 was submitted 2026-04-15 with the fixes in commit `2f08196` (unchecked demo consent box, hid Premium badge on demo, "not a condition of purchase" consent label, strengthened privacy-policy SMS non-sharing clause). Approval landed 2026-04-18.
+> This doc is preserved as-is below for the historical record of what finally worked. Do not edit the submission text in the "What Was Submitted" sections — it IS the approved language now.
 
 ---
 
@@ -19,7 +22,7 @@ A2P 10DLC is the carrier-mandated registration system for sending Application-to
 | **Customer Profile** | `BUf5cd2668261710eff4bb1c97eea9bf10` | twilio-approved |
 | **A2P Trust Product** | `BU7406bb09eaf450c62a6fc4f40019fb1b` | twilio-approved (policy `RNb0d4771c2c98518d916a3d4cd70a8f8b`) |
 | **Brand Registration** | `BN05299cc8c46ebf46b61fb87fb11d6ff9` | **APPROVED** (TCR ID: `B9D07O1`, since 2026-03-08) |
-| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **IN_PROGRESS** (attempt 7, submitted 2026-04-09) |
+| **Campaign** | `QE2c6890da8086d771620e9b13fadeba0b` | **APPROVED** (attempt 8, approved 2026-04-18) |
 | **Messaging Service** | `MG4c8502a7ba7c8d229fd89e2d7b8c47cc` | "Low Volume Mixed A2P Messaging Service" |
 | **Phone Number** | `+14256002722` (`PN62f5dfd99912cceb5213c3b1e1f9bbe5`) | In messaging service sender pool |
 

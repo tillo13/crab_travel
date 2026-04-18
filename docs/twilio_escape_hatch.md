@@ -1,7 +1,9 @@
 # Twilio Escape Hatch — Alternative SMS Providers
 
+> 🟢 **2026-04-18 — NO LONGER NEEDED.** Twilio A2P attempt 8 was approved 2026-04-18. We're staying on Twilio. This doc is preserved as a contingency reference only; if we ever hit carrier/trust issues again, the alternatives below (Telgorithm, Sinch, Bandwidth) are still the right shortlist.
+
 **Created:** 2026-04-06
-**Context:** Attempt 6 of A2P 10DLC campaign registration submitted Apr 1. As of Apr 6, status = `IN_PROGRESS`, zero errors, Day 5 in TCR queue. This is the first attempt that hasn't been auto-rejected — a good sign, but if it drags or fails, here's where we go next.
+**Context (historical):** Attempt 6 of A2P 10DLC campaign registration submitted Apr 1. As of Apr 6, status = `IN_PROGRESS`, zero errors, Day 5 in TCR queue. This was the first attempt that hadn't been auto-rejected — a good sign, and attempts 7/8 followed from it. Approved 2026-04-18.
 
 ---
 
