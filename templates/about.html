@@ -73,7 +73,7 @@
   <p>crab.travel is a <strong>group trip coordination platform</strong>. One person creates a trip and shares a link. Everyone who opens the link fills out their preferences: budget, interests, travel style, dietary needs, dates that work and dates that don't. No app to download, no account required.</p>
   <p>Once people start joining, CrabAI goes to work. For each destination on the table, it generates a researched card: real hotels with prices, real activities with specific names and locations, real restaurants, upcoming events and festivals during your travel window. Each card gets a compatibility score based on how well it matches the group's collective preferences and budget.</p>
   <p>Members vote on destinations using a rank-order system (#1, #2, #3) so the organizer gets real signal, not just thumbs-up noise. A shared availability calendar shows everyone's dates overlaid with color coding: green for "ideal," amber for "if needed," red for "can't go." The organizer can see at a glance which week works for the most people without asking anyone individually.</p>
-  <p>Behind the scenes, we run real travel searches across multiple providers (Duffel, LiteAPI, Viator, Travelpayouts) for flights, hotels, and activities. Results stream in as they arrive and include deep links to booking partners. We track price history so we can tell you when something gets cheaper.</p>
+  <p>Behind the scenes, CrabAI runs real travel searches across multiple providers (Duffel, LiteAPI, Viator, Travelpayouts) for flights, hotels, and activities. Once your destination and dates are locked, CrabAI keeps hunting — continuously re-checking every transport modality (flights, trains, buses, rideshare, rental cars, drive routes) for every member. Results stream in as they arrive and include deep links to booking partners, with full price history so you can see when something gets cheaper.</p>
 </div>
 
 <!-- What Makes This Different -->
@@ -125,11 +125,18 @@
   <p>Everything runs on <strong>cloud infrastructure</strong> designed for speed and reliability. The invite system works without authentication. Members participate via a unique token, no account required. Authenticated users get extras like Google Calendar sync and persistent profiles across trips.</p>
 </div>
 
+<!-- The nerd corner: OpenClaw -->
+<div class="about-section">
+  <h2 class="font-display">For the nerds: meet OpenClaw</h2>
+  <p>When a trip is locked, <strong>CrabAI</strong> starts hunting — re-checking flights, hotels, and every other way to get there on a schedule. You don't have to refresh anything. You just come back and the prices are fresher.</p>
+  <p class="text-sm text-crab-sand-dim italic">Under the hood, CrabAI rides on an agent host we call <strong>OpenClaw</strong> — a small always-on box that runs the scheduled work, handles the scraping, and keeps its own status page. Funny accident: OpenClaw started life as a general-purpose agent framework, and <em>then</em> crab.travel came along. Claws. Crabs. We couldn't not use it. Everything runs least-privilege — OpenClaw has no direct database access and no paid API keys; it asks CrabAI what to do and reports back.</p>
+</div>
+
 <!-- Where We Are Now -->
 <div class="about-section">
   <h2 class="font-display">Where we are right now</h2>
   <p>crab.travel is live and functional for the full group coordination loop: <strong>create a trip, invite people, collect preferences, research destinations with CrabAI, vote, search for flights and hotels, monitor prices with daily watches, track expenses with who-owes-who balances, and experience it all through interactive demo trips.</strong> That's Stage 1, and it's complete.</p>
-  <p>What's coming next is the stuff that makes the trip itself effortless: day-by-day itinerary building with CrabAI-generated plans, room assignments, flight tracking, SMS voting for the people who won't open a browser, price drop text alerts, and settlement links to Venmo/Zelle.</p>
+  <p>What's coming next is the stuff that makes the trip itself effortless: day-by-day itinerary building with CrabAI-generated plans, room assignments, SMS voting for the people who won't open a browser, fare-drop text alerts across every modality, and settlement links to Venmo/Zelle.</p>
   <p>The full breakdown of what's shipped, what's next, and what's on the long-term horizon is on our <a href="/roadmap" class="text-crab-coral hover:underline font-semibold">public roadmap</a>. Every section has a comment thread. We're building this in the open and your feedback directly shapes what gets built next.</p>
 </div>
 

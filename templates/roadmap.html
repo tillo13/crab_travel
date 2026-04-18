@@ -126,14 +126,14 @@
     <p class="text-sm leading-relaxed mb-3">CrabAI recommendations are great for discovering what to do somewhere, but when it comes to flights and hotels, people want real prices they can actually book. So behind the destination cards, we run actual travel searches across multiple providers simultaneously.</p>
     <p class="text-sm leading-relaxed mb-3">The search engine fans out to <strong>four adapters in parallel</strong>: Duffel (flexible flight bookings), Travelpayouts (global flight deals with affiliate revenue), LiteAPI (multi-source hotel and activity aggregation), and Viator (tours and experiences. The world's largest activities marketplace). Results stream in via Server-Sent Events, so prices start appearing within seconds of triggering a search rather than making you wait for all providers to respond.</p>
     <p class="text-sm leading-relaxed mb-3">Results are deduplicated across providers (same flight from two sources → show the cheapest), stored in the database with timestamps, and linked to the trip. Each result includes a deep link to the booking partner, so when someone's ready to buy, they click through directly to Expedia, Booking.com, or Viator to complete the purchase. We earn affiliate commission on those bookings. That's the revenue model for this layer.</p>
-    <p class="text-sm leading-relaxed mb-4">There's also a <strong>global deals dashboard</strong> that runs daily via cron job, checking for the cheapest flights from 14 major airport hubs. This feeds a "hot deals" view that surfaces opportunities even before a trip is fully planned. Sometimes the best trip is the one where the flight is $89.</p>
+    <p class="text-sm leading-relaxed mb-4">There's also a <strong>global deals dashboard</strong> that runs daily, scanning the strongest fares from 14 major airport hubs. This feeds a "hot deals" view that surfaces opportunities even before a trip is fully planned. Sometimes the best trip is the one where the flight is $89.</p>
     <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">What's built:</p>
     <div class="rm-item rm-item-done">4 search adapters running in parallel (Duffel, LiteAPI, Viator, Travelpayouts)</div>
     <div class="rm-item rm-item-done">Real-time streaming results — prices appear as they arrive via SSE</div>
     <div class="rm-item rm-item-done">Cross-provider deduplication and best-price surfacing</div>
     <div class="rm-item rm-item-done">Global deals dashboard refreshed daily from 14 major hubs</div>
     <div class="rm-item rm-item-done">Deep links to booking partners with affiliate tracking</div>
-    <div class="rm-item rm-item-done">Price history tracking per flight/hotel (foundation for price drop alerts)</div>
+    <div class="rm-item rm-item-done">Price history tracking across every modality — fuel for continuous fare-drop detection</div>
     <div class="rm-item">Kayak affiliate integration — pending approval (applied March 5)</div>
     <div class="rm-item">Airbnb / vacation rental search for large groups (whole-home rentals)</div>
     <div class="rm-item">Amadeus API integration (2K free searches/month)</div>
@@ -175,18 +175,20 @@
   <p class="text-crab-sand-dim text-sm mb-6 leading-relaxed">These are the features that take crab.travel from "voting tool" to "the thing that actually replaces the spreadsheet." Stage 1 answers "where and when." Stage 2 answers "how much, who's doing what, and what's the plan once we get there."</p>
 
   <div class="rm-section" data-section="6">
-    <h3 class="font-display text-lg">Price Drop Alerts <span class="rm-badge rm-badge-done">shipped</span></h3>
-    <p class="text-sm leading-relaxed mb-3">We already track every price we see. The <code>price_history</code> table logs every flight and hotel price with timestamps, so we know exactly how prices move over time for any route or property. The infrastructure is there. We just need to connect the dots and tell people when something gets cheaper.</p>
-    <p class="text-sm leading-relaxed mb-3">Here's how it would work: once a trip locks in a destination and date range, we run the search adapters on a recurring schedule (probably daily or every few hours) instead of just on-demand. Each new result gets compared against the last recorded price for that route or hotel. If a flight drops by more than 10% or falls below a threshold the user set, we fire off an email or SMS: <em>"SEA → BNA dropped from $247 to $189 on June 12. Book now?"</em> with a direct link to the booking page.</p>
-    <p class="text-sm leading-relaxed mb-3">The stretch goal is a "best time to book" indicator based on price trend analysis: are prices trending down (wait) or starting to climb (book now)? Airlines and OTAs have this data but they use it to maximize their revenue. We'd use it to maximize the traveler's savings.</p>
-    <p class="text-sm leading-relaxed mb-4"><strong>Why this matters:</strong> Most people book flights based on vibes ("this seems like a good price") because they don't have time to check every day. Price monitoring is the kind of thing that's trivial for software to do and painful for humans to do. It's a perfect automation target and a genuine "wow, this saved me money" moment that builds trust in the platform.</p>
-    <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">Planned:</p>
-    <div class="rm-item rm-item-done">Member price watches per flight and hotel — check every 6 hours via cron</div>
-    <div class="rm-item rm-item-done">Price history tracking with sparkline charts on watch cards</div>
+    <h3 class="font-display text-lg">Continuous Multi-Modal Hunting <span class="rm-badge rm-badge-done">shipped</span></h3>
+    <p class="text-sm leading-relaxed mb-3">Group trips aren't just about flights. Once a destination and dates are locked, <em>every member</em> needs to figure out how to get there — and "how" can mean flight, train, bus, rideshare, rental car, a drive, even a ferry or a bike leg. CrabAI treats every member × (origin → destination) pair as its own hunt and keeps checking, modality by modality, so you always see the freshest options.</p>
+    <p class="text-sm leading-relaxed mb-3">Here's how it works: when a trip locks, CrabAI stands up a "trip leg" for every member, tagged with the modalities that make sense for that pair (an SEA → PHX hunt gets flights, drive, bus; a SEA → Bainbridge hunt gets ferry, drive, bike, walk). A background dispatcher fans out to the relevant search adapters on a rolling cadence — fast ones every 30 minutes for fresh deals, a full sweep once a day — and every result flows into a unified <strong>transport options</strong> table per leg.</p>
+    <p class="text-sm leading-relaxed mb-3">When a fare drops meaningfully on any modality, the notification dispatcher fires: <em>"SEA → BNA flight dropped from $247 to $189 on June 12. Book now?"</em> with a direct link. The same engine will handle "your rental-car price just dropped" or "a cheaper train just appeared" without a single new line of product code — just drop in a new adapter.</p>
+    <p class="text-sm leading-relaxed mb-4"><strong>Why this matters:</strong> most people book transport based on vibes because they don't have time to check every day across every modality. Continuous hunting is trivial for software and painful for humans. It's a perfect automation target and a genuine "wow, this saved me money" moment that builds trust in the platform.</p>
+    <p class="text-xs text-crab-sand-dim font-semibold uppercase tracking-wider mb-2">What's built:</p>
+    <div class="rm-item rm-item-done">Per-member × per-leg hunting across 11 modalities (flight, train, bus, drive, rideshare, ferry, rental car, transfer, bike, walk, multimodal)</div>
+    <div class="rm-item rm-item-done">Modality-agnostic dispatcher + adapter registry — drop a file, new modality lights up</div>
+    <div class="rm-item rm-item-done">Rolling cadences — fast hunts for fresh deals, daily sweeps for completeness</div>
+    <div class="rm-item rm-item-done">Price history tracking with sparkline charts on every leg</div>
     <div class="rm-item rm-item-done">CrabAI-powered Book Now / Wait / Watch recommendations based on price trend + days to departure</div>
     <div class="rm-item rm-item-done">Mark Booked modal with price + confirmation number capture</div>
-    <div class="rm-item rm-item-done">All-booked celebration when every member's flights + hotels are confirmed</div>
-    <div class="rm-item">Email and SMS alerts on price drops (SMS pending Twilio A2P approval)</div>
+    <div class="rm-item rm-item-done">All-booked celebration when every member's transport is confirmed</div>
+    <div class="rm-item">Email and SMS alerts on fare drops (SMS pending Twilio A2P approval)</div>
   </div>
 
   <div class="rm-section" data-section="7">

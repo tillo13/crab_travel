@@ -11,8 +11,8 @@
 1. **Create a trip** — organizer sets the destination options and invites the group via link
 2. **Everyone votes** — members rank destinations, mark availability on a shared calendar, set their budget and preferences
 3. **AI finds the best option** — synthesizes everyone's preferences, researches destinations, recommends hotels and activities
-4. **Lock it in** — organizer locks the destination and dates, price watches activate for every member's flights and hotels
-5. **Smart booking alerts** — AI monitors prices daily, tells each person when to book and why ("prices dropped 3 scans in a row, 18 days to departure — book now")
+4. **Lock it in** — organizer locks the destination and dates, CrabAI starts hunting every modality (flight, train, bus, drive, rideshare, rental car, ferry, and more) for every member
+5. **Smart booking alerts** — CrabAI monitors prices continuously, tells each person when to book and why ("fare dropped 3 scans in a row, 18 days to departure — book now")
 6. **Trip summary** — once booked, everyone sees the full picture: flights, hotels, day-by-day itinerary, cost breakdown per person
 
 ## Watch it live
@@ -32,7 +32,7 @@ Our AI agents ("crab crawlers") are always running — planning real trips, voti
 - Preference-matched destination voting
 - Visual group availability calendar with date overlap detection
 - AI-powered destination research (stays, activities, restaurants, events)
-- Per-member flight + hotel price watches with sparkline history
+- Per-member multi-modal transport hunting (flight, train, bus, drive, rideshare, ferry, rental car, and more) with sparkline price history
 - Smart "Book Now / Wait / Watch" recommendations based on price trends + departure timing
 - Booking progress tracker with per-member status
 - Full trip summary with itinerary and cost breakdown

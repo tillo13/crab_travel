@@ -557,20 +557,20 @@
     </div>
   </div>
 
-  <!-- Price Watches (collapsible, only shown for locked plans) -->
+  <!-- Hunt Results (collapsible, only shown for locked plans) -->
   {% if plan.locked_destination or plan.status == 'locked' %}
   <div class="mb-4 animate-in stagger-1" id="watches-section">
     <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
       <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleWatches()">
         <div class="flex items-center gap-2">
           <svg id="watches-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          <span class="text-sm font-display">📡 Price Watches</span>
+          <span class="text-sm font-display">🦀 CrabAI Hunts</span>
           <span class="text-xs text-crab-sand-dim" id="watches-count"></span>
         </div>
       </div>
       <div id="watches-body">
         <div class="p-4 md:p-6" id="watches-container">
-          <p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">Loading watches...</p>
+          <p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">Loading hunts...</p>
         </div>
       </div>
     </div>
@@ -2114,7 +2114,7 @@ function closeCalModal() {
 
 if (!NEEDS_LOGIN) renderCalendar();
 
-// ── Price Watches ──────────────────────────────────────────
+// ── CrabAI Hunts ──────────────────────────────────────────
 var _watchesData = {{ watches_json|safe }};
 
 function renderWatches() {
@@ -2122,7 +2122,7 @@ function renderWatches() {
   var countEl = document.getElementById('watches-count');
   if (!container) return;
   if (!_watchesData || !_watchesData.length) {
-    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">No price watches yet — watches are created when a destination is locked.</p>';
+    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">No hunts yet — CrabAI starts hunting when a destination is locked.</p>';
     return;
   }
 
@@ -2481,7 +2481,7 @@ function showMemberDetail(memberId) {
   // Watches
   if (watches.length > 0) {
     html += '<div class="bg-white/[0.03] rounded-xl p-4">';
-    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">Price Watches</div>';
+    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">CrabAI Hunts</div>';
     watches.forEach(function(w) {
       html += renderWatchRow(w);
     });
