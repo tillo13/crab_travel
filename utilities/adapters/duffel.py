@@ -50,17 +50,19 @@ class DuffelAdapter(TravelAdapter):
         passengers: integer count (all adults)
         """
         results = []
+        depart_iso = str(depart_date)[:10]
+        return_iso = str(return_date)[:10] if return_date else None
         try:
             slices = [{
                 "origin": origin,
                 "destination": destination,
-                "departure_date": str(depart_date)[:10],
+                "departure_date": depart_iso,
             }]
-            if return_date:
+            if return_iso:
                 slices.append({
                     "origin": destination,
                     "destination": origin,
-                    "departure_date": str(return_date)[:10],
+                    "departure_date": return_iso,
                 })
 
             passenger_list = [{"type": "adult"} for _ in range(max(1, int(passengers)))]
@@ -83,7 +85,7 @@ class DuffelAdapter(TravelAdapter):
 
             for offer in offers:
                 try:
-                    results.append(self._normalize_offer(offer, origin, destination))
+                    results.append(self._normalize_offer(offer, origin, destination, depart_iso, return_iso))
                 except Exception as e:
                     logger.debug(f"Skipping offer: {e}")
 
@@ -96,7 +98,7 @@ class DuffelAdapter(TravelAdapter):
 
         return results
 
-    def _normalize_offer(self, offer, origin, destination):
+    def _normalize_offer(self, offer, origin, destination, depart_iso=None, return_iso=None):
         total = float(offer.get("total_amount", 0))
         currency = offer.get("total_currency", "USD")
 
@@ -116,7 +118,7 @@ class DuffelAdapter(TravelAdapter):
         arrive_at = last_seg.get("arriving_at", "")
         stops = len(segments) - 1
 
-        deep_link = self._build_deep_link(offer.get("id", ""), origin, destination)
+        deep_link = self._build_deep_link(offer.get("id", ""), origin, destination, depart_iso, return_iso)
 
         return self.flight(
             origin=origin,
@@ -137,8 +139,14 @@ class DuffelAdapter(TravelAdapter):
             },
         )
 
-    def _build_deep_link(self, offer_id, origin, destination):
-        """Build a user-facing booking link. Uses Google Flights search
-        as a fallback since Duffel test mode doesn't produce real URLs."""
+    def _build_deep_link(self, offer_id, origin, destination, depart_iso=None, return_iso=None):
+        """Build a user-facing booking link. Uses Google Flights' hash-fragment
+        deep link with real dates so the user lands on actual results, not a
+        keyword search. Duffel test mode doesn't produce real booking URLs."""
+        if depart_iso:
+            flt = f"{origin}.{destination}.{depart_iso}"
+            if return_iso:
+                flt += f"*{destination}.{origin}.{return_iso}"
+            return f"https://www.google.com/travel/flights?hl=en#flt={flt};c:USD;e:1;sd:1;t:f"
         from urllib.parse import quote
         return f"https://www.google.com/travel/flights?q=flights+from+{quote(origin)}+to+{quote(destination)}"
