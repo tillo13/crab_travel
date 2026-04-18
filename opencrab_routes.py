@@ -817,7 +817,7 @@ def opencrab_legs_to_hunt():
             SELECT l.pk_id, l.plan_id, l.member_id,
                    l.origin, l.origin_kind, l.destination, l.destination_kind,
                    l.depart_window_start, l.depart_window_end, l.pax,
-                   l.baselined_at, l.last_hunted_at
+                   l.baselined_at, l.last_hunted_at, l.source_watch_id
             FROM crab.trip_legs l
             WHERE l.status = 'active'
               AND (l.depart_window_start IS NULL
@@ -830,7 +830,7 @@ def opencrab_legs_to_hunt():
         out = []
         for (leg_id, plan_id, member_id, origin, origin_kind, destination,
              destination_kind, dstart, dend, pax,
-             baselined_at, last_hunted_at) in legs:
+             baselined_at, last_hunted_at, source_watch_id) in legs:
 
             # Per-modality due check via leg_hunts
             cur.execute("""
@@ -861,6 +861,7 @@ def opencrab_legs_to_hunt():
                 'depart_window_start': dstart.isoformat() if dstart else None,
                 'depart_window_end': dend.isoformat() if dend else None,
                 'pax': pax,
+                'source_watch_id': source_watch_id,
                 'baselined': baselined_at is not None,
                 'due_modalities': sorted(due),
             })

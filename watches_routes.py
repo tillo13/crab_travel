@@ -126,6 +126,43 @@ def api_plan_board(plan_id):
 
     watches = get_watches_for_plan(plan_id)
 
+    # Pre-fetch live transport_options for every leg tied to this plan's watches.
+    # Keyed by source_watch_id so _rows_for_watch can merge them per-watch.
+    from utilities.postgres_utils import db_cursor as _dbcur
+    transport_by_watch = {}
+    transport_by_leg_member = {}   # (watch_type-agnostic: future hotel/activity legs not yet wired)
+    try:
+        with _dbcur() as _c:
+            _c.execute("""
+                SELECT l.pk_id AS leg_id, l.source_watch_id, l.member_id,
+                       o.modality, o.provider, o.external_id,
+                       o.price_usd, o.last_price_usd, o.duration_minutes,
+                       o.transfers, o.depart_at, o.arrive_at, o.summary,
+                       o.deep_link, o.last_seen_at
+                FROM crab.trip_legs l
+                JOIN crab.transport_options o ON o.leg_id = l.pk_id
+                WHERE l.plan_id = %s
+                  AND NOT o.is_stale
+                  AND o.deep_link IS NOT NULL
+            """, (plan_id,))
+            for r in _c.fetchall():
+                row = {
+                    'price_usd': round(float(r['price_usd']), 2) if r['price_usd'] is not None else None,
+                    'provider': r['provider'] or '',
+                    'detail': r['summary'] or '',
+                    'source': f"{r['modality']}:{r['provider']}",
+                    'modality': r['modality'],
+                    'url': r['deep_link'],
+                    'duration_minutes': r['duration_minutes'],
+                    'transfers': r['transfers'],
+                    'last_price_usd': round(float(r['last_price_usd']), 2) if r['last_price_usd'] is not None else None,
+                }
+                if r['source_watch_id']:
+                    transport_by_watch.setdefault(r['source_watch_id'], []).append(row)
+                transport_by_leg_member.setdefault(r['member_id'], []).append(row)
+    except Exception as _e:
+        logger.warning(f"transport_options fetch skipped: {_e}")
+
     def _row_from_result(r):
         """Normalize a per-source result dict (from data.opencrab_results or built
         from watch top-level fields) into the minimal shape the UI renders."""
@@ -149,12 +186,14 @@ def api_plan_board(plan_id):
         }
 
     def _rows_for_watch(w):
-        """Extract per-source rows. Merges:
-          - data.opencrab_results (written by /watch-results)
-          - the watch's top-level single-flight scan (written by the */5 cron)
+        """Extract per-source rows. Merges, in priority order:
+          - NEW: crab.transport_options rows tied to this watch's trip_leg
+                 (source-of-truth for modality-agnostic hunting)
+          - legacy: data.opencrab_results (written by old /watch-results)
+          - the watch's top-level single-flight scan (written by */5 cron)
           - last_price_usd + deep_link fallback
         Deduped by (source, url), cheapest kept."""
-        rows = []
+        rows = list(transport_by_watch.get(w.get('pk_id'), []))
         data = w.get('data') or {}
         if isinstance(data, dict):
             oc = data.get('opencrab_results') or []
