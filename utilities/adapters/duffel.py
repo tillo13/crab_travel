@@ -140,13 +140,14 @@ class DuffelAdapter(TravelAdapter):
         )
 
     def _build_deep_link(self, offer_id, origin, destination, depart_iso=None, return_iso=None):
-        """Build a user-facing booking link. Uses Google Flights' hash-fragment
-        deep link with real dates so the user lands on actual results, not a
-        keyword search. Duffel test mode doesn't produce real booking URLs."""
+        """Build a user-facing booking link. Duffel test mode doesn't produce real
+        booking URLs, so we fall back to Kayak — its dated URL format is stable
+        and actually loads prefiltered results (unlike Google Flights' deprecated
+        #flt= hash, which just dumps users on the homepage)."""
         if depart_iso:
-            flt = f"{origin}.{destination}.{depart_iso}"
+            url = f"https://www.kayak.com/flights/{origin}-{destination}/{depart_iso}"
             if return_iso:
-                flt += f"*{destination}.{origin}.{return_iso}"
-            return f"https://www.google.com/travel/flights?hl=en#flt={flt};c:USD;e:1;sd:1;t:f"
+                url += f"/{return_iso}"
+            return url
         from urllib.parse import quote
-        return f"https://www.google.com/travel/flights?q=flights+from+{quote(origin)}+to+{quote(destination)}"
+        return f"https://www.kayak.com/flights/{quote(origin)}-{quote(destination)}"
