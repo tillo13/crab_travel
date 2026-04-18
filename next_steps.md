@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-17 04:00*
+*Last refreshed: 2026-04-18 05:35*
 
 ## 🎯 Pending
 
@@ -62,6 +62,13 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `de71074` · 2026-04-17 18:15 — duffel adapter: switch fallback deep link from deprecated Google Flights #flt= hash (lands on hom...
+- `a7cd0ae` · 2026-04-17 17:02 — duffel adapter: build Google Flights deep links with real dates so users land on actual results
+- `68494ff` · 2026-04-17 16:50 — opencrab: exclude [BOT] plans from plans-eligible — crawl only real plans
+- `ba82056` · 2026-04-17 13:22 — opencrab: plans-eligible returns cached last/best prices per watch
+- `e70741d` · 2026-04-17 13:06 — opencrab: fix plans-eligible days_out int cast
+- `b7018f7` · 2026-04-17 13:02 — opencrab: /api/opencrab/notify endpoint + admin recipient secret + test-mode gate + daily caps
+- `e2bf59c` · 2026-04-17 10:59 — add /api/watches/<id>/explore bearer-authed endpoint for OpenCrab route exploration; ignore _priv...
 - `6907a79` · 2026-04-16 14:44 — disable vote-reminder cron
 - `a203b5b` · 2026-04-16 14:44 — disable vote-reminder cron until prod — burst sends (3 emails in 6s to same inbox across plans) g...
 - `2f08196` · 2026-04-15 20:29 — Twilio A2P attempt 8 prep: uncheck demo consent box, hide Premium badge on demo, add 'not a condi...
@@ -70,20 +77,10 @@
 - `a549b1b` · 2026-04-15 06:13 — pick up new LITELLM_GATEWAY_URL (llm.kumori.ai)
 - `fcab2bb` · 2026-04-13 20:34 — fix: accept and pass user_id to log_api_usage in generate_text
 - `a0a8507` · 2026-04-13 16:08 — refactor: crab_travel kumori compliance — split app.py, postgres_utils.py, trip_bots.py; eliminat...
-- `32e615c` · 2026-04-12 15:47 — chore: remove dead llm_usage_caps.py — replaced by litellm_plus_router DB-driven limits
-- `74ca5c8` · 2026-04-12 15:21 — refactor: replace llm_router with thin wrapper over shared litellm_plus_router
-- `d271488` · 2026-04-12 11:44 — Fix SEO: remove .rstrip from www redirect, add 301 to app.yaml
-- `6e7a2a4` · 2026-04-10 14:27 — Collapse vote-reminder dedup+cap into one LEFT JOIN scan (db-speed-first)
-- `2d09429` · 2026-04-10 14:20 — Fix pre_deploy_test command: python → python3
-- `6032280` · 2026-04-10 14:17 — Wire smoke_test.py as pre_deploy_test hook
-- `a5d9459` · 2026-04-10 14:13 — Add reminder cap smoke test + fix section 4 cleanup timeout
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**2 file(s) with uncommitted changes:**
-- ` M .gitignore`
-- `?? docs/20260416_next_steps.md`
-
+_(clean working tree, no TODO markers in recent files)_
 <!-- wip:end -->

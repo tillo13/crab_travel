@@ -30,6 +30,53 @@ NOTIFICATION_TYPE = 'opencrab_digest'
 GLOBAL_DAILY_CAP = 20
 PER_PLAN_DAILY_CAP = 1
 
+# Least-privilege caps for /watch-results — OpenCrab can only write under these.
+WATCH_RESULTS_MAX_PAYLOAD_BYTES = 50_000
+WATCH_RESULTS_MAX_PER_SOURCE = 20
+WATCH_RESULTS_MAX_SOURCES = 12
+WATCH_RESULTS_PER_WATCH_HOURLY_CAP = 12  # ~matches */5 min crawl cadence
+WATCH_RESULT_ALLOWED_FIELDS = {
+    'source', 'price_usd', 'airline', 'provider', 'name',
+    'detail', 'stops', 'deep_link', 'url',
+    'depart_at', 'arrive_at', 'checkin', 'checkout',
+    'nights', 'rating',
+}
+
+
+def _readonly_mode():
+    """Kill switch: if CRAB_OPENCRAB_READONLY=='on', block all OpenCrab writes."""
+    try:
+        from utilities.google_auth_utils import get_secret
+        v = (get_secret('CRAB_OPENCRAB_READONLY') or 'off').strip().lower()
+        return v == 'on'
+    except Exception:
+        return False
+
+
+def _sanitize_result(r):
+    """Strip any field not on the allowlist. Returns None if required fields missing."""
+    if not isinstance(r, dict):
+        return None
+    clean = {k: v for k, v in r.items() if k in WATCH_RESULT_ALLOWED_FIELDS}
+    if 'price_usd' not in clean:
+        return None
+    try:
+        clean['price_usd'] = float(clean['price_usd'])
+    except (TypeError, ValueError):
+        return None
+    if clean['price_usd'] <= 0 or clean['price_usd'] > 100_000:
+        return None
+    url = clean.get('deep_link') or clean.get('url')
+    if not url or not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+        return None
+    if len(url) > 2000:
+        return None
+    clean['source'] = str(clean.get('source') or 'unknown')[:40]
+    for k in ('airline', 'provider', 'name', 'detail'):
+        if k in clean and clean[k] is not None:
+            clean[k] = str(clean[k])[:200]
+    return clean
+
 TEMPLATES = {
     'delta_digest': {
         'subject': '[crab.travel] {plan_title} — daily trip update',
@@ -249,7 +296,7 @@ def opencrab_plans_eligible():
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
-            SELECT p.plan_id, p.title,
+            SELECT p.plan_id, p.title, p.invite_token,
                    MIN(w.checkin) AS trip_date,
                    (MIN(w.checkin) - CURRENT_DATE) AS days_out,
                    json_agg(json_build_object(
@@ -270,7 +317,7 @@ def opencrab_plans_eligible():
               AND w.checkin <= CURRENT_DATE + (%s || ' days')::interval
               AND COALESCE(p.status, '') <> 'booked'
               AND p.title NOT LIKE '[BOT]%%'
-            GROUP BY p.plan_id, p.title
+            GROUP BY p.plan_id, p.title, p.invite_token
             ORDER BY MIN(w.checkin) ASC
             LIMIT %s
         """, (max_days_out, limit))
@@ -279,6 +326,7 @@ def opencrab_plans_eligible():
             plans.append({
                 'plan_id': str(row['plan_id']),
                 'plan_title': row['title'] or 'Untitled trip',
+                'invite_token': row.get('invite_token'),
                 'trip_date': row['trip_date'].isoformat() if row['trip_date'] else None,
                 'days_out': int(row['days_out']) if row['days_out'] is not None else None,
                 'flight_watches': row['flight_watches'] or [],
@@ -286,6 +334,145 @@ def opencrab_plans_eligible():
         return jsonify({'plans': plans, 'count': len(plans)}), 200
     finally:
         conn.close()
+
+
+@bp.route('/api/opencrab/watch-results', methods=['POST'])
+@bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
+def opencrab_watch_results():
+    """VPS writes normalized per-source crawl results for an EXISTING watch.
+
+    Least-privilege contract:
+      - UPDATE only (never INSERT/DELETE). Watch must already exist.
+      - Only these columns mutate: data->'opencrab_results', data->'updated_at',
+        last_price_usd, deep_link, last_checked_at.
+      - Never touches member_id, plan_id, watch_type, origin, destination, dates.
+      - Payload capped, per-source results capped, write rate capped.
+      - Writes can be frozen globally via CRAB_OPENCRAB_READONLY=on.
+    """
+    if _readonly_mode():
+        return jsonify({'error': 'opencrab writes frozen (CRAB_OPENCRAB_READONLY=on)'}), 503
+
+    raw = request.get_data(cache=False) or b''
+    if len(raw) > WATCH_RESULTS_MAX_PAYLOAD_BYTES:
+        return jsonify({'error': 'payload too large',
+                        'max_bytes': WATCH_RESULTS_MAX_PAYLOAD_BYTES}), 413
+
+    body = request.get_json(silent=True) or {}
+    watch_id = body.get('watch_id')
+    results_in = body.get('results') or []
+    if not isinstance(watch_id, int) or watch_id <= 0:
+        return jsonify({'error': 'watch_id (positive int) required'}), 400
+    if not isinstance(results_in, list):
+        return jsonify({'error': 'results must be a list'}), 400
+
+    # Sanitize + group by source, cap per-source and total-sources
+    by_source = {}
+    dropped = 0
+    for item in results_in:
+        clean = _sanitize_result(item)
+        if not clean:
+            dropped += 1
+            continue
+        src = clean['source']
+        lst = by_source.setdefault(src, [])
+        if len(lst) < WATCH_RESULTS_MAX_PER_SOURCE:
+            lst.append(clean)
+        else:
+            dropped += 1
+    if len(by_source) > WATCH_RESULTS_MAX_SOURCES:
+        # Drop extra sources alphabetically — deterministic, not OpenCrab-controlled
+        extras = sorted(by_source.keys())[WATCH_RESULTS_MAX_SOURCES:]
+        for s in extras:
+            dropped += len(by_source.pop(s))
+
+    flat = []
+    for src, rows in by_source.items():
+        rows.sort(key=lambda r: r['price_usd'])
+        flat.extend(rows)
+    flat.sort(key=lambda r: r['price_usd'])
+
+    cheapest = flat[0] if flat else None
+
+    from utilities.postgres_utils import get_db_connection
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+
+        # Per-watch hourly write cap — prevents a runaway VPS from spamming jsonb
+        cur.execute("""
+            SELECT pk_id, plan_id,
+                   (data->>'opencrab_write_count_hour')::int AS wc,
+                   (data->>'opencrab_write_window_start')::timestamptz AS wstart
+            FROM crab.member_watches WHERE pk_id = %s
+        """, (watch_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'watch not found'}), 404
+        _, plan_id_for_watch, wc, wstart = row
+
+        import json as _json
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        if wstart is None or (now - wstart) > timedelta(hours=1):
+            wc = 0
+            wstart = now
+        if (wc or 0) >= WATCH_RESULTS_PER_WATCH_HOURLY_CAP:
+            return jsonify({
+                'error': 'per-watch hourly write cap hit',
+                'cap': WATCH_RESULTS_PER_WATCH_HOURLY_CAP,
+                'window_resets_at': (wstart + timedelta(hours=1)).isoformat(),
+            }), 429
+
+        merge = {
+            'opencrab_results': flat,
+            'opencrab_updated_at': now.isoformat(),
+            'opencrab_write_count_hour': (wc or 0) + 1,
+            'opencrab_write_window_start': wstart.isoformat(),
+        }
+
+        # Named-column UPDATE only. No dynamic SQL, no way to set other fields.
+        if cheapest:
+            cur.execute("""
+                UPDATE crab.member_watches
+                SET data = COALESCE(data, '{}'::jsonb) || %s::jsonb,
+                    last_price_usd = %s,
+                    deep_link = COALESCE(%s, deep_link),
+                    last_checked_at = %s
+                WHERE pk_id = %s
+            """, (_json.dumps(merge), cheapest['price_usd'],
+                  cheapest.get('deep_link') or cheapest.get('url'),
+                  now, watch_id))
+        else:
+            cur.execute("""
+                UPDATE crab.member_watches
+                SET data = COALESCE(data, '{}'::jsonb) || %s::jsonb,
+                    last_checked_at = %s
+                WHERE pk_id = %s
+            """, (_json.dumps(merge), now, watch_id))
+
+        # Also append to price_history if we got a new cheapest
+        if cheapest:
+            try:
+                cur.execute("""
+                    INSERT INTO crab.price_history (watch_id, price_usd, source, observed_at)
+                    VALUES (%s, %s, %s, %s)
+                """, (watch_id, cheapest['price_usd'], cheapest.get('source', 'opencrab'), now))
+            except Exception as e:
+                logger.debug(f"price_history insert skipped: {e}")
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        'ok': True,
+        'watch_id': watch_id,
+        'plan_id': str(plan_id_for_watch),
+        'accepted': len(flat),
+        'sources': len(by_source),
+        'dropped': dropped,
+        'cheapest_price_usd': cheapest['price_usd'] if cheapest else None,
+    }), 200
 
 
 @bp.route('/api/opencrab/status', methods=['GET'])
@@ -305,9 +492,16 @@ def opencrab_status():
         conn.close()
     return jsonify({
         'test_mode': _test_mode_enabled(),
+        'readonly': _readonly_mode(),
         'global_today': global_today,
         'global_daily_cap': GLOBAL_DAILY_CAP,
         'per_plan_daily_cap': PER_PLAN_DAILY_CAP,
         'allowed_templates': list(TEMPLATES.keys()),
+        'watch_results_caps': {
+            'max_payload_bytes': WATCH_RESULTS_MAX_PAYLOAD_BYTES,
+            'max_per_source': WATCH_RESULTS_MAX_PER_SOURCE,
+            'max_sources': WATCH_RESULTS_MAX_SOURCES,
+            'per_watch_hourly_cap': WATCH_RESULTS_PER_WATCH_HOURLY_CAP,
+        },
         'timestamp': datetime.utcnow().isoformat() + 'Z',
     }), 200

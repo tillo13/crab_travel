@@ -92,6 +92,165 @@ def api_get_watches(plan_id):
     return jsonify({'success': True, 'data': {'members': list(members.values())}})
 
 
+@bp.route('/api/plan/<plan_id>/board')
+def api_plan_board(plan_id):
+    """OpenCrab deal board for a plan — modality-agnostic, per-viewer personalized.
+
+    Access: session user who is a plan member OR ?as=<member_token>.
+    Returns yours/group/others split. Read-only. No PII beyond display_name + origin.
+    """
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({'error': 'Plan not found'}), 404
+
+    viewer_member_id = None
+    viewer_member = None
+    user = session.get('user')
+    token = (request.args.get('as') or '').strip()
+
+    if token:
+        m = get_member_by_token(token)
+        if m and str(m.get('plan_id')) == str(plan_id):
+            viewer_member_id = m['pk_id']
+            viewer_member = m
+    if viewer_member_id is None and user:
+        m = get_member_for_plan(plan_id, user['id'])
+        if m:
+            viewer_member_id = m['pk_id']
+            viewer_member = m
+
+    is_bot_trip = (plan.get('title') or '').startswith('[BOT]')
+    if viewer_member_id is None and not is_bot_trip and AUTH_ENABLED:
+        # Anonymous viewer on a non-bot plan — still allowed, just no "yours" section.
+        pass
+
+    watches = get_watches_for_plan(plan_id)
+
+    def _row_from_result(r):
+        """Normalize a per-source result dict (from data.opencrab_results or built
+        from watch top-level fields) into the minimal shape the UI renders."""
+        price = r.get('price_usd')
+        if price is None:
+            return None
+        url = r.get('deep_link') or r.get('url')
+        if not url:
+            return None
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            return None
+        return {
+            'price_usd': round(price, 2),
+            'provider': r.get('airline') or r.get('provider') or r.get('name') or '',
+            'detail': r.get('detail') or (f"{r.get('stops', 0)} stop" + ('s' if (r.get('stops') or 0) != 1 else '')
+                                          if r.get('stops') is not None else ''),
+            'source': r.get('source') or '',
+            'url': url,
+        }
+
+    def _rows_for_watch(w):
+        """Extract per-source rows. Prefer data.opencrab_results (written by VPS),
+        else synthesize one row from the watch's own last_price_usd + deep_link."""
+        rows = []
+        data = w.get('data') or {}
+        if isinstance(data, dict):
+            oc = data.get('opencrab_results') or []
+            if isinstance(oc, list):
+                for r in oc:
+                    row = _row_from_result(r) if isinstance(r, dict) else None
+                    if row:
+                        rows.append(row)
+        if not rows and w.get('last_price_usd') and w.get('deep_link'):
+            rows.append({
+                'price_usd': round(float(w['last_price_usd']), 2),
+                'provider': (w.get('data') or {}).get('airline') if isinstance(w.get('data'), dict) else '',
+                'detail': '',
+                'source': 'watch',
+                'url': w['deep_link'],
+            })
+        rows.sort(key=lambda x: x['price_usd'])
+        return rows
+
+    yours = {'flights': [], 'hotels': [], 'activities': [], 'other': []}
+    group = {'hotels': [], 'activities': [], 'other': []}
+    others_by_member = {}
+    total_rows = 0
+
+    for w in watches:
+        wtype = (w.get('watch_type') or 'other').lower()
+        rows = _rows_for_watch(w)
+        if not rows:
+            continue
+        total_rows += len(rows)
+        mid = w['member_id']
+
+        if wtype == 'flight':
+            if viewer_member_id is not None and mid == viewer_member_id:
+                yours['flights'].extend(rows)
+            else:
+                entry = others_by_member.setdefault(mid, {
+                    'member': (w.get('member_name') or w.get('display_name') or 'Traveler').replace('[BOT] ', ''),
+                    'origin': w.get('origin') or '',
+                    'flights': [],
+                    'cheapest': None,
+                })
+                entry['flights'].extend(rows)
+        else:
+            bucket = 'hotels' if wtype == 'hotel' else ('activities' if wtype == 'activity' else 'other')
+            group[bucket].extend(rows)
+            if viewer_member_id is not None and mid == viewer_member_id:
+                yours[bucket].extend(rows)
+
+    for section in (yours, group):
+        for k, lst in list(section.items()):
+            lst.sort(key=lambda x: x['price_usd'])
+            seen = set()
+            deduped = []
+            for r in lst:
+                key = (r['source'], r['url'])
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(r)
+            section[k] = deduped
+
+    others = []
+    for mid, entry in others_by_member.items():
+        flights = sorted(entry['flights'], key=lambda x: x['price_usd'])
+        others.append({
+            'member': entry['member'],
+            'origin': entry['origin'],
+            'flights': flights,
+            'cheapest': flights[0]['price_usd'] if flights else None,
+            'count': len(flights),
+        })
+    others.sort(key=lambda x: (x.get('cheapest') is None, x.get('cheapest') or 0))
+
+    last_checked = None
+    for w in watches:
+        lc = w.get('last_checked_at')
+        if lc and (last_checked is None or lc > last_checked):
+            last_checked = lc
+
+    return jsonify({
+        'success': True,
+        'plan': {
+            'id': str(plan_id),
+            'title': (plan.get('title') or '').replace('[BOT] ', ''),
+        },
+        'viewer': {
+            'member_id': viewer_member_id,
+            'name': (viewer_member.get('display_name') if viewer_member else None),
+            'origin': (viewer_member.get('home_airport') if viewer_member else None),
+        } if viewer_member else None,
+        'yours': yours if viewer_member_id is not None else None,
+        'group': group,
+        'others': others,
+        'total_deals': total_rows,
+        'updated_at': last_checked.isoformat() if last_checked else None,
+    })
+
+
 @bp.route('/api/plan/<plan_id>/watches/<int:watch_id>/status', methods=['POST'])
 @api_auth_required
 def api_update_watch_status(plan_id, watch_id):

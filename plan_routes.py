@@ -372,6 +372,12 @@ def invite_page(invite_token):
     if user and is_member and (session.get('_demo_viewer') or is_bot_trip):
         viewing_as = user.get('name', 'Demo User')
 
+    # Per-member token from email link (?m=<member_token>) — used by the
+    # CrabAI Deal Hunter accordion to personalize without login.
+    board_member_token = (request.args.get('m') or '').strip() or None
+    if board_member_token is None and member and member.get('member_token'):
+        board_member_token = member['member_token']
+
     # Booked trip summary stats (for header display)
     booked_summary = None
     if plan.get('status') in ('locked', 'booked') or plan.get('locked_destination'):
@@ -399,6 +405,7 @@ def invite_page(invite_token):
         viewing_as=viewing_as,
         booked_summary=booked_summary,
         demo_stage=session.get('_demo_stage'),
+        board_member_token=board_member_token,
     )
 
 

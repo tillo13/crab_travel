@@ -731,6 +731,147 @@
     </div>
   </div>
 
+  <!-- 🦀 CrabAI Deal Hunter (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-3" id="deals-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDeals()">
+        <div class="flex items-center gap-2">
+          <svg id="deals-chevron" class="w-4 h-4 chat-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">🦀 CrabAI Deal Hunter</span>
+          <span id="deals-summary" class="text-xs text-crab-sand-dim opacity-60">— hunting…</span>
+        </div>
+        <button id="deals-refresh" class="text-xs text-crab-sand-dim hover:text-crab-sand opacity-60 hover:opacity-100" onclick="event.stopPropagation(); loadDealBoard(true);" title="Refresh">🔄</button>
+      </div>
+      <div id="deals-body" class="p-4 md:p-6" style="display:none;">
+        <div id="deals-content">
+          <div class="text-center py-8 text-crab-sand-dim text-sm">Loading deals…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      var PLAN_ID = {{ plan.plan_id|tojson }};
+      var MEMBER_TOKEN = {{ (board_member_token or '')|tojson }};
+      var loaded = false;
+
+      window.toggleDeals = function() {
+        var body = document.getElementById('deals-body');
+        var chev = document.getElementById('deals-chevron');
+        var open = body.style.display === 'none';
+        body.style.display = open ? 'block' : 'none';
+        if (chev) chev.classList.toggle('collapsed', !open);
+        if (open && !loaded) loadDealBoard(false);
+      };
+
+      window.loadDealBoard = function(force) {
+        var url = '/api/plan/' + encodeURIComponent(PLAN_ID) + '/board';
+        if (MEMBER_TOKEN) url += '?as=' + encodeURIComponent(MEMBER_TOKEN);
+        document.getElementById('deals-content').innerHTML =
+          '<div class="text-center py-8 text-crab-sand-dim text-sm">Loading deals…</div>';
+        fetch(url, {credentials: 'same-origin'})
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            if (!data || !data.success) throw new Error((data && data.error) || 'failed');
+            loaded = true;
+            renderDealBoard(data);
+          })
+          .catch(function(err){
+            document.getElementById('deals-content').innerHTML =
+              '<div class="text-center py-6 text-crab-sand-dim text-sm">Couldn\u2019t load deals: ' +
+              String(err.message || err).replace(/[<>&]/g, '') + '</div>';
+          });
+      };
+
+      function esc(s){ return String(s==null?'':s).replace(/[<>&"]/g, function(c){
+        return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
+      function fmt(p){ return '$' + Math.round(p).toLocaleString(); }
+
+      function rowHtml(r) {
+        var meta = [esc(r.provider), esc(r.detail), '<span class="opacity-50">via ' + esc(r.source) + '</span>']
+          .filter(function(x){ return x && x !== ''; }).join(' · ');
+        return '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" ' +
+          'class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors">' +
+          '<div class="flex items-center gap-3 min-w-0">' +
+            '<span class="font-display text-crab-sand tabular-nums">' + fmt(r.price_usd) + '</span>' +
+            '<span class="text-xs text-crab-sand-dim truncate">' + meta + '</span>' +
+          '</div>' +
+          '<span class="text-xs text-crab-coral whitespace-nowrap">Book →</span>' +
+        '</a>';
+      }
+
+      function cardHtml(title, rows) {
+        if (!rows || !rows.length) return '';
+        var body = rows.slice(0, 5).map(rowHtml).join('');
+        var more = rows.length > 5
+          ? '<details class="mt-2"><summary class="text-xs text-crab-sand-dim cursor-pointer select-none">' +
+            'Show ' + (rows.length - 5) + ' more' +
+            '</summary><div class="mt-1 space-y-1">' + rows.slice(5).map(rowHtml).join('') + '</div></details>'
+          : '';
+        return '<div class="mb-4 bg-crab-card/30 border border-white/6 rounded-xl p-3">' +
+          '<h4 class="text-xs uppercase tracking-wider text-crab-sand-dim mb-2">' + esc(title) + '</h4>' +
+          '<div class="space-y-1">' + body + '</div>' + more +
+        '</div>';
+      }
+
+      function othersHtml(others) {
+        if (!others || !others.length) return '';
+        var items = others.map(function(o, i){
+          var id = 'other-' + i;
+          var summary = esc(o.member) + (o.origin ? ' · <span class="opacity-70">' + esc(o.origin) + ' → ' + '</span>' : ' · ') +
+            (o.cheapest != null ? 'from ' + fmt(o.cheapest) : 'no price yet') +
+            ' · <span class="opacity-70">' + o.count + ' option' + (o.count === 1 ? '' : 's') + '</span>';
+          var rows = (o.flights || []).slice(0, 10).map(rowHtml).join('');
+          return '<details class="py-1 border-b border-white/5 last:border-0">' +
+            '<summary class="text-sm cursor-pointer select-none py-1 text-crab-sand-dim hover:text-crab-sand">' +
+              '▸ ' + summary +
+            '</summary><div class="mt-2 space-y-1 pl-4">' + (rows || '<div class="text-xs text-crab-sand-dim opacity-60">no deals found yet</div>') + '</div>' +
+          '</details>';
+        }).join('');
+        return '<div class="mt-4 bg-crab-card/30 border border-white/6 rounded-xl p-3">' +
+          '<h4 class="text-xs uppercase tracking-wider text-crab-sand-dim mb-2">🌍 Flights for everyone else</h4>' +
+          items +
+        '</div>';
+      }
+
+      function renderDealBoard(d) {
+        var parts = [];
+        var yours = d.yours;
+        if (yours && d.viewer) {
+          var route = d.viewer.origin ? (d.viewer.origin + ' → destination') : 'your route';
+          if (yours.flights && yours.flights.length) parts.push(cardHtml('✈️  Your flight · ' + route, yours.flights));
+        }
+        var g = d.group || {};
+        if (g.hotels && g.hotels.length) parts.push(cardHtml('🏨  Hotels · everyone shares', g.hotels));
+        if (g.activities && g.activities.length) parts.push(cardHtml('🎟️  Activities', g.activities));
+        if (g.other && g.other.length) parts.push(cardHtml('📍  Other deals', g.other));
+        parts.push(othersHtml(d.others));
+
+        if (!parts.filter(Boolean).length) {
+          parts.push('<div class="text-center py-6 text-crab-sand-dim text-sm">CrabAI hasn\u2019t found deals on this plan yet. Check back soon.</div>');
+        }
+
+        var updated = d.updated_at ? new Date(d.updated_at) : null;
+        var ago = '';
+        if (updated) {
+          var mins = Math.max(0, Math.round((Date.now() - updated.getTime()) / 60000));
+          ago = mins < 60 ? (mins + 'm ago') : (Math.round(mins/60) + 'h ago');
+        }
+        document.getElementById('deals-content').innerHTML = parts.join('');
+
+        var sum = document.getElementById('deals-summary');
+        if (sum) sum.textContent = (d.total_deals || 0) + ' deal' + ((d.total_deals === 1) ? '' : 's') +
+          (ago ? ' · ' + ago : '');
+      }
+
+      // Auto-expand if URL hash is #deals
+      if ((location.hash || '').toLowerCase() === '#deals') {
+        setTimeout(function(){ window.toggleDeals(); }, 100);
+      }
+    })();
+  </script>
+
   {% if viewing_as %}
   {# CTA for demo viewers #}
   <div class="text-center mt-10 py-8 border-t border-white/6">
