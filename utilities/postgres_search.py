@@ -512,12 +512,17 @@ def update_watch_price(watch_id, price_usd, deep_link=None, data=None, source='u
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         # Update last price and conditionally update best price
+        # Merge new data into existing jsonb (don't clobber keys written by
+        # other writers like OpenCrab's /watch-results endpoint).
         cursor.execute("""
             UPDATE crab.member_watches SET
                 last_price_usd = %s,
                 last_checked_at = NOW(),
                 deep_link = COALESCE(%s, deep_link),
-                data = COALESCE(%s, data),
+                data = CASE
+                    WHEN %s::jsonb IS NULL THEN data
+                    ELSE COALESCE(data, '{}'::jsonb) || %s::jsonb
+                END,
                 best_price_usd = CASE
                     WHEN best_price_usd IS NULL OR %s < best_price_usd THEN %s
                     ELSE best_price_usd
@@ -528,7 +533,9 @@ def update_watch_price(watch_id, price_usd, deep_link=None, data=None, source='u
                 END
             WHERE pk_id = %s
             RETURNING *, (best_price_usd IS NOT NULL AND %s < best_price_usd) as is_new_best
-        """, (price_usd, deep_link, psycopg2.extras.Json(data) if data else None,
+        """, (price_usd, deep_link,
+              psycopg2.extras.Json(data) if data else None,
+              psycopg2.extras.Json(data) if data else None,
               price_usd, price_usd, price_usd, watch_id, price_usd))
         watch = cursor.fetchone()
         # Record history

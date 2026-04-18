@@ -149,8 +149,11 @@ def api_plan_board(plan_id):
         }
 
     def _rows_for_watch(w):
-        """Extract per-source rows. Prefer data.opencrab_results (written by VPS),
-        else synthesize one row from the watch's own last_price_usd + deep_link."""
+        """Extract per-source rows. Merges:
+          - data.opencrab_results (written by /watch-results)
+          - the watch's top-level single-flight scan (written by the */5 cron)
+          - last_price_usd + deep_link fallback
+        Deduped by (source, url), cheapest kept."""
         rows = []
         data = w.get('data') or {}
         if isinstance(data, dict):
@@ -160,16 +163,29 @@ def api_plan_board(plan_id):
                     row = _row_from_result(r) if isinstance(r, dict) else None
                     if row:
                         rows.append(row)
+            # Top-level flight scan (price_watch cron shape)
+            if data.get('price_usd') and data.get('deep_link'):
+                row = _row_from_result(data)
+                if row:
+                    rows.append(row)
         if not rows and w.get('last_price_usd') and w.get('deep_link'):
             rows.append({
                 'price_usd': round(float(w['last_price_usd']), 2),
-                'provider': (w.get('data') or {}).get('airline') if isinstance(w.get('data'), dict) else '',
+                'provider': (data.get('airline') if isinstance(data, dict) else '') or '',
                 'detail': '',
-                'source': 'watch',
+                'source': (data.get('source') if isinstance(data, dict) else '') or 'watch',
                 'url': w['deep_link'],
             })
-        rows.sort(key=lambda x: x['price_usd'])
-        return rows
+        # Dedupe by (source, url), keep cheapest
+        best = {}
+        for r in rows:
+            key = (r['source'], r['url'])
+            cur = best.get(key)
+            if cur is None or r['price_usd'] < cur['price_usd']:
+                best[key] = r
+        out = list(best.values())
+        out.sort(key=lambda x: x['price_usd'])
+        return out
 
     yours = {'flights': [], 'hotels': [], 'activities': [], 'other': []}
     group = {'hotels': [], 'activities': [], 'other': []}

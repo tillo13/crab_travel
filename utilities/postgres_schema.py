@@ -427,6 +427,88 @@ def init_database():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_sent_plan_type_day ON crab.notifications_sent (plan_id, notification_type, (sent_at::date))")
 
+        # ─── Modality-agnostic hunting: trip_legs + transport_options ───
+        # Design: crab.travel is a hunting service. Once a member locks in
+        # origin + destination + dates, OpenCrab continuously hunts every
+        # possible way to get there across every modality. trip_legs holds
+        # the user's *intent*; transport_options holds the hunted *inventory*.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.trip_legs (
+                pk_id BIGSERIAL PRIMARY KEY,
+                plan_id UUID NOT NULL REFERENCES crab.plans(plan_id) ON DELETE CASCADE,
+                member_id BIGINT NOT NULL REFERENCES crab.plan_members(pk_id) ON DELETE CASCADE,
+                direction TEXT NOT NULL DEFAULT 'outbound',
+                origin TEXT NOT NULL,
+                origin_kind TEXT NOT NULL DEFAULT 'airport',
+                destination TEXT NOT NULL,
+                destination_kind TEXT NOT NULL DEFAULT 'airport',
+                depart_window_start DATE,
+                depart_window_end DATE,
+                pax INT NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'active',
+                baselined_at TIMESTAMPTZ,
+                last_hunted_at TIMESTAMPTZ,
+                source_watch_id BIGINT REFERENCES crab.member_watches(pk_id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_unique
+            ON crab.trip_legs (plan_id, member_id, direction, origin, destination, COALESCE(depart_window_start, '1970-01-01'::date))
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trip_legs_status ON crab.trip_legs(status, last_hunted_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trip_legs_plan ON crab.trip_legs(plan_id)")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.transport_options (
+                pk_id BIGSERIAL PRIMARY KEY,
+                leg_id BIGINT NOT NULL REFERENCES crab.trip_legs(pk_id) ON DELETE CASCADE,
+                modality TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                external_id TEXT,
+                price_usd NUMERIC(10,2),
+                currency CHAR(3) DEFAULT 'USD',
+                duration_minutes INT,
+                transfers INT,
+                depart_at TIMESTAMPTZ,
+                arrive_at TIMESTAMPTZ,
+                summary TEXT,
+                deep_link TEXT,
+                data JSONB NOT NULL DEFAULT '{}'::jsonb,
+                first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_price_usd NUMERIC(10,2),
+                price_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+                is_stale BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_options_unique
+            ON crab.transport_options (leg_id, modality, provider, COALESCE(external_id, ''))
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transport_options_leg_price ON crab.transport_options(leg_id, price_usd) WHERE NOT is_stale")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transport_options_leg_modality ON crab.transport_options(leg_id, modality, price_usd) WHERE NOT is_stale")
+
+        # Per-(leg, modality) hunt tracker — drives legs-to-hunt cadence logic
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS crab.leg_hunts (
+                pk_id BIGSERIAL PRIMARY KEY,
+                leg_id BIGINT NOT NULL REFERENCES crab.trip_legs(pk_id) ON DELETE CASCADE,
+                modality TEXT NOT NULL,
+                provider TEXT,
+                last_hunted_at TIMESTAMPTZ,
+                last_ok_at TIMESTAMPTZ,
+                last_error TEXT,
+                hunt_count INT NOT NULL DEFAULT 0
+            )
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_leg_hunts_unique
+            ON crab.leg_hunts (leg_id, modality, COALESCE(provider, ''))
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_leg_hunts_due ON crab.leg_hunts(last_hunted_at NULLS FIRST)")
+
         for col, col_type, default in [
             ('home_airport', 'VARCHAR(10)', None),
             ('is_flexible', 'BOOLEAN', 'FALSE'),

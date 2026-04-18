@@ -42,6 +42,88 @@ WATCH_RESULT_ALLOWED_FIELDS = {
     'nights', 'rating',
 }
 
+# ─── Modality-agnostic hunting caps (for /transport-options) ───
+TRANSPORT_MAX_PAYLOAD_BYTES = 100_000
+TRANSPORT_MAX_OPTIONS_PER_POST = 200
+TRANSPORT_PER_LEG_HOURLY_CAP = 60  # across all modalities/providers
+ALLOWED_MODALITIES = {
+    'flight', 'train', 'bus', 'drive', 'rental_car',
+    'rideshare', 'ferry', 'transfer', 'bike', 'walk', 'multimodal',
+}
+TRANSPORT_OPTION_ALLOWED_FIELDS = {
+    'modality', 'provider', 'external_id', 'price_usd', 'currency',
+    'duration_minutes', 'transfers', 'depart_at', 'arrive_at',
+    'summary', 'deep_link', 'data',
+}
+
+# Cadence tiers — controls how often each modality gets re-hunted.
+# Crab decides what's due based on (leg, modality).last_hunted_at.
+# OpenClaw just asks "what's due?" and obeys.
+HUNT_CADENCES = {
+    # cadence label: {modality: min_seconds_between_hunts}
+    'fast':  {'flight': 300, 'rideshare': 300},                           # 5 min
+    'warm':  {'flight': 3600, 'rideshare': 3600, 'transfer': 3600},       # 1 hr
+    'slow':  {'train': 21600, 'bus': 21600, 'ferry': 21600,               # 6 hr
+              'rental_car': 21600, 'multimodal': 21600,
+              'drive': 86400, 'bike': 86400, 'walk': 86400},
+    'daily': {m: 0 for m in [                                             # all, daily
+        'flight', 'train', 'bus', 'drive', 'rental_car',
+        'rideshare', 'ferry', 'transfer', 'bike', 'walk', 'multimodal',
+    ]},
+}
+LEGS_TO_HUNT_MAX = 100
+
+
+def _sanitize_transport_option(o):
+    """Strip to allowlist; coerce + validate. Returns None if unusable."""
+    if not isinstance(o, dict):
+        return None
+    clean = {k: v for k, v in o.items() if k in TRANSPORT_OPTION_ALLOWED_FIELDS}
+    mod = str(clean.get('modality') or '').strip().lower()
+    if mod not in ALLOWED_MODALITIES:
+        return None
+    clean['modality'] = mod
+    prov = str(clean.get('provider') or '').strip()
+    if not prov or len(prov) > 60:
+        return None
+    clean['provider'] = prov[:60]
+    if 'external_id' in clean and clean['external_id'] is not None:
+        clean['external_id'] = str(clean['external_id'])[:200]
+    if 'price_usd' in clean and clean['price_usd'] is not None:
+        try:
+            p = float(clean['price_usd'])
+        except (TypeError, ValueError):
+            return None
+        if p < 0 or p > 100_000:
+            return None
+        clean['price_usd'] = p
+    for k in ('duration_minutes', 'transfers'):
+        if k in clean and clean[k] is not None:
+            try:
+                clean[k] = int(clean[k])
+            except (TypeError, ValueError):
+                clean.pop(k, None)
+    cur = str(clean.get('currency') or 'USD')[:3].upper()
+    clean['currency'] = cur if len(cur) == 3 else 'USD'
+    for k in ('summary',):
+        if k in clean and clean[k] is not None:
+            clean[k] = str(clean[k])[:400]
+    url = clean.get('deep_link')
+    if url is not None:
+        if not isinstance(url, str) or not url.startswith(('http://', 'https://')) or len(url) > 2000:
+            clean['deep_link'] = None
+    # data is a free jsonb bag but must be a dict and not huge
+    d = clean.get('data')
+    if d is None:
+        clean['data'] = {}
+    elif not isinstance(d, dict):
+        clean['data'] = {}
+    else:
+        import json as _j
+        if len(_j.dumps(d, default=str)) > 8000:
+            clean['data'] = {}
+    return clean
+
 
 def _readonly_mode():
     """Kill switch: if CRAB_OPENCRAB_READONLY=='on', block all OpenCrab writes."""
@@ -352,8 +434,7 @@ def opencrab_watch_results():
     if _readonly_mode():
         return jsonify({'error': 'opencrab writes frozen (CRAB_OPENCRAB_READONLY=on)'}), 503
 
-    raw = request.get_data(cache=False) or b''
-    if len(raw) > WATCH_RESULTS_MAX_PAYLOAD_BYTES:
+    if (request.content_length or 0) > WATCH_RESULTS_MAX_PAYLOAD_BYTES:
         return jsonify({'error': 'payload too large',
                         'max_bytes': WATCH_RESULTS_MAX_PAYLOAD_BYTES}), 413
 
@@ -450,15 +531,24 @@ def opencrab_watch_results():
                 WHERE pk_id = %s
             """, (_json.dumps(merge), now, watch_id))
 
-        # Also append to price_history if we got a new cheapest
+        # Append to watch_history in a savepoint — its failure must never
+        # poison the main UPDATE transaction.
         if cheapest:
             try:
+                cur.execute("SAVEPOINT hist")
                 cur.execute("""
-                    INSERT INTO crab.price_history (watch_id, price_usd, source, observed_at)
-                    VALUES (%s, %s, %s, %s)
-                """, (watch_id, cheapest['price_usd'], cheapest.get('source', 'opencrab'), now))
+                    INSERT INTO crab.watch_history (watch_id, price_usd, source, deep_link, data)
+                    VALUES (%s, %s, %s, %s, %s::jsonb)
+                """, (watch_id, cheapest['price_usd'], cheapest.get('source', 'opencrab'),
+                      cheapest.get('deep_link') or cheapest.get('url'),
+                      _json.dumps(cheapest)))
+                cur.execute("RELEASE SAVEPOINT hist")
             except Exception as e:
-                logger.debug(f"price_history insert skipped: {e}")
+                logger.debug(f"watch_history insert skipped: {e}")
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT hist")
+                except Exception:
+                    pass
 
         conn.commit()
     finally:
@@ -472,6 +562,316 @@ def opencrab_watch_results():
         'sources': len(by_source),
         'dropped': dropped,
         'cheapest_price_usd': cheapest['price_usd'] if cheapest else None,
+    }), 200
+
+
+@bp.route('/api/opencrab/transport-options', methods=['POST'])
+@bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
+def opencrab_transport_options():
+    """VPS writes hunted A→B options for a (leg, modality, provider) combo.
+
+    Least-privilege contract — same guardrails as /watch-results, extended for
+    the modality-agnostic schema:
+      - UPSERT only into crab.transport_options. Never touches trip_legs ownership
+        fields (plan_id, member_id, origin/destination/dates).
+      - UNIQUE key (leg_id, modality, provider, external_id) → idempotent replay.
+      - Options in payload for (leg, modality, provider) replace prior rows: any
+        existing option NOT in this payload gets is_stale=TRUE (never deleted —
+        historical prices stay queryable).
+      - price_history auto-appends on price change.
+      - Payload + per-post option count + per-leg hourly write cap.
+      - Frozen globally via CRAB_OPENCRAB_READONLY=on.
+    """
+    if _readonly_mode():
+        return jsonify({'error': 'opencrab writes frozen (CRAB_OPENCRAB_READONLY=on)'}), 503
+
+    if (request.content_length or 0) > TRANSPORT_MAX_PAYLOAD_BYTES:
+        return jsonify({'error': 'payload too large',
+                        'max_bytes': TRANSPORT_MAX_PAYLOAD_BYTES}), 413
+
+    body = request.get_json(silent=True) or {}
+    leg_id = body.get('leg_id')
+    modality = (body.get('modality') or '').strip().lower()
+    provider = (body.get('provider') or '').strip()
+    options_in = body.get('options') or []
+
+    if not isinstance(leg_id, int) or leg_id <= 0:
+        return jsonify({'error': 'leg_id (positive int) required'}), 400
+    if modality not in ALLOWED_MODALITIES:
+        return jsonify({'error': 'modality not allowed', 'allowed': sorted(ALLOWED_MODALITIES)}), 400
+    if not provider or len(provider) > 60:
+        return jsonify({'error': 'provider required (<=60 chars)'}), 400
+    if not isinstance(options_in, list):
+        return jsonify({'error': 'options must be a list'}), 400
+    if len(options_in) > TRANSPORT_MAX_OPTIONS_PER_POST:
+        return jsonify({'error': 'too many options',
+                        'max': TRANSPORT_MAX_OPTIONS_PER_POST,
+                        'got': len(options_in)}), 413
+
+    # Force every option's modality+provider to match the header — OpenClaw
+    # can't smuggle in other modalities via the batch body.
+    cleaned = []
+    dropped = 0
+    for raw in options_in:
+        if not isinstance(raw, dict):
+            dropped += 1
+            continue
+        raw = {**raw, 'modality': modality, 'provider': provider}
+        c = _sanitize_transport_option(raw)
+        if c is None:
+            dropped += 1
+            continue
+        cleaned.append(c)
+
+    from utilities.postgres_utils import get_db_connection
+    import json as _json
+    from datetime import datetime, timezone, timedelta
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+
+        # Validate leg exists + fetch plan_id for response
+        cur.execute("""
+            SELECT pk_id, plan_id, status FROM crab.trip_legs WHERE pk_id = %s
+        """, (leg_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'leg not found'}), 404
+        _, plan_id_for_leg, leg_status = row
+
+        # Per-leg hourly rate cap (across all modalities/providers)
+        cur.execute("""
+            SELECT COUNT(*) FROM crab.leg_hunts
+            WHERE leg_id = %s AND last_hunted_at > NOW() - INTERVAL '1 hour'
+        """, (leg_id,))
+        recent_hunts = int(cur.fetchone()[0] or 0)
+        if recent_hunts >= TRANSPORT_PER_LEG_HOURLY_CAP:
+            return jsonify({
+                'error': 'per-leg hourly hunt cap hit',
+                'cap': TRANSPORT_PER_LEG_HOURLY_CAP,
+            }), 429
+
+        now = datetime.now(timezone.utc)
+        inserted = updated = unchanged = 0
+
+        # Existing rows for this (leg, modality, provider) — used for delta +
+        # staleness of anything not in this payload.
+        cur.execute("""
+            SELECT pk_id, COALESCE(external_id, ''), price_usd, price_history
+            FROM crab.transport_options
+            WHERE leg_id = %s AND modality = %s AND provider = %s
+        """, (leg_id, modality, provider))
+        existing_by_ext = {r[1]: {'pk_id': r[0], 'price_usd': r[2], 'history': r[3] or []}
+                           for r in cur.fetchall()}
+
+        seen_ext_ids = set()
+        for o in cleaned:
+            ext = o.get('external_id') or ''
+            seen_ext_ids.add(ext)
+            price = o.get('price_usd')
+            prev = existing_by_ext.get(ext)
+
+            # Compute price_history delta — append if price changed (or first observation with a price).
+            new_history_entry = None
+            if price is not None:
+                if prev is None:
+                    new_history_entry = {'at': now.isoformat(), 'price_usd': price}
+                elif prev['price_usd'] is None or float(prev['price_usd']) != price:
+                    new_history_entry = {'at': now.isoformat(), 'price_usd': price}
+
+            cur.execute("""
+                INSERT INTO crab.transport_options
+                    (leg_id, modality, provider, external_id, price_usd, currency,
+                     duration_minutes, transfers, depart_at, arrive_at,
+                     summary, deep_link, data,
+                     first_seen_at, last_seen_at, last_price_usd,
+                     price_history, is_stale)
+                VALUES (%s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s::jsonb,
+                        %s, %s, NULL,
+                        %s::jsonb, FALSE)
+                ON CONFLICT (leg_id, modality, provider, COALESCE(external_id, ''))
+                DO UPDATE SET
+                    price_usd       = EXCLUDED.price_usd,
+                    currency        = EXCLUDED.currency,
+                    duration_minutes= EXCLUDED.duration_minutes,
+                    transfers       = EXCLUDED.transfers,
+                    depart_at       = EXCLUDED.depart_at,
+                    arrive_at       = EXCLUDED.arrive_at,
+                    summary         = EXCLUDED.summary,
+                    deep_link       = EXCLUDED.deep_link,
+                    data            = EXCLUDED.data,
+                    last_seen_at    = EXCLUDED.last_seen_at,
+                    last_price_usd  = crab.transport_options.price_usd,
+                    price_history   = CASE
+                        WHEN %s::jsonb IS NULL THEN crab.transport_options.price_history
+                        ELSE crab.transport_options.price_history || %s::jsonb
+                    END,
+                    is_stale        = FALSE
+                RETURNING (xmax = 0) AS inserted
+            """, (
+                leg_id, modality, provider, o.get('external_id'),
+                price, o.get('currency', 'USD'),
+                o.get('duration_minutes'), o.get('transfers'),
+                o.get('depart_at'), o.get('arrive_at'),
+                o.get('summary'), o.get('deep_link'),
+                _json.dumps(o.get('data') or {}),
+                now, now,
+                _json.dumps([new_history_entry] if new_history_entry else []),
+                # ON CONFLICT path history-append args:
+                _json.dumps([new_history_entry]) if new_history_entry else None,
+                _json.dumps([new_history_entry]) if new_history_entry else None,
+            ))
+            was_insert = cur.fetchone()[0]
+            if was_insert:
+                inserted += 1
+            elif new_history_entry is not None:
+                updated += 1
+            else:
+                unchanged += 1
+
+        # Mark options not in this payload as stale for this (leg, modality, provider)
+        stale_marked = 0
+        if existing_by_ext:
+            to_stale = [ext for ext in existing_by_ext.keys() if ext not in seen_ext_ids]
+            if to_stale:
+                cur.execute("""
+                    UPDATE crab.transport_options
+                    SET is_stale = TRUE
+                    WHERE leg_id = %s AND modality = %s AND provider = %s
+                      AND COALESCE(external_id, '') = ANY(%s)
+                """, (leg_id, modality, provider, to_stale))
+                stale_marked = cur.rowcount
+
+        # Update leg_hunts tracker
+        cur.execute("""
+            INSERT INTO crab.leg_hunts (leg_id, modality, provider, last_hunted_at, last_ok_at, hunt_count)
+            VALUES (%s, %s, %s, %s, %s, 1)
+            ON CONFLICT (leg_id, modality, COALESCE(provider, ''))
+            DO UPDATE SET
+                last_hunted_at = EXCLUDED.last_hunted_at,
+                last_ok_at     = EXCLUDED.last_ok_at,
+                last_error     = NULL,
+                hunt_count     = crab.leg_hunts.hunt_count + 1
+        """, (leg_id, modality, provider, now, now))
+
+        # Bump trip_legs.last_hunted_at + baselined_at
+        cur.execute("""
+            UPDATE crab.trip_legs
+            SET last_hunted_at = %s,
+                baselined_at   = COALESCE(baselined_at, %s),
+                updated_at     = %s
+            WHERE pk_id = %s
+        """, (now, now, now, leg_id))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        'ok': True,
+        'leg_id': leg_id,
+        'plan_id': str(plan_id_for_leg),
+        'modality': modality,
+        'provider': provider,
+        'accepted': len(cleaned),
+        'dropped': dropped,
+        'inserted': inserted,
+        'updated': updated,
+        'unchanged': unchanged,
+        'stale_marked': stale_marked,
+    }), 200
+
+
+@bp.route('/api/opencrab/legs-to-hunt', methods=['GET'])
+@bearer_auth_required('CRAB_OPENCRAB_BEARER_TOKEN')
+def opencrab_legs_to_hunt():
+    """Discovery endpoint — returns which legs + modalities are due to hunt.
+
+    OpenClaw asks, crab decides. OpenClaw cannot see or pick legs that
+    aren't active, and cannot pick modalities that aren't due per the
+    cadence rules here. Rate governance is enforced by omission.
+
+    Query params:
+        cadence  'fast' | 'warm' | 'slow' | 'daily'  (default 'daily')
+        limit    int, default 40, max LEGS_TO_HUNT_MAX
+    """
+    cadence = (request.args.get('cadence') or 'daily').strip().lower()
+    if cadence not in HUNT_CADENCES:
+        return jsonify({'error': 'unknown cadence',
+                        'allowed': list(HUNT_CADENCES.keys())}), 400
+    rules = HUNT_CADENCES[cadence]
+    try:
+        limit = max(1, min(int(request.args.get('limit') or 40), LEGS_TO_HUNT_MAX))
+    except (TypeError, ValueError):
+        limit = 40
+
+    from utilities.postgres_utils import get_db_connection
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        # Only active legs where trip date is still in the future (or unset).
+        cur.execute("""
+            SELECT l.pk_id, l.plan_id, l.member_id,
+                   l.origin, l.origin_kind, l.destination, l.destination_kind,
+                   l.depart_window_start, l.depart_window_end, l.pax,
+                   l.baselined_at, l.last_hunted_at
+            FROM crab.trip_legs l
+            WHERE l.status = 'active'
+              AND (l.depart_window_start IS NULL
+                   OR l.depart_window_start >= CURRENT_DATE)
+            ORDER BY l.last_hunted_at NULLS FIRST, l.pk_id
+            LIMIT %s
+        """, (limit,))
+        legs = cur.fetchall()
+
+        out = []
+        for (leg_id, plan_id, member_id, origin, origin_kind, destination,
+             destination_kind, dstart, dend, pax,
+             baselined_at, last_hunted_at) in legs:
+
+            # Per-modality due check via leg_hunts
+            cur.execute("""
+                SELECT modality, last_hunted_at
+                FROM crab.leg_hunts
+                WHERE leg_id = %s
+            """, (leg_id,))
+            last_by_mod = {m: lh for (m, lh) in cur.fetchall()}
+
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            due = []
+            for mod, min_secs in rules.items():
+                lh = last_by_mod.get(mod)
+                if lh is None or (now - lh).total_seconds() >= min_secs:
+                    due.append(mod)
+            if not due:
+                continue
+
+            out.append({
+                'leg_id': leg_id,
+                'plan_id': str(plan_id),
+                'member_id': member_id,
+                'origin': origin,
+                'origin_kind': origin_kind,
+                'destination': destination,
+                'destination_kind': destination_kind,
+                'depart_window_start': dstart.isoformat() if dstart else None,
+                'depart_window_end': dend.isoformat() if dend else None,
+                'pax': pax,
+                'baselined': baselined_at is not None,
+                'due_modalities': sorted(due),
+            })
+    finally:
+        conn.close()
+
+    return jsonify({
+        'cadence': cadence,
+        'count': len(out),
+        'legs': out,
+        'allowed_modalities': sorted(ALLOWED_MODALITIES),
     }), 200
 
 
@@ -503,5 +903,12 @@ def opencrab_status():
             'max_sources': WATCH_RESULTS_MAX_SOURCES,
             'per_watch_hourly_cap': WATCH_RESULTS_PER_WATCH_HOURLY_CAP,
         },
+        'transport_options_caps': {
+            'max_payload_bytes': TRANSPORT_MAX_PAYLOAD_BYTES,
+            'max_options_per_post': TRANSPORT_MAX_OPTIONS_PER_POST,
+            'per_leg_hourly_cap': TRANSPORT_PER_LEG_HOURLY_CAP,
+            'allowed_modalities': sorted(ALLOWED_MODALITIES),
+        },
+        'hunt_cadences': {k: sorted(v.keys()) for k, v in HUNT_CADENCES.items()},
         'timestamp': datetime.utcnow().isoformat() + 'Z',
     }), 200
