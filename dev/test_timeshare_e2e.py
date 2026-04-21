@@ -35,7 +35,7 @@ from utilities.postgres_utils import get_db_connection
 
 
 PROD_URL = "https://crab.travel"
-TIMEOUT = 15
+TIMEOUT = 60  # App Engine cold starts can run 15-25s right after a deploy
 
 ANDY_USER_ID = 1
 ANDY_EMAIL = "andy.tillo@gmail.com"
