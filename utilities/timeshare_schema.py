@@ -361,6 +361,10 @@ def _ensure_ii_catalog(cur):
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_area ON crab.ii_resorts(area_id)")
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_rating ON crab.ii_resorts(rating_overall)")
 
+    # Widen check_in_day — `Friday, Saturday, Sunday` alone is 24 chars, and
+    # many resorts list all 7 days. Original VARCHAR(20) was too tight.
+    _run(cur, "ALTER TABLE crab.ii_resorts ALTER COLUMN check_in_day TYPE VARCHAR(200)")
+
     # Phase 8a — diff tracking + crawl history. Every ii_* row gets a content
     # hash so crawls can tell new/changed/unchanged without a deep compare.
     for t in ('ii_regions', 'ii_areas', 'ii_resorts'):

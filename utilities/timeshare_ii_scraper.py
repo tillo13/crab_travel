@@ -470,7 +470,9 @@ def process_next(max_regions: int = 1):
 
 
 def _crawl_region(cur, region_code, region_name, run_id):
-    """Full walk of one region. Caller owns the connection."""
+    """Full walk of one region. Caller owns the connection. Each area and
+    each resort is wrapped in its own SAVEPOINT so a failure on one row
+    doesn't poison the whole region's transaction."""
     new = updated = unchanged = errors = 0
     try:
         cur.execute("SELECT pk_id FROM crab.ii_regions WHERE ii_code = %s", (region_code,))
@@ -478,27 +480,41 @@ def _crawl_region(cur, region_code, region_name, run_id):
 
         areas = fetch_areas(region_code)
         for area in areas:
+            cur.execute("SAVEPOINT sp_area")
             try:
                 area_pk_id = upsert_area(cur, area, region_pk_id, run_id)
-                resorts = fetch_resorts_in_area(area['ii_code'])
-                for stub in resorts:
-                    try:
-                        detail = fetch_resort_detail(stub['ii_code'])
-                        if not detail.get('name'):
-                            detail['name'] = stub['name']  # fallback if title parse fails
-                        result = upsert_resort(cur, detail, area_pk_id, run_id)
-                        if result == 'new':
-                            new += 1
-                        elif result == 'updated':
-                            updated += 1
-                        else:
-                            unchanged += 1
-                    except Exception as e:
-                        logger.warning(f"resort {stub['ii_code']} failed: {e}")
-                        errors += 1
+                cur.execute("RELEASE SAVEPOINT sp_area")
             except Exception as e:
                 logger.warning(f"area {area['ii_code']} failed: {e}")
+                cur.execute("ROLLBACK TO SAVEPOINT sp_area")
                 errors += 1
+                continue
+
+            try:
+                resorts = fetch_resorts_in_area(area['ii_code'])
+            except Exception as e:
+                logger.warning(f"list resorts for area {area['ii_code']} failed: {e}")
+                errors += 1
+                continue
+
+            for stub in resorts:
+                cur.execute("SAVEPOINT sp_resort")
+                try:
+                    detail = fetch_resort_detail(stub['ii_code'])
+                    if not detail.get('name'):
+                        detail['name'] = stub['name']  # fallback if title parse fails
+                    result = upsert_resort(cur, detail, area_pk_id, run_id)
+                    cur.execute("RELEASE SAVEPOINT sp_resort")
+                    if result == 'new':
+                        new += 1
+                    elif result == 'updated':
+                        updated += 1
+                    else:
+                        unchanged += 1
+                except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_resort")
+                    logger.warning(f"resort {stub['ii_code']} failed: {e}")
+                    errors += 1
     except Exception as e:
         logger.exception(f"region {region_code} ({region_name}) failed: {e}")
         errors += 1
