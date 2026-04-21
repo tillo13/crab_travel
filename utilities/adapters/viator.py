@@ -60,7 +60,11 @@ class ViatorAdapter(TravelAdapter):
             logger.info(f"🎟️  Viator activities {destination}: {len(results)} results")
 
         except Exception as e:
-            logger.warning(f"⚠️  Viator activities failed: {e}")
+            err = str(e)
+            if '404' in err or '400' in err:
+                logger.info(f"ℹ️   Viator no destination-match for {destination!r} ({err[:80]})")
+            else:
+                logger.warning(f"⚠️  Viator activities failed: {e}")
 
         return results
 

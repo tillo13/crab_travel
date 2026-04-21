@@ -88,7 +88,12 @@ class TravelpayoutsAdapter(TravelAdapter):
 
             logger.info(f"✈️  Travelpayouts flights {origin}→{destination}: {len(results)} results")
         except Exception as e:
-            logger.warning(f"⚠️  Travelpayouts flights failed: {e}")
+            # 400/404 on free-text destinations are expected. Keep other errors loud.
+            err = str(e)
+            if '400' in err or '404' in err:
+                logger.info(f"ℹ️   Travelpayouts flights no-match for {origin}→{destination} ({err[:80]})")
+            else:
+                logger.warning(f"⚠️  Travelpayouts flights failed: {e}")
         return results
 
     def _flight_link(self, origin, destination, depart_date, return_date, passengers):
@@ -192,7 +197,13 @@ class TravelpayoutsAdapter(TravelAdapter):
 
             logger.info(f"🏨  Travelpayouts hotels {destination}: {len(results)} results")
         except Exception as e:
-            logger.warning(f"⚠️  Travelpayouts hotels failed: {e}")
+            # 404s on the lookup endpoint are a known, expected failure mode
+            # for free-text destination names (it wants IATA codes). Keep
+            # other errors at WARNING so real outages still surface.
+            if '404' in str(e):
+                logger.info(f"ℹ️   Travelpayouts hotels no-match for {destination!r} (404 — expected for free-text destinations)")
+            else:
+                logger.warning(f"⚠️  Travelpayouts hotels failed: {e}")
         return results
 
     def _hotel_link(self, destination, checkin, checkout, guests):

@@ -73,7 +73,13 @@ class LiteAPIAdapter(TravelAdapter):
             logger.info(f"🏨  LiteAPI hotels {destination}: {len(results)} results")
 
         except Exception as e:
-            logger.warning(f"⚠️  LiteAPI hotels failed: {e}")
+            err = str(e)
+            # Sandbox commonly returns empty or unparseable bodies for
+            # future dates — demote to info. Real 5xx / auth errors stay loud.
+            if 'Expecting value' in err or '404' in err:
+                logger.info(f"ℹ️   LiteAPI no results for {destination!r} ({err[:80]})")
+            else:
+                logger.warning(f"⚠️  LiteAPI hotels failed: {e}")
 
         return results
 
