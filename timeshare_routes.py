@@ -1056,3 +1056,131 @@ def ii_catalog_sync():
 
 # Cron kick endpoint lives in tasks_routes.py (matches crab convention). It'll
 # be added when the OpenCrab-style VPS scraper is actually deployed — plan §7.1.
+
+
+# ── Phase 7: cycle plans — bridge to crab.plans ─────────────────────
+
+@bp.route('/g/<group_uuid>/cycles')
+@group_member_required()
+def cycles_list(group_uuid):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT p.plan_id, p.pk_id, p.title, p.description, p.status,
+                   p.invite_token, p.travel_window_start, p.travel_window_end,
+                   p.created_at,
+                   (SELECT COUNT(*) FROM crab.plan_members m WHERE m.plan_id = p.plan_id) AS member_count
+              FROM crab.plans p
+             WHERE p.timeshare_group_id = %s::uuid
+               AND p.plan_type = 'timeshare_cycle'
+             ORDER BY p.created_at DESC
+        """, (group_uuid,))
+        cycles = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    group_name = _get_group_name(group_uuid)
+    return render_template(
+        'timeshare/cycles/list.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='cycles',
+        cycles=cycles,
+    )
+
+
+@bp.route('/g/<group_uuid>/cycles/new', methods=['POST'])
+@group_member_required('admin')
+def cycles_new(group_uuid):
+    """Create a crab.plans row with plan_type='timeshare_cycle' bound to this
+    group. Auto-seeds plan_members from every ACCEPTED group_members row,
+    mirroring crab's own plan-creation pattern but running in a single
+    transaction so a partial create doesn't leave orphan rows behind."""
+    user = session['user']
+    title = (request.form.get('title') or '').strip()
+    description = (request.form.get('description') or '').strip() or None
+    travel_start = request.form.get('travel_window_start') or None
+    travel_end = request.form.get('travel_window_end') or None
+    timeframe = (request.form.get('timeframe') or '').strip() or None
+
+    if not title:
+        flash('Title is required (e.g. "2026 Cycle — Week 38").', 'error')
+        return redirect(url_for('timeshare.cycles_list', group_uuid=group_uuid))
+
+    invite_token = generate_token(6)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO crab.plans
+                (organizer_id, plan_type, timeshare_group_id, title,
+                 description, timeframe, invite_token,
+                 travel_window_start, travel_window_end, status)
+            VALUES (%s, 'timeshare_cycle', %s::uuid, %s, %s, %s, %s, %s, %s, 'voting')
+            RETURNING plan_id, invite_token, pk_id
+        """, (user['id'], group_uuid, title, description, timeframe,
+              invite_token, travel_start, travel_end))
+        plan = cur.fetchone()
+        plan_id = plan['plan_id']
+
+        # Seed plan_members from the group's accepted members. The organizer
+        # gets role='organizer'; everyone else gets 'member'. Each gets a
+        # fresh member_token so they can reach the plan directly.
+        cur.execute("""
+            SELECT gm.user_id, gm.email, COALESCE(u.full_name, gm.email) AS display_name
+              FROM crab.timeshare_group_members gm
+              LEFT JOIN crab.users u ON u.pk_id = gm.user_id
+             WHERE gm.group_id = %s::uuid
+               AND gm.accepted_at IS NOT NULL
+        """, (group_uuid,))
+        group_members = cur.fetchall()
+
+        for m in group_members:
+            m_token = generate_token()
+            role = 'organizer' if m['user_id'] == user['id'] else 'member'
+            cur.execute("""
+                INSERT INTO crab.plan_members
+                    (plan_id, display_name, member_token, email, user_id, role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (plan_id, m['display_name'], m_token, m['email'],
+                  m['user_id'], role))
+
+        conn.commit()
+        logger.info(
+            f"timeshare: cycle plan {plan_id} created by user {user['id']} "
+            f"for group {group_uuid} with {len(group_members)} seeded members"
+        )
+    except Exception as e:
+        conn.rollback()
+        logger.exception(f"cycles_new failed: {e}")
+        flash('Could not create the cycle — please try again.', 'error')
+        return redirect(url_for('timeshare.cycles_list', group_uuid=group_uuid))
+    finally:
+        conn.close()
+
+    return redirect(f"/to/{invite_token}")
+
+
+@bp.route('/g/<group_uuid>/cycles/<plan_id>')
+@group_member_required()
+def cycles_open(group_uuid, plan_id):
+    """Thin redirect: confirm the plan belongs to this group (scope check),
+    then bounce to crab's existing /to/<invite_token> page."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT invite_token FROM crab.plans
+             WHERE plan_id = %s::uuid
+               AND timeshare_group_id = %s::uuid
+               AND plan_type = 'timeshare_cycle'
+        """, (plan_id, group_uuid))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        abort(404)
+    return redirect(f"/to/{row[0]}")

@@ -459,9 +459,36 @@ def _ensure_plans_bridge(cur):
     _run(cur, """
         ALTER TABLE crab.plans
           ADD COLUMN IF NOT EXISTS timeshare_group_id UUID
-          REFERENCES crab.timeshare_groups(group_id)
     """)
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_plans_timeshare_group ON crab.plans(timeshare_group_id)")
+    # Ensure the FK exists with ON DELETE SET NULL (Phase 7 — earlier phases
+    # created it without an ON DELETE clause, which defaults to NO ACTION and
+    # blocks group deletion while cycle plans still reference the group).
+    # Only rewrite the constraint when its definition actually differs — the
+    # bootstrap runs on every app startup and shouldn't churn prod DDL.
+    _run(cur, """
+        DO $$
+        DECLARE
+            cur_def text;
+        BEGIN
+            SELECT pg_get_constraintdef(c.oid) INTO cur_def
+              FROM pg_constraint c
+              JOIN pg_namespace n ON c.connamespace = n.oid
+             WHERE n.nspname = 'crab'
+               AND c.conname = 'plans_timeshare_group_id_fkey';
+
+            IF cur_def IS NULL OR cur_def NOT LIKE '%ON DELETE SET NULL%' THEN
+                IF cur_def IS NOT NULL THEN
+                    ALTER TABLE crab.plans DROP CONSTRAINT plans_timeshare_group_id_fkey;
+                END IF;
+                ALTER TABLE crab.plans
+                  ADD CONSTRAINT plans_timeshare_group_id_fkey
+                  FOREIGN KEY (timeshare_group_id)
+                  REFERENCES crab.timeshare_groups(group_id)
+                  ON DELETE SET NULL;
+            END IF;
+        END $$;
+    """)
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────

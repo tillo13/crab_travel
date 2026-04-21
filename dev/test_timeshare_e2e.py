@@ -1337,6 +1337,180 @@ def test_phase6_writeback_upserts():
         conn.close()
 
 
+# ── Phase 7: cycle plans bridge ────────────────────────────────────
+
+def test_phase7_cycles_list_page(group_uuid, andy_session):
+    print("\n[51] Phase 7: /cycles list page renders empty, 404 for non-member")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/cycles", timeout=TIMEOUT)
+    assert_eq("/cycles status", r.status_code, 200)
+    assert_true("cycles page mentions 'cycle'", 'cycle' in r.text.lower())
+    assert_true("noindex", 'noindex, nofollow' in r.text)
+
+    outsider = authed_session(18)
+    r = outsider.get(f"{PROD_URL}/timeshare/g/{group_uuid}/cycles",
+                     timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("non-member on /cycles", r.status_code, 404)
+
+
+def test_phase7_non_admin_cannot_create():
+    print("\n[52] Phase 7: non-admin member cannot POST /cycles/new")
+    # User 14 (bot.sarah.kim) was accepted as 'family' in test 9
+    invitee = authed_session(INVITEE_USER_ID)
+    # We don't know the current group_uuid from the outside, so refetch it
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT g.group_id FROM crab.timeshare_groups g
+              JOIN crab.timeshare_group_members gm ON gm.group_id = g.group_id
+             WHERE gm.user_id = %s AND gm.accepted_at IS NOT NULL
+               AND g.name LIKE %s
+             ORDER BY g.created_at DESC LIMIT 1
+        """, (INVITEE_USER_ID, f"{TEST_GROUP_PREFIX}%"))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        assert_true("found test group for invitee", False,
+                    detail="skip — invitee has no active test group membership")
+        return
+    group_uuid = str(row[0])
+    r = invitee.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/cycles/new",
+        data={'title': 'Unauthorized cycle'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("non-admin /cycles/new", r.status_code, 404)
+
+
+def test_phase7_admin_creates_cycle(group_uuid, andy_session):
+    print("\n[53] Phase 7: admin creates cycle → crab.plans row + plan_members seeded + /to/<token> redirect")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/cycles/new",
+        data={
+            'title': '2026 Cycle — Week 38 (E2E)',
+            'description': 'Test cycle created by the E2E harness.',
+            'travel_window_start': '2026-09-18',
+            'travel_window_end': '2026-09-25',
+        },
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cycle create redirect", r.status_code, 302)
+    location = r.headers.get('location', '')
+    assert_true("redirects to /to/<invite_token>", location.startswith('/to/'),
+                detail=location)
+    invite_token = location.split('/to/')[-1].strip('/')
+
+    # Verify the plan row
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT plan_id, plan_type, timeshare_group_id, title, organizer_id, status
+              FROM crab.plans
+             WHERE invite_token = %s
+        """, (invite_token,))
+        prow = cur.fetchone()
+    finally:
+        conn.close()
+    assert_true("plan row created", prow is not None)
+    plan_id, plan_type, ts_group_id, title, organizer_id, status = prow
+    assert_eq("plan_type=timeshare_cycle", plan_type, 'timeshare_cycle')
+    assert_eq("timeshare_group_id matches group", str(ts_group_id), group_uuid)
+    assert_eq("organizer = Andy", organizer_id, ANDY_USER_ID)
+    assert_true("title carries through", '2026 Cycle' in title)
+
+    # Verify plan_members seeded from accepted group members.
+    # The test group has at least Andy (owner) + Sarah Kim (accepted in test 9).
+    # Other seeded members from resend tests are still pending, so they shouldn't appear.
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT user_id, email, role FROM crab.plan_members
+             WHERE plan_id = %s
+             ORDER BY pk_id ASC
+        """, (plan_id,))
+        members = cur.fetchall()
+    finally:
+        conn.close()
+    user_ids = {m[0] for m in members}
+    assert_true("Andy seeded as organizer",
+                ANDY_USER_ID in user_ids)
+    assert_true("accepted invitee (Sarah) seeded",
+                INVITEE_USER_ID in user_ids,
+                detail=f"seeded user_ids={user_ids}")
+    roles = {m[0]: m[2] for m in members}
+    assert_eq("Andy role=organizer", roles.get(ANDY_USER_ID), 'organizer')
+    assert_eq("Sarah role=member", roles.get(INVITEE_USER_ID), 'member')
+
+    # Follow the redirect — /to/<token> should load without error
+    r = andy_session.get(f"{PROD_URL}{location}", timeout=TIMEOUT)
+    assert_true(
+        "invite page loads (or redirects logged-in user to /plan)",
+        r.status_code in (200, 302),
+        detail=f"status={r.status_code}",
+    )
+    return plan_id, invite_token
+
+
+def test_phase7_cycles_open_redirect(group_uuid, andy_session, plan_id):
+    print("\n[54] Phase 7: /cycles/<plan_id> redirects to /to/<invite_token>")
+    r = andy_session.get(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/cycles/{plan_id}",
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cycles open status", r.status_code, 302)
+    assert_true("redirects to /to/",
+                '/to/' in r.headers.get('location', ''))
+
+
+def test_phase7_cross_group_cycle_access(group_uuid, andy_session, plan_id):
+    print("\n[55] Phase 7: opening cycle via wrong group UUID → 404")
+    # Create a second group owned by Andy
+    andy = authed_session(ANDY_USER_ID)
+    r = andy.post(f"{PROD_URL}/timeshare/groups/new",
+                  data={'name': f'{TEST_GROUP_PREFIX} cycle-scope {uuid.uuid4().hex[:6]}'},
+                  timeout=TIMEOUT, allow_redirects=False)
+    other_uuid = r.headers['location'].rstrip('/').split('/')[-1]
+
+    # Open the real plan via the wrong group's URL — should 404
+    r = andy_session.get(
+        f"{PROD_URL}/timeshare/g/{other_uuid}/cycles/{plan_id}",
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cross-group cycle open", r.status_code, 404)
+
+    # Cleanup the extra group inline so we stay under the group-per-day cap
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM crab.timeshare_groups WHERE group_id = %s::uuid",
+                    (other_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_phase7_cleanup_test_cycles(group_uuid):
+    print("\n[56] Phase 7: delete test cycles before group cleanup (FK allows SET NULL)")
+    # Plan rows persist beyond the group thanks to ON DELETE SET NULL. For a
+    # clean slate between test runs, hard-delete them so they don't accumulate.
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM crab.plans
+             WHERE plan_type = 'timeshare_cycle'
+               AND (timeshare_group_id = %s::uuid OR timeshare_group_id IS NULL)
+               AND title LIKE %s
+        """, (group_uuid, '%E2E%'))
+        conn.commit()
+    finally:
+        conn.close()
+    assert_true("test cycles cleaned up", True)
+
+
 def test_phase6_chat_catalog_tool(group_uuid, andy_session):
     print("\n[50] Phase 6: chatbot search_resort_catalog tool surfaces seeded resort")
     # Reset rate limit + kill switch in case a prior test left them off
@@ -1520,6 +1694,13 @@ def main():
         test_phase6_writeback_requires_bearer()
         test_phase6_writeback_upserts()
         test_phase6_chat_catalog_tool(group_uuid, andy)
+        # Phase 7 — cycle plans bridge to crab.plans
+        test_phase7_cycles_list_page(group_uuid, andy)
+        test_phase7_non_admin_cannot_create()
+        phase7_plan_id, _ = test_phase7_admin_creates_cycle(group_uuid, andy)
+        test_phase7_cycles_open_redirect(group_uuid, andy, phase7_plan_id)
+        test_phase7_cross_group_cycle_access(group_uuid, andy, phase7_plan_id)
+        test_phase7_cleanup_test_cycles(group_uuid)
     finally:
         _cleanup_phase6_catalog()
         if not args.keep:
