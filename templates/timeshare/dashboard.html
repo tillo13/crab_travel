@@ -575,6 +575,13 @@
       const data = await r.json();
       if (token !== fetchToken) return;
       state.results = data.results || [];
+      // Server may have promoted free-text like "hawaii" to a country filter.
+      // Reflect that in local state + chips so the UI explains what happened.
+      const hint = data.hint || {};
+      if (hint.promoted_to_country && state.filters.country !== hint.promoted_to_country) {
+        state.filters.country = hint.promoted_to_country;
+        refreshChipStates();
+      }
       renderResults(state.results);
       updateMap(state.results);
     } catch (e) {

@@ -99,9 +99,36 @@ def get_resort(ii_code):
 
 
 def search_resorts_rich(q=None, country=None, tier=None, min_sleeps=None, limit=300):
-    """Richer search for the /api/ii-resorts/search endpoint — matches on
-    name, area, country, or address substring; filters by country, tier,
-    min bedroom count. Returns fields the search UI needs."""
+    """Richer search for the /api/ii-resorts/search endpoint. If `q` exactly
+    (or nearly) matches a known country name, it gets promoted to the
+    country filter — so typing 'hawaii' gives 89 Hawaii resorts instead of
+    260 resorts-containing-'hawaii' scattered worldwide. Returns (rows, hint)
+    where hint describes any auto-elevation the UI should reflect."""
+    hint = {}
+    if q and not country:
+        from utilities.postgres_utils import get_db_connection
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            # Exact match or prefix match on country, case-insensitive
+            cur.execute("""
+                SELECT country FROM crab.ii_areas
+                 WHERE country IS NOT NULL
+                   AND (LOWER(country) = LOWER(%s) OR LOWER(country) LIKE LOWER(%s))
+                 GROUP BY country
+                 ORDER BY
+                   CASE WHEN LOWER(country) = LOWER(%s) THEN 0 ELSE 1 END,
+                   LENGTH(country) ASC
+                 LIMIT 1
+            """, (q, f"{q}%", q))
+            row = cur.fetchone()
+            if row:
+                country = row[0]
+                hint['promoted_to_country'] = country
+                q = None
+        finally:
+            conn.close()
+
     params = []
     clauses = ["rs.status = 'active'"]
     if q:
@@ -142,7 +169,8 @@ def search_resorts_rich(q=None, country=None, tier=None, min_sleeps=None, limit=
          LIMIT %s
     """
     params.append(limit)
-    return _fetchall(sql, tuple(params))
+    rows = _fetchall(sql, tuple(params))
+    return rows, hint
 
 
 def destination_overview(country):

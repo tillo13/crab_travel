@@ -221,10 +221,10 @@ def api_resorts_search(group_uuid):
     tier = (request.args.get('tier') or '').strip() or None
     min_sleeps = request.args.get('min_sleeps', type=int)
     limit = min(request.args.get('limit', default=200, type=int), 500)
-    results = search_resorts_rich(
+    results, hint = search_resorts_rich(
         q=q, country=country, tier=tier, min_sleeps=min_sleeps, limit=limit,
     )
-    return jsonify({'results': results, 'count': len(results)})
+    return jsonify({'results': results, 'count': len(results), 'hint': hint})
 
 
 # ── Members ─────────────────────────────────────────────────
