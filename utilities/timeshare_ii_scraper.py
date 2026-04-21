@@ -21,6 +21,7 @@ row and bumps the `updated` counter on the current scrape run.
 """
 
 import hashlib
+import html as html_module
 import json
 import logging
 import re
@@ -28,9 +29,12 @@ import time
 from typing import Optional
 
 import requests
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger('crab_travel.timeshare_ii_scraper')
+
+
+def _unescape(s):
+    return html_module.unescape(s).strip() if s else s
 
 BASE_URL = "https://www.intervalworld.com"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 crab.travel/timeshare"
@@ -62,20 +66,43 @@ def _hash(*parts) -> str:
 
 # ── Parsers ─────────────────────────────────────────────────────────
 
+# Regex-based parser — App Engine's html.parser backend chokes on II's
+# HTML 4.01 Transitional markup with tons of whitespace / comments.
+# Pure regex over href attrs is both more robust and faster here.
+# `<a\s` (whitespace after the tag name) excludes self-closing `<area>`
+# image-map elements that would otherwise swallow the next real anchor.
+_RE_REGION_ANCHOR = re.compile(
+    r'<a\s[^>]*href="[^"]*regionCode=(\d+)[^"]*"[^>]*>(.*?)</a>',
+    re.I | re.S,
+)
+_RE_AREA_ANCHOR = re.compile(
+    r'<a\s[^>]*href="[^"]*areaCode=(\d+)[^"]*"[^>]*>(.*?)</a>',
+    re.I | re.S,
+)
+_RE_RESORT_ANCHOR = re.compile(
+    r'<a\s[^>]*href="[^"]*resortCode=([A-Z0-9]+)[^"]*"[^>]*>(.*?)</a>',
+    re.I | re.S,
+)
+_RE_STRIP_TAGS = re.compile(r'<[^>]+>')
+
+
+def _clean(raw):
+    """Strip inner tags + normalize whitespace from anchor text."""
+    if not raw:
+        return ''
+    stripped = _RE_STRIP_TAGS.sub(' ', raw)
+    return _unescape(re.sub(r'\s+', ' ', stripped).strip())
+
+
 def fetch_regions():
     """Returns [{ii_code, name}, ...] — the 31 regions."""
     html = _http_get('/web/cs', {'a': '1501'})
-    soup = BeautifulSoup(html, 'html.parser')
     out = {}
-    for a in soup.find_all('a', href=re.compile(r'regionCode=\d+')):
-        m = re.search(r'regionCode=(\d+)', a['href'])
-        if not m:
-            continue
-        code = int(m.group(1))
-        name = a.get_text(strip=True)
+    for code_s, inner in _RE_REGION_ANCHOR.findall(html):
+        name = _clean(inner)
         if not name:
             continue
-        # Dedupe: same code may have multiple links; pick the longest human name
+        code = int(code_s)
         existing = out.get(code)
         if existing is None or len(name) > len(existing):
             out[code] = name
@@ -83,20 +110,15 @@ def fetch_regions():
 
 
 def fetch_areas(region_code: int):
-    """Returns [{ii_code, name, country}, ...] for one region. `country` is
-    best-effort from the area label (II labels areas like 'Hawaii, Maui' —
-    the left side is our country/parent-region proxy)."""
+    """Returns [{ii_code, name, country}, ...] for one region. II labels
+    areas like 'Hawaii, Maui' — the left side is our country/parent proxy."""
     html = _http_get('/web/cs', {'a': '1501', 'regionCode': region_code})
-    soup = BeautifulSoup(html, 'html.parser')
     out = {}
-    for a in soup.find_all('a', href=re.compile(r'areaCode=\d+')):
-        m = re.search(r'areaCode=(\d+)', a['href'])
-        if not m:
-            continue
-        code = int(m.group(1))
-        name = a.get_text(strip=True)
+    for code_s, inner in _RE_AREA_ANCHOR.findall(html):
+        name = _clean(inner)
         if not name:
             continue
+        code = int(code_s)
         existing = out.get(code)
         if existing is None or len(name) > len(existing['name']):
             country = name.split(',')[0].strip() if ',' in name else None
@@ -105,17 +127,11 @@ def fetch_areas(region_code: int):
 
 
 def fetch_resorts_in_area(area_code: int):
-    """Returns [{ii_code, name}, ...] for one area. Detail fields come from
-    fetch_resort_detail() — this page only has names + codes."""
+    """Returns [{ii_code, name}, ...] for one area."""
     html = _http_get('/web/cs', {'a': '1502', 'areaCode': area_code})
-    soup = BeautifulSoup(html, 'html.parser')
     out = {}
-    for a in soup.find_all('a', href=re.compile(r'resortCode=[A-Z0-9]+')):
-        m = re.search(r'resortCode=([A-Z0-9]+)', a['href'])
-        if not m:
-            continue
-        code = m.group(1)
-        name = a.get_text(strip=True)
+    for code, inner in _RE_RESORT_ANCHOR.findall(html):
+        name = _clean(inner)
         if not name or name.lower().startswith('resort details'):
             continue
         existing = out.get(code)
@@ -127,100 +143,104 @@ def fetch_resorts_in_area(area_code: int):
 _RE_SLEEP_NUM = re.compile(r'<span id="(bedrooms|private|total)">(\d+)</span>')
 
 
+_RE_TITLE = re.compile(r'<title[^>]*>(.*?)</title>', re.I | re.S)
+_RE_TEL = re.compile(r'href="tel:([^"]+)"', re.I)
+
+
 def fetch_resort_detail(resort_code: str):
-    """Return a dict of structural facts for one resort. Skips II's member-
-    rating section entirely — that's a later Google Places enrichment."""
+    """Return a dict of structural facts for one resort. Regex-only parser —
+    App Engine's html.parser silently returns empty finds on this HTML."""
     html = _http_get('/web/cs', {'a': '1503', 'resortCode': resort_code})
-    soup = BeautifulSoup(html, 'html.parser')
 
-    # Title → 'Interval International | Resort Directory <Name>'
-    title_tag = soup.find('title')
+    # Title: "Interval International | Resort Directory <Name>"
     name = None
-    if title_tag:
-        t = title_tag.get_text(strip=True)
-        m = re.search(r'Resort Directory\s+(.+)', t)
-        if m:
-            name = m.group(1).strip()
+    m = _RE_TITLE.search(html)
+    if m:
+        raw = _clean(m.group(1))
+        mn = re.search(r'Resort Directory\s+(.+)', raw)
+        if mn:
+            name = mn.group(1).strip()
 
-    text = soup.get_text('\n', strip=True)
-
-    def _after(marker, max_len=200):
-        idx = text.find(marker)
-        if idx < 0:
-            return None
-        # Grab the next non-empty line after the marker
-        tail = text[idx + len(marker):].lstrip('\n ').split('\n')
-        return (tail[0].strip() if tail else '')[:max_len] or None
-
-    # Sleeping capacity (embedded as three <span> values)
+    # Sleeping capacity spans
     sleep = {k: int(v) for k, v in _RE_SLEEP_NUM.findall(html)}
 
-    # Check-in days — legacy block lists a comma-separated weekday string
-    check_in_days = _after('Check-In Days')
+    # Nearest airport + Check-in days live under <h5>LABEL[possibly-junk]</h5>
+    # followed by <small>VALUE</small>. II's HTML has a known malformed tag
+    # (e.g. `<h5>Nearest Airport</strong></h5>`), so tolerate anything
+    # between the label text and the closing </h5>.
+    airport = None
+    m = re.search(
+        r'<h5>\s*Nearest Airport[^<]*(?:</[a-z]+>)?\s*</h5>\s*<small[^>]*>(.*?)</small>',
+        html, re.I | re.S,
+    )
+    if m:
+        airport = _clean(m.group(1))[:200] or None
 
-    # Nearest airport
-    airport = _after('Nearest Airport')
+    check_in_days = None
+    m = re.search(
+        r'<h5>\s*Check-In Days[^<]*(?:</[a-z]+>)?\s*</h5>\s*<small[^>]*>(.*?)</small>',
+        html, re.I | re.S,
+    )
+    if m:
+        check_in_days = _clean(m.group(1))[:200] or None
 
-    # Address + phone: look for the `resort_layout_information` block
-    # labeled "Resort Address" when present
-    address = _after('Resort Address', 400)
-
-    # Phone: II renders as a tel: link
+    # Phone via tel: link
     phone = None
-    tel = soup.find('a', href=re.compile(r'^tel:'))
-    if tel:
-        phone = tel.get_text(strip=True) or tel['href'].replace('tel:', '')
+    m = _RE_TEL.search(html)
+    if m:
+        phone = _unescape(m.group(1))
 
-    # Tier: Premier Boutique / Select / Premier
+    # Tier: Premier Boutique / Premier / Select — first match wins
     tier = None
-    for t in ('Premier Boutique Resort', 'Premier Resort', 'Select Resort'):
-        if t in html:
-            tier = t.replace(' Resort', '').replace(' Boutique', '_Boutique')
+    for label, stored in [('Premier Boutique Resort', 'Premier_Boutique'),
+                           ('Premier Resort', 'Premier'),
+                           ('Select Resort', 'Select')]:
+        if label in html:
+            tier = stored
             break
 
-    # Description: II puts the resort blurb in a paragraph with class like
-    # `resort_description` or just a long <p>. Fallback: first large <p>.
-    desc = None
-    for sel in [('div', {'class': re.compile(r'resort.*description', re.I)}),
-                ('div', {'id': re.compile(r'description', re.I)})]:
-        el = soup.find(*sel[:1], **{k: v for k, v in [sel[1].popitem()]} if sel[1] else {})
-        if el:
-            desc = el.get_text(' ', strip=True)[:2000]
-            break
-
-    # Photos: /images/_resd/jpglg/ii_<code>N.jpg (N=1..many). The detail HTML
-    # lists all available — just collect them verbatim so we don't guess.
+    # Photos: /images/_resd/jpglg/ii_<code>N.jpg (N is 1..many). Collect from
+    # actual <img src="..."> attributes so we don't hallucinate missing ones.
+    photo_re = re.compile(
+        rf'src="(/images/_resd/jpg(?:lg|md|sm)?/ii_{resort_code}\d+\.[a-z]+)"',
+        re.I,
+    )
+    seen = set()
     photos = []
-    for img in soup.find_all('img', src=re.compile(rf'/images/_resd/jpg(lg|md|sm)?/ii_{resort_code}\d+\.', re.I)):
-        src = img.get('src', '')
-        if src and src not in photos:
-            photos.append(src if src.startswith('http') else f"{BASE_URL}{src}")
+    for src in photo_re.findall(html):
+        if src in seen:
+            continue
+        seen.add(src)
+        photos.append(src if src.startswith('http') else f"{BASE_URL}{src}")
 
-    # Embedded weather — `avgTemp` / `JSONtempF` / `JSONtempC` — parse if present
+    # Description: first long paragraph-like block. Fallback: meta description.
+    desc = None
+    m = re.search(r'<meta\s+name="description"\s+content="([^"]+)"', html, re.I)
+    if m:
+        desc = _unescape(m.group(1))[:2000]
+
+    # Weather (embedded JS var) — parse if populated
     weather = None
-    m = re.search(r'var\s+JSONtempF\s*=\s*(\[[^;]*\]);', html)
+    m = re.search(r'var\s+JSONtempF\s*=\s*(\[[^;]*\])', html)
     if m and len(m.group(1)) > 5:
         try:
             weather = {'tempF': json.loads(m.group(1))}
         except Exception:
             pass
 
-    # Website (external) — often absent on the detail page; fallback to II's resort URL
-    website_url = f"{BASE_URL}/web/cs?a=1503&resortCode={resort_code}"
-
     return {
         'ii_code': resort_code,
         'name': name,
-        'address': address,
+        'address': None,       # nested block; Google Places backfills later
         'phone': phone,
-        'website': website_url,
+        'website': f"{BASE_URL}/web/cs?a=1503&resortCode={resort_code}",
         'nearest_airport': airport,
         'check_in_day': check_in_days,
         'sleeping_capacity': sleep or None,
         'description': desc,
         'photo_urls': photos or None,
         'tier': tier,
-        'amenities': None,  # deferred; structured list isn't static HTML
+        'amenities': None,
         'weather': weather,
     }
 
