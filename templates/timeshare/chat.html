@@ -1,0 +1,135 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Ask — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide">Ask the dossier</h2>
+      <p class="text-xs text-crab-sand-dim mt-0.5">Claude reads only your group's rows. Citations like <code class="text-crab-sand">[ref:maintenance_fees:42]</code> link to the fact rows.</p>
+    </div>
+  </div>
+
+  <div id="messages" class="space-y-3 mb-4 max-h-[55vh] overflow-y-auto">
+    {% for m in messages %}
+      <div class="flex {% if m.role == 'user' %}justify-end{% endif %}">
+        <div class="max-w-[85%] rounded-xl px-4 py-2.5 text-sm {% if m.role == 'user' %}bg-crab-coral/20 border border-crab-coral/30{% else %}bg-crab-navy/60 border border-white/6{% endif %} whitespace-pre-wrap">{{ m.content|e }}</div>
+      </div>
+    {% endfor %}
+    {% if not messages %}
+      <div class="text-center text-sm text-crab-sand-dim py-8">
+        Try asking: <em>what did we pay in 2022?</em> · <em>who do we know at Royal Resorts?</em> · <em>show me the II portal login</em>
+      </div>
+    {% endif %}
+  </div>
+
+  <form id="chat-form" class="flex gap-2">
+    <input id="chat-input" type="text" required maxlength="4000" autocomplete="off"
+      placeholder="Ask something about the dossier…"
+      class="flex-1 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:border-crab-coral focus:outline-none">
+    <button id="chat-send" type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors disabled:opacity-50 disabled:cursor-wait whitespace-nowrap">
+      Ask
+    </button>
+  </form>
+  <p class="text-xs text-crab-sand-dim mt-3">
+    Cap: 100 messages/day/user. Sonnet 4.6, ~$0.02 per turn. Admin can disable with <code class="text-crab-sand">settings.chat_enabled=false</code>.
+  </p>
+</div>
+
+<script>
+(function () {
+  const GROUP_UUID = {{ group_uuid|tojson }};
+  const form = document.getElementById('chat-form');
+  const input = document.getElementById('chat-input');
+  const send = document.getElementById('chat-send');
+  const messages = document.getElementById('messages');
+  const CITATION_RE = /\[ref:([a-z_]+):(\d+)\]/g;
+  const FACT_VIEW = {
+    'properties':      'property',
+    'contracts':       'property',
+    'people':          'people',
+    'maintenance_fees':'finances',
+    'loan_payments':   'finances',
+    'trips':           'trips',
+    'portals':         'portals',
+    'contacts':        'contacts',
+    'document_refs':   'documents',
+    'timeline_events': 'timeline',
+  };
+
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderCitations(html) {
+    return html.replace(CITATION_RE, (m, table, pk) => {
+      const view = FACT_VIEW[table] || '';
+      const href = view ? `/timeshare/g/${GROUP_UUID}/${view}` : '#';
+      return `<a href="${href}" class="text-crab-coral underline decoration-dotted">${escapeHtml(table)}#${pk}</a>`;
+    });
+  }
+
+  function appendMessage(role, text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex' + (role === 'user' ? ' justify-end' : '');
+    const bubble = document.createElement('div');
+    bubble.className = 'max-w-[85%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ' +
+      (role === 'user'
+        ? 'bg-crab-coral/20 border border-crab-coral/30'
+        : 'bg-crab-navy/60 border border-white/6');
+    bubble.innerHTML = renderCitations(escapeHtml(text));
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return bubble;
+  }
+
+  function appendPending() {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex';
+    const bubble = document.createElement('div');
+    bubble.className = 'max-w-[85%] rounded-xl px-4 py-2.5 text-sm bg-crab-navy/60 border border-white/6 text-crab-sand-dim italic';
+    bubble.textContent = 'thinking…';
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return wrap;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    appendMessage('user', text);
+    input.value = '';
+    send.disabled = true;
+    const pending = appendPending();
+    try {
+      const r = await fetch(`/timeshare/g/${GROUP_UUID}/api/chat/send`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text}),
+      });
+      const data = await r.json();
+      pending.remove();
+      if (r.ok) {
+        appendMessage('assistant', data.assistant_text || '(no answer)');
+      } else {
+        appendMessage('assistant', data.error || `Error ${r.status}`);
+      }
+    } catch (err) {
+      pending.remove();
+      appendMessage('assistant', 'Network error — please try again.');
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  });
+
+  // Scroll to bottom on load
+  messages.scrollTop = messages.scrollHeight;
+})();
+</script>
+{% endblock %}

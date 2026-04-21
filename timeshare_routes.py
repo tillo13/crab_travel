@@ -23,7 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import psycopg2.extras
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from route_helpers import login_required
 from utilities.invite_utils import generate_token
@@ -896,3 +896,59 @@ def ingest_drive(group_uuid):
         return redirect(url_for('timeshare.ingest_job_review',
                                  group_uuid=group_uuid, job_id=created_jobs[0]))
     return redirect(url_for('timeshare.ingest_jobs', group_uuid=group_uuid))
+
+
+# ── Phase 5: chatbot ────────────────────────────────────────────────
+
+@bp.route('/g/<group_uuid>/ask')
+@group_member_required()
+def ask_page(group_uuid):
+    from utilities.timeshare_chat import get_or_create_conversation, load_message_history
+    user = session['user']
+    group_name = _get_group_name(group_uuid)
+    conv_id = get_or_create_conversation(group_uuid, user['id'])
+    messages = load_message_history(conv_id, limit=50)
+    return render_template(
+        'timeshare/chat.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='ask',
+        conversation_id=conv_id,
+        messages=messages,
+    )
+
+
+@bp.route('/g/<group_uuid>/api/chat/send', methods=['POST'])
+@group_member_required()
+def chat_send(group_uuid):
+    from utilities.timeshare_chat import ask, ChatError
+    user = session['user']
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get('message') or '').strip()
+    if not text:
+        return jsonify({'error': 'Message is empty.'}), 400
+    if len(text) > 4000:
+        return jsonify({'error': 'Message too long (max 4000 chars).'}), 400
+
+    group_name = _get_group_name(group_uuid)
+    try:
+        result = ask(
+            group_id=group_uuid,
+            user_id=user['id'],
+            user_email=user['email'],
+            group_name=group_name,
+            user_message=text,
+        )
+    except ChatError as e:
+        return jsonify({'error': str(e)}), e.status
+    except Exception as e:
+        logger.exception(f"chat_send failed: {e}")
+        return jsonify({'error': 'Chat service unavailable.'}), 500
+    return jsonify({
+        'assistant_text': result['assistant_text'],
+        'cited_fact_refs': result['cited_fact_refs'],
+        'tool_calls_made': len(result['tool_calls']),
+        'cost_usd': result['cost_usd'],
+    })

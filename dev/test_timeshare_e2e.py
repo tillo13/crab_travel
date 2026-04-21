@@ -943,6 +943,224 @@ def test_phase4_non_member_blocked(group_uuid):
     assert_eq("non-member /ingest/drive", r.status_code, 404)
 
 
+# ── Phase 5: chatbot ───────────────────────────────────────────────
+
+CHAT_TIMEOUT = 180
+
+
+def test_phase5_ask_page_renders(group_uuid, andy_session):
+    print("\n[37] Phase 5: /ask page renders 200 for member, 404 for non-member")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ask", timeout=TIMEOUT)
+    assert_eq("ask page status", r.status_code, 200)
+    assert_true("ask page has chat form", 'chat-form' in r.text)
+    assert_true("ask page has noindex", 'noindex, nofollow' in r.text)
+
+    outsider = authed_session(18)
+    r = outsider.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ask",
+                     timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("non-member on /ask", r.status_code, 404)
+
+
+def test_phase5_empty_message(group_uuid, andy_session):
+    print("\n[38] Phase 5: empty message → 400")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': '   '},
+        timeout=TIMEOUT,
+    )
+    assert_eq("empty message status", r.status_code, 400)
+
+
+def test_phase5_ask_fee_question(group_uuid, andy_session):
+    print("\n[39] Phase 5: ask about 2022 fee → answer cites maintenance_fees")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': 'What did we pay for the 2022 maintenance fee?'},
+        timeout=CHAT_TIMEOUT,
+    )
+    assert_eq("chat/send status", r.status_code, 200)
+    data = r.json()
+    answer = (data.get('assistant_text') or '').lower()
+    assert_true("answer mentions $1,234", ('1,234' in answer or '1234' in answer),
+                detail=f"answer={answer[:200]}")
+    assert_true("tool was called", (data.get('tool_calls_made') or 0) >= 1)
+    assert_true("cost > 0", float(data.get('cost_usd') or 0) > 0)
+
+    # Verify the assistant message landed in the DB with tool_calls populated
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT role, tool_calls IS NOT NULL, cost_usd
+              FROM crab.timeshare_chat_messages m
+              JOIN crab.timeshare_chat_conversations c ON c.pk_id = m.conversation_id
+             WHERE c.group_id = %s::uuid AND c.user_id = %s
+             ORDER BY m.pk_id DESC LIMIT 2
+        """, (group_uuid, ANDY_USER_ID))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    assert_eq("latest 2 messages (most-recent first): assistant role", rows[0][0], 'assistant')
+    assert_true("assistant message has tool_calls", rows[0][1])
+    assert_true("assistant message cost recorded",
+                rows[0][2] is not None and float(rows[0][2]) > 0)
+    assert_eq("prior message is user", rows[1][0], 'user')
+
+
+def test_phase5_chat_daily_count_incremented(group_uuid, andy_session):
+    print("\n[40] Phase 5: chat_daily_count incremented on group_members")
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT chat_daily_count FROM crab.timeshare_group_members
+             WHERE group_id = %s::uuid AND user_id = %s
+        """, (group_uuid, ANDY_USER_ID))
+        count_before = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': 'Hello.'},
+        timeout=CHAT_TIMEOUT,
+    )
+    # Whatever Claude answers, the counter should bump
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT chat_daily_count FROM crab.timeshare_group_members
+             WHERE group_id = %s::uuid AND user_id = %s
+        """, (group_uuid, ANDY_USER_ID))
+        count_after = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_true("counter incremented",
+                count_after >= count_before + 1,
+                detail=f"before={count_before} after={count_after}")
+
+
+def test_phase5_rate_limit(group_uuid, andy_session):
+    print("\n[41] Phase 5: rate-limit at 100/day → 429")
+    from utilities.timeshare_chat import DAILY_MESSAGE_CAP
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_group_members
+               SET chat_daily_count = %s, chat_daily_reset_at = NOW()
+             WHERE group_id = %s::uuid AND user_id = %s
+        """, (DAILY_MESSAGE_CAP, group_uuid, ANDY_USER_ID))
+        conn.commit()
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': 'This should hit the cap.'},
+        timeout=TIMEOUT,
+    )
+    assert_eq("rate-limited status", r.status_code, 429)
+    assert_true("error mentions limit",
+                'limit' in r.json().get('error', '').lower())
+
+    # Reset for any follow-on tests
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_group_members
+               SET chat_daily_count = 0, chat_daily_reset_at = NOW()
+             WHERE group_id = %s::uuid AND user_id = %s
+        """, (group_uuid, ANDY_USER_ID))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_phase5_kill_switch(group_uuid, andy_session):
+    print("\n[42] Phase 5: settings.chat_enabled=false → 403")
+    import json
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_groups
+               SET settings = %s::jsonb
+             WHERE group_id = %s::uuid
+        """, (json.dumps({'chat_enabled': False}), group_uuid))
+        conn.commit()
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': 'Should be blocked by kill switch.'},
+        timeout=TIMEOUT,
+    )
+    assert_eq("kill-switch status", r.status_code, 403)
+    assert_true("error mentions disabled",
+                'disabled' in r.json().get('error', '').lower())
+
+    # Restore
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_groups
+               SET settings = '{}'::jsonb
+             WHERE group_id = %s::uuid
+        """, (group_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_phase5_cross_group_isolation():
+    print("\n[43] Phase 5: chat tools bind group_id — empty group returns empty")
+    # Spin up a fresh empty group, ask "what property do we have?", verify
+    # the answer reflects emptiness (not the primary test group's property)
+    andy = authed_session(ANDY_USER_ID)
+    r = andy.post(f"{PROD_URL}/timeshare/groups/new",
+                  data={'name': f'{TEST_GROUP_PREFIX} chat-isolation {uuid.uuid4().hex[:6]}'},
+                  timeout=TIMEOUT, allow_redirects=False)
+    empty_uuid = r.headers['location'].rstrip('/').split('/')[-1]
+
+    r = andy.post(
+        f"{PROD_URL}/timeshare/g/{empty_uuid}/api/chat/send",
+        json={'message': 'What property do we have on record?'},
+        timeout=CHAT_TIMEOUT,
+    )
+    assert_eq("empty-group chat status", r.status_code, 200)
+    data = r.json()
+    answer = (data.get('assistant_text') or '').lower()
+    # The main test group has "Royal Sands Cancún" — the empty group's chat
+    # must not leak that name into the empty group's answer.
+    assert_true(
+        "empty group's answer does NOT leak the other group's property",
+        'royal sands' not in answer,
+        detail=f"answer leaked? first 200 chars: {answer[:200]}",
+    )
+    # And it should signal emptiness
+    assert_true(
+        "answer indicates no property found",
+        ("don't have" in answer or 'no ' in answer or 'not have' in answer
+         or 'no record' in answer),
+        detail=f"answer: {answer[:200]}",
+    )
+
+    # Tear down immediately so we don't trip group-per-day cap
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM crab.timeshare_groups WHERE group_id = %s::uuid",
+                    (empty_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_phase3_cross_group_job_access(group_uuid, andy_session):
     print("\n[30] Phase 3: reviewing another group's job → 404")
     # Create a second Andy-owned group, seed a job there, then try to view it via group_uuid
@@ -1032,6 +1250,15 @@ def main():
         test_phase4_private_folder_flashes(group_uuid, andy)
         test_phase4_empty_url_flashes(group_uuid, andy)
         test_phase4_non_member_blocked(group_uuid)
+        # Phase 5 — chatbot (real Claude calls, ~$0.08 total for the
+        # three test cases that actually hit the API)
+        test_phase5_ask_page_renders(group_uuid, andy)
+        test_phase5_empty_message(group_uuid, andy)
+        test_phase5_ask_fee_question(group_uuid, andy)
+        test_phase5_chat_daily_count_incremented(group_uuid, andy)
+        test_phase5_rate_limit(group_uuid, andy)
+        test_phase5_kill_switch(group_uuid, andy)
+        test_phase5_cross_group_isolation()
     finally:
         if not args.keep:
             cleanup_test_groups()
