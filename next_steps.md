@@ -68,6 +68,12 @@
 - `/sms` page repositioned: 
 ...
 ```
+- [ ] 2026-04-21 14:09 — timeshare: 'Worth it' dashboard card — lifetime CSF / trips / cost-per-trip / exchange-vs-retail savings math. Celeste's is-it-worth-keeping answer in one glance.
+- [ ] 2026-04-21 14:09 — timeshare: 'Start a 2026 cycle from this resort' button on resort detail — closes discovery→booking loop, auto-seeds Phase 7 cycle plan with resort locked as destination.
+- [ ] 2026-04-21 14:09 — timeshare: searchbar autocomplete — type 'Carib' → dropdown of matching destinations + resorts. Fastest path with 2,491-resort catalog.
+- [ ] 2026-04-21 14:09 — timeshare: expose chatbot search on dashboard as NL prompt — 'Find me 2BR Caribbean 4.5+ rating Friday check-in'. search_resort_catalog tool already exists, just surface it.
+- [ ] 2026-04-21 14:09 — timeshare: weather/season filter on search — 'best in Jan-Mar' derived from Google Place types + area latitude. After core UX lands.
+- [ ] 2026-04-21 14:09 — timeshare: auto-ingest Drive watcher — monthly cron scans dossier folder, new files auto-ingest + flag for review. No manual re-paste ever again.
 <!-- pending:end -->
 
 ## ✅ Recently shipped

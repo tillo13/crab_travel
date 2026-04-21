@@ -305,6 +305,7 @@
   function updateMap(results) {
     countryLayer.clearLayers();
     markerByCountry.clear();
+    const allLatLngs = [];   // collected to auto-fit when a filter is active
     const needCluster = new Map();   // country → [resort,...]
     for (const r of results) {
       if (r.map_lat != null && r.map_lng != null) {
@@ -320,6 +321,7 @@
           .on('click', () => openResort(r.ii_code))
           .addTo(countryLayer);
         if (!markerByCountry.has(r.country)) markerByCountry.set(r.country, m);
+        allLatLngs.push([r.map_lat, r.map_lng]);
       } else if (r.country) {
         if (!needCluster.has(r.country)) needCluster.set(r.country, []);
         needCluster.get(r.country).push(r);
@@ -358,7 +360,29 @@
         });
       });
       if (!markerByCountry.has(country)) markerByCountry.set(country, m);
+      allLatLngs.push(coord);
     }
+
+    // Auto-fit map to visible pins whenever a search or filter is active,
+    // so typing "hawaii" pans + zooms the map to Hawaii automatically.
+    const hasSearchOrFilter = (state.q && state.q.length > 0)
+      || state.filters.country || state.filters.tier
+      || state.filters.min_sleeps;
+    if (hasSearchOrFilter && allLatLngs.length > 0) {
+      const bounds = L.latLngBounds(allLatLngs);
+      if (allLatLngs.length === 1) {
+        // Single pin — fitBounds zooms too close; set a sensible regional view
+        map.setView(allLatLngs[0], 8, {animate: true});
+      } else {
+        map.fitBounds(bounds, {padding: [50, 50], maxZoom: 7, animate: true});
+      }
+    }
+    // No filters active: reset to world view if user just cleared everything.
+    // Tracked via lastHadFilter so we only reset ON the transition, not every render.
+    if (!hasSearchOrFilter && state.lastHadFilter) {
+      map.setView([30, 0], 2, {animate: true});
+    }
+    state.lastHadFilter = hasSearchOrFilter;
   }
 
   /* ── render result cards */
