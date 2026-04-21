@@ -32,16 +32,55 @@
 
   {# ── Photo grid ────────────────────────────────────────────── #}
   {% if resort.photo_urls %}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6" id="resort-photos">
     {% for url in resort.photo_urls[:8] %}
-    <a href="{{ url }}" target="_blank"
-       class="aspect-[4/3] bg-crab-navy/40 rounded-lg overflow-hidden block hover:opacity-80 transition-opacity">
+    <button type="button" data-photo-index="{{ loop.index0 }}"
+       class="aspect-[4/3] bg-crab-navy/40 rounded-lg overflow-hidden block hover:opacity-80 transition-opacity cursor-zoom-in">
       <img src="{{ url }}" loading="lazy" alt="{{ resort.name }} photo"
-           class="w-full h-full object-cover"
+           class="w-full h-full object-cover pointer-events-none"
            onerror="this.parentElement.style.display='none'">
-    </a>
+    </button>
     {% endfor %}
   </div>
+  <div id="resort-lightbox" class="fixed inset-0 z-[600] hidden" onclick="if(event.target===this)hideResortLightbox()">
+    <div class="absolute inset-0 bg-crab-navy/95 backdrop-blur-md"></div>
+    <div class="relative h-full flex flex-col items-center justify-center p-4 md:p-8">
+      <button id="rl-prev" type="button" class="absolute left-4 md:left-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">‹</button>
+      <button id="rl-next" type="button" class="absolute right-4 md:right-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">›</button>
+      <button id="rl-close" type="button" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 transition-colors text-xl text-crab-sand">×</button>
+      <img id="rl-img" src="" alt="" class="max-h-[80vh] max-w-[90vw] object-contain rounded-lg shadow-2xl">
+      <div id="rl-cap" class="mt-3 text-xs text-crab-sand-dim text-center"></div>
+    </div>
+  </div>
+  <script>
+    (function(){
+      const photos = {{ resort.photo_urls|tojson }};
+      const name = {{ resort.name|tojson }};
+      let idx = 0;
+      const el = document.getElementById('resort-lightbox');
+      const img = document.getElementById('rl-img');
+      const cap = document.getElementById('rl-cap');
+      function show(i){
+        idx = (i + photos.length) % photos.length;
+        img.src = photos[idx];
+        cap.textContent = `${name} — photo ${idx+1} of ${photos.length}`;
+        el.classList.remove('hidden');
+      }
+      window.hideResortLightbox = () => el.classList.add('hidden');
+      document.getElementById('rl-prev').onclick = () => show(idx-1);
+      document.getElementById('rl-next').onclick = () => show(idx+1);
+      document.getElementById('rl-close').onclick = () => hideResortLightbox();
+      document.querySelectorAll('#resort-photos [data-photo-index]').forEach(b => {
+        b.addEventListener('click', () => show(parseInt(b.dataset.photoIndex,10)));
+      });
+      document.addEventListener('keydown', e => {
+        if (el.classList.contains('hidden')) return;
+        if (e.key === 'Escape') hideResortLightbox();
+        if (e.key === 'ArrowLeft') show(idx-1);
+        if (e.key === 'ArrowRight') show(idx+1);
+      });
+    })();
+  </script>
   {% endif %}
 
   {% if my_timeshare_groups %}
