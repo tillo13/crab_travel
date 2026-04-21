@@ -141,6 +141,24 @@
   </aside>
 </div>
 
+<!-- Photo lightbox (hidden by default) -->
+<div id="ts-lightbox" class="fixed inset-0 z-[600] hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="absolute inset-0 bg-crab-navy/95 backdrop-blur-md"></div>
+  <div class="relative h-full flex flex-col items-center justify-center p-4 md:p-8">
+    <button data-lb-prev type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft'}))"
+            class="absolute left-4 md:left-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">‹</button>
+    <button data-lb-next type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight'}))"
+            class="absolute right-4 md:right-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">›</button>
+    <button type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"
+            class="absolute top-4 right-4 w-10 h-10 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 transition-colors text-xl text-crab-sand">×</button>
+    <img data-lb-img src="" alt="" class="max-h-[80vh] max-w-[90vw] object-contain rounded-lg shadow-2xl">
+    <div data-lb-caption class="mt-3 text-xs text-crab-sand-dim text-center"></div>
+  </div>
+</div>
+
 <!-- Resort detail drawer (hidden by default) -->
 <div id="ts-drawer" class="fixed inset-0 z-[500] hidden" aria-hidden="true">
   <div class="absolute inset-0 bg-crab-navy/70 backdrop-blur-sm" data-drawer-close></div>
@@ -318,6 +336,11 @@
     drawerBody.innerHTML = renderResortDetail(r);
     drawer.classList.remove('hidden');
     drawer.setAttribute('aria-hidden', 'false');
+    // Wire up lightbox clicks for this drawer's photos
+    const photos = r.photo_urls || [];
+    drawerBody.querySelectorAll('[data-ts-lightbox]').forEach(el => {
+      el.addEventListener('click', () => openLightbox(photos, parseInt(el.dataset.tsLightbox, 10), r.name));
+    });
     // bounce pin
     const m = markerByCountry.get(r.country);
     if (m && m._icon) {
@@ -325,11 +348,50 @@
       setTimeout(() => m._icon && m._icon.classList.remove('ts-pin-bouncing'), 1400);
     }
   }
+
+  /* ── photo lightbox — click a thumbnail → fullscreen carousel */
+  let lbState = null;
+  function openLightbox(photos, index, caption) {
+    lbState = { photos, index: index || 0, caption };
+    renderLightbox();
+    document.getElementById('ts-lightbox').classList.remove('hidden');
+  }
+  function closeLightbox() {
+    const el = document.getElementById('ts-lightbox');
+    if (el) el.classList.add('hidden');
+    lbState = null;
+  }
+  function lbStep(delta) {
+    if (!lbState) return;
+    const n = lbState.photos.length;
+    lbState.index = (lbState.index + delta + n) % n;
+    renderLightbox();
+  }
+  function renderLightbox() {
+    const el = document.getElementById('ts-lightbox');
+    if (!el || !lbState) return;
+    const { photos, index, caption } = lbState;
+    el.querySelector('[data-lb-img]').src = photos[index];
+    el.querySelector('[data-lb-caption]').textContent = `${caption || ''} — photo ${index + 1} of ${photos.length}`;
+    el.querySelector('[data-lb-prev]').disabled = photos.length < 2;
+    el.querySelector('[data-lb-next]').disabled = photos.length < 2;
+  }
+  document.addEventListener('keydown', e => {
+    if (!lbState) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') lbStep(-1);
+    if (e.key === 'ArrowRight') lbStep(1);
+  });
   function renderResortDetail(r) {
     const photos = r.photo_urls || [];
     const photoGrid = photos.length ? `
       <div class="grid grid-cols-3 gap-1.5 mb-5">
-        ${photos.slice(0, 6).map(u => `<img src="${u}" alt="" class="aspect-[4/3] object-cover rounded-lg bg-crab-navy/40">`).join('')}
+        ${photos.slice(0, 9).map((u, i) => `
+          <button type="button" data-ts-lightbox="${i}"
+                  class="aspect-[4/3] overflow-hidden rounded-lg bg-crab-navy/40 hover:opacity-90 transition-opacity cursor-zoom-in">
+            <img src="${u}" alt="" class="w-full h-full object-cover pointer-events-none">
+          </button>
+        `).join('')}
       </div>` : '';
     const sc = r.sleeping_capacity || {};
     const facts = [

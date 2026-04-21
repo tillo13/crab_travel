@@ -948,15 +948,14 @@ def ii_scrape_seed():
 
 @bp.route('/tasks/ii-scrape-next', methods=['GET', 'POST'])
 def ii_scrape_next():
-    if not _ii_scrape_auth_ok():
-        return jsonify({'error': 'forbidden'}), 403
-    from utilities.timeshare_ii_scraper import process_next
-    try:
-        # Default: 1 region per call = ~3-5 min of work. Admin can pass ?max=N.
-        max_regions = int(request.args.get('max', 1))
-        max_regions = max(1, min(max_regions, 5))   # hard cap: 5 per call
-        summary = process_next(max_regions=max_regions)
-        return jsonify({'ok': True, **summary})
-    except Exception as e:
-        logger.exception(f'ii-scrape-next failed: {e}')
-        return jsonify({'error': str(e).split(chr(10))[0][:200]}), 500
+    # DISABLED 2026-04-21. Synchronous crawling here starved the App Engine
+    # web tier — every region took 2–5 min of instance time which blocked
+    # real user requests. Drainer moved to a local script (dev/drain_ii.py)
+    # that writes directly to Cloud SQL without touching App Engine at all.
+    # Re-enable only after the scraper moves to Cloud Run Jobs or similar
+    # compute that's isolated from the web tier.
+    return jsonify({
+        'ok': False,
+        'disabled': True,
+        'note': 'scraper runs off-App-Engine now; see dev/drain_ii.py',
+    }), 410
