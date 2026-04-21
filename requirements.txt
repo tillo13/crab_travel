@@ -7,3 +7,4 @@ google-cloud-secret-manager==2.26.0
 requests>=2.31.0
 twilio>=9.0.0
 google-generativeai>=0.8.0
+pdfplumber>=0.11.0

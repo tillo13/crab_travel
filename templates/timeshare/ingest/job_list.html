@@ -1,0 +1,56 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Ingest jobs — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="mb-4 flex items-center justify-between">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide">Past ingest jobs</h2>
+  <a href="/timeshare/g/{{ group_uuid }}/ingest" class="bg-crab-coral text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-crab-coral-light transition-colors">+ New ingest</a>
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+  {% if jobs %}
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr>
+        <th class="text-left px-4 py-3">When</th>
+        <th class="text-left">Source</th>
+        <th class="text-left">Status</th>
+        <th class="text-right">Facts</th>
+        <th class="text-right">Cost</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr class="border-t border-white/5">
+        <td class="px-4 py-3 text-crab-sand-dim">{{ j.created_at.strftime('%b %d, %H:%M') }}</td>
+        <td class="px-4 py-3">
+          {{ (j.source_type or '')|replace('_',' ') }}
+          {% if j.source_ref %}<span class="text-xs text-crab-sand-dim"> · {{ j.source_ref[:40] }}</span>{% endif %}
+        </td>
+        <td class="px-4 py-3">
+          {% if j.status == 'committed' %}<span class="text-emerald-400">committed</span>
+          {% elif j.status == 'review' %}<span class="text-amber-400">review</span>
+          {% elif j.status == 'rejected' %}<span class="text-crab-sand-dim">rejected</span>
+          {% elif j.status == 'error' %}<span class="text-red-400">error</span>
+          {% else %}<span class="text-crab-sand-dim">{{ j.status }}</span>{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">{{ j.fact_row_count }} in {{ j.fact_bucket_count }} table{{ 's' if j.fact_bucket_count != 1 else '' }}</td>
+        <td class="px-4 py-3 text-right text-crab-sand-dim">{% if j.claude_cost_usd %}${{ '{:.4f}'.format(j.claude_cost_usd) }}{% endif %}</td>
+        <td class="px-4 py-3 text-right">
+          <a href="/timeshare/g/{{ group_uuid }}/ingest/jobs/{{ j.pk_id }}" class="text-crab-coral hover:underline">Open</a>
+        </td>
+      </tr>
+      {% if j.error_message %}
+      <tr class="border-t border-white/5 bg-crab-navy/20">
+        <td colspan="6" class="px-4 py-2 text-xs text-red-400">{{ j.error_message }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">No ingest jobs yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

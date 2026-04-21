@@ -638,6 +638,239 @@ def test_phase2_dashboard_shows_counts(group_uuid, andy_session):
         assert_true(f"dashboard card: {label}", f">{label}<" in r.text)
 
 
+# ── Phase 3: ingestion ─────────────────────────────────────────────
+
+# Claude API calls take real time — use a longer timeout for ingest requests.
+INGEST_TIMEOUT = 180
+
+SAMPLE_CSF_TEXT = """Royal Resorts — account statement
+Member: 3430769
+Unit: K5133, week 38
+
+Maintenance fee history for the biennial even-year cycle:
+- 2022 billed $1,234.00 on September 1 2022, paid $1,234.00 on September 18 2022
+- 2024 billed $1,381.00 on September 1 2024, paid $1,381.00 on October 3 2024 with a $25.00 late fee
+"""
+
+
+def test_phase3_ingest_wizard_scope(group_uuid, andy_session):
+    print("\n[24] Phase 3: /ingest wizard renders for member + 404s for non-member")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ingest", timeout=TIMEOUT)
+    assert_eq("member on /ingest", r.status_code, 200)
+    assert_true("/ingest has Paste form", 'ingest/paste' in r.text)
+    assert_true("/ingest has Upload form", 'ingest/upload' in r.text)
+    assert_true("/ingest noindex", 'noindex, nofollow' in r.text)
+
+    outsider = authed_session(18)  # bot.priya.patel — not a member
+    r = outsider.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ingest",
+                     timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("non-member on /ingest", r.status_code, 404)
+
+
+def test_phase3_paste_extracts(group_uuid, andy_session):
+    print("\n[25] Phase 3: paste submit → Claude extracts → job in review")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/paste",
+        data={'content': SAMPLE_CSF_TEXT},
+        timeout=INGEST_TIMEOUT,
+        allow_redirects=False,
+    )
+    assert_eq("paste redirect status", r.status_code, 302)
+    location = r.headers.get('location', '')
+    assert_true("redirect to review page",
+                f'/ingest/jobs/' in location, detail=location)
+    job_id = int(location.rstrip('/').split('/')[-1])
+
+    # Verify the DB row
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT status, source_type, source_content IS NOT NULL,
+                   extracted_facts IS NOT NULL,
+                   claude_cost_usd
+              FROM crab.timeshare_ingest_jobs
+             WHERE group_id = %s::uuid AND pk_id = %s
+        """, (group_uuid, job_id))
+        status, src, has_content, has_facts, cost = cur.fetchone()
+    finally:
+        conn.close()
+    assert_eq("job source_type", src, 'text_paste')
+    assert_true("source_content persisted (for provenance)", has_content)
+    assert_true("claude_cost_usd > 0", cost is not None and float(cost) > 0,
+                detail=f"cost={cost}")
+    # Status is typically 'review' when Claude found facts, or 'rejected' if it
+    # explicitly called no_facts_extracted. Either is acceptable as a shape check.
+    assert_true(
+        "status terminates cleanly",
+        status in ('review', 'rejected'),
+        detail=f"status={status}",
+    )
+    # Confirm at least one maintenance_fee row was proposed
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT extracted_facts -> 'maintenance_fees'
+              FROM crab.timeshare_ingest_jobs
+             WHERE pk_id = %s
+        """, (job_id,))
+        fees_block = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_true(
+        "Claude proposed at least one maintenance_fee row",
+        isinstance(fees_block, list) and len(fees_block) >= 1,
+        detail=f"len={len(fees_block) if isinstance(fees_block, list) else 'n/a'}",
+    )
+    return job_id
+
+
+def test_phase3_review_page_renders(group_uuid, andy_session, job_id):
+    print("\n[26] Phase 3: review page shows proposed rows + source content")
+    r = andy_session.get(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/jobs/{job_id}", timeout=TIMEOUT)
+    assert_eq("review page status", r.status_code, 200)
+    assert_true("review page shows source_type pill", 'text paste' in r.text.lower())
+    assert_true("review page shows source content", 'Royal Resorts' in r.text)
+
+
+def test_phase3_commit(group_uuid, andy_session, job_id):
+    print("\n[27] Phase 3: commit accepted rows land in fact tables with source_ingest_job_id")
+    # Fetch the accept_* field names from the proposed rows and mark them all on
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT extracted_facts FROM crab.timeshare_ingest_jobs WHERE pk_id = %s
+        """, (job_id,))
+        facts = cur.fetchone()[0] or {}
+    finally:
+        conn.close()
+
+    form_data = {}
+    for fact_key, rows in facts.items():
+        if fact_key.startswith('_') or not isinstance(rows, list):
+            continue
+        for i in range(len(rows)):
+            form_data[f'accept_{fact_key}_{i}'] = 'on'
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/jobs/{job_id}/commit",
+        data=form_data, timeout=INGEST_TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("commit redirect", r.status_code, 302)
+
+    # Verify rows landed with source_ingest_job_id linking back
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM crab.timeshare_maintenance_fees f
+              JOIN crab.timeshare_properties p ON p.pk_id = f.property_id
+             WHERE p.group_id = %s::uuid AND f.source_ingest_job_id = %s
+        """, (group_uuid, job_id))
+        committed_fees = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT status, committed_at IS NOT NULL
+              FROM crab.timeshare_ingest_jobs
+             WHERE pk_id = %s
+        """, (job_id,))
+        status, has_committed_at = cur.fetchone()
+    finally:
+        conn.close()
+
+    assert_true("at least one fee row committed", committed_fees >= 1,
+                detail=f"committed_fees={committed_fees}")
+    assert_eq("job status=committed", status, 'committed')
+    assert_true("committed_at stamped", has_committed_at)
+
+
+def test_phase3_job_list_renders(group_uuid, andy_session, job_id):
+    print("\n[28] Phase 3: /ingest/jobs lists the committed job")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/jobs", timeout=TIMEOUT)
+    assert_eq("job list status", r.status_code, 200)
+    assert_true("job list has this job", f'/ingest/jobs/{job_id}' in r.text)
+    assert_true("job list shows committed badge", 'committed' in r.text)
+
+
+def test_phase3_reject_path(group_uuid, andy_session):
+    print("\n[29] Phase 3: reject on a pending job flips status")
+    # Seed a fake job directly in the DB to avoid another Claude call
+    import json
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO crab.timeshare_ingest_jobs
+                (group_id, source_type, source_snapshot_hash, source_content,
+                 status, extracted_facts, created_by)
+            VALUES (%s::uuid, 'text_paste', 'sha-reject-test',
+                    'test content', 'review',
+                    %s::jsonb, %s)
+            RETURNING pk_id
+        """, (group_uuid,
+              json.dumps({'maintenance_fees': [{'year': 2099, 'billed_amount_usd': 1.0}]}),
+              ANDY_USER_ID))
+        stub_job_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/jobs/{stub_job_id}/reject",
+        data={'notes': 'Test reject'}, timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("reject redirect", r.status_code, 302)
+
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT status, review_notes FROM crab.timeshare_ingest_jobs
+             WHERE pk_id = %s
+        """, (stub_job_id,))
+        status, notes = cur.fetchone()
+    finally:
+        conn.close()
+    assert_eq("status=rejected", status, 'rejected')
+    assert_eq("review notes recorded", notes, 'Test reject')
+
+
+def test_phase3_cross_group_job_access(group_uuid, andy_session):
+    print("\n[30] Phase 3: reviewing another group's job → 404")
+    # Create a second Andy-owned group, seed a job there, then try to view it via group_uuid
+    andy = authed_session(ANDY_USER_ID)
+    r = andy.post(f"{PROD_URL}/timeshare/groups/new",
+                  data={'name': f'{TEST_GROUP_PREFIX} ingest-scope {uuid.uuid4().hex[:6]}'},
+                  timeout=TIMEOUT, allow_redirects=False)
+    other_uuid = r.headers['location'].rstrip('/').split('/')[-1]
+
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO crab.timeshare_ingest_jobs
+                (group_id, source_type, source_snapshot_hash, source_content,
+                 status, created_by)
+            VALUES (%s::uuid, 'text_paste', 'sha-scope-test',
+                    'isolated content', 'review', %s)
+            RETURNING pk_id
+        """, (other_uuid, ANDY_USER_ID))
+        other_job_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Try to open other_job_id via group_uuid (wrong group) — should 404
+    r = andy_session.get(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/jobs/{other_job_id}",
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cross-group job access", r.status_code, 404)
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -677,6 +910,14 @@ def main():
         test_phase2_cross_group_scope()
         test_phase2_unknown_fact_key(group_uuid, andy)
         test_phase2_dashboard_shows_counts(group_uuid, andy)
+        # Phase 3 — real Claude API calls, ~$0.10 per full run
+        test_phase3_ingest_wizard_scope(group_uuid, andy)
+        phase3_job_id = test_phase3_paste_extracts(group_uuid, andy)
+        test_phase3_review_page_renders(group_uuid, andy, phase3_job_id)
+        test_phase3_commit(group_uuid, andy, phase3_job_id)
+        test_phase3_job_list_renders(group_uuid, andy, phase3_job_id)
+        test_phase3_reject_path(group_uuid, andy)
+        test_phase3_cross_group_job_access(group_uuid, andy)
     finally:
         if not args.keep:
             cleanup_test_groups()

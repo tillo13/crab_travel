@@ -572,3 +572,179 @@ def fact_delete(group_uuid, fact_key, pk):
     else:
         flash("Deleted.", 'success')
     return _redirect_back(group_uuid, fact_key)
+
+
+# ── Phase 3: ingestion ──────────────────────────────────────
+
+MAX_PASTE_CHARS = 200_000   # plenty of room for a long CSF history email
+MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB — per-request App Engine limit is 32MB
+
+
+@bp.route('/g/<group_uuid>/ingest')
+@group_member_required()
+def ingest_wizard(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    return render_template(
+        'timeshare/ingest/wizard.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='ingest',
+    )
+
+
+@bp.route('/g/<group_uuid>/ingest/paste', methods=['POST'])
+@group_member_required()
+def ingest_paste(group_uuid):
+    from utilities.timeshare_ingest import run_extraction_and_persist
+    user = session['user']
+    text = (request.form.get('content') or '').strip()
+    if not text:
+        flash('Paste some text first.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    if len(text) > MAX_PASTE_CHARS:
+        flash(f'Paste is too long (max {MAX_PASTE_CHARS:,} characters).', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+
+    job_id = run_extraction_and_persist(
+        group_id=group_uuid,
+        source_type='text_paste',
+        source_content=text,
+        source_ref=None,
+        created_by=user['id'],
+    )
+    return redirect(url_for('timeshare.ingest_job_review', group_uuid=group_uuid, job_id=job_id))
+
+
+@bp.route('/g/<group_uuid>/ingest/upload', methods=['POST'])
+@group_member_required()
+def ingest_upload(group_uuid):
+    from utilities.timeshare_ingest import run_extraction_and_persist, extract_pdf_text
+    user = session['user']
+    f = request.files.get('pdf')
+    if not f or not f.filename:
+        flash('Choose a PDF to upload.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    if not f.filename.lower().endswith('.pdf'):
+        flash('Only .pdf files are supported.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    pdf_bytes = f.read(MAX_PDF_BYTES + 1)
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        flash(f'PDF too large (max {MAX_PDF_BYTES // (1024*1024)} MB).', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    try:
+        extracted_text = extract_pdf_text(pdf_bytes)
+    except Exception as e:
+        logger.error(f"PDF parse failed: {e}")
+        flash('Could not read that PDF.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    # Discard bytes explicitly — no GCS write, no disk cache.
+    del pdf_bytes
+
+    if not extracted_text.strip():
+        flash('No text found in that PDF (might be a scanned image).', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+
+    job_id = run_extraction_and_persist(
+        group_id=group_uuid,
+        source_type='pdf_upload',
+        source_content=extracted_text,
+        source_ref=f.filename[:500],
+        created_by=user['id'],
+    )
+    return redirect(url_for('timeshare.ingest_job_review', group_uuid=group_uuid, job_id=job_id))
+
+
+@bp.route('/g/<group_uuid>/ingest/jobs')
+@group_member_required()
+def ingest_jobs(group_uuid):
+    from utilities.timeshare_ingest import list_jobs
+    jobs = list_jobs(group_uuid)
+    group_name = _get_group_name(group_uuid)
+    return render_template(
+        'timeshare/ingest/job_list.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='ingest',
+        jobs=jobs,
+    )
+
+
+@bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>')
+@group_member_required()
+def ingest_job_review(group_uuid, job_id):
+    from utilities.timeshare_ingest import get_job
+    job = get_job(group_uuid, job_id)
+    if not job:
+        abort(404)
+    group_name = _get_group_name(group_uuid)
+    # Flatten extracted_facts into a list of (fact_key, index, row_dict) for the form
+    facts = job.get('extracted_facts') or {}
+    proposed_rows = []
+    for fact_key, rows in facts.items():
+        if fact_key.startswith('_') or not isinstance(rows, list):
+            continue
+        for i, data in enumerate(rows):
+            proposed_rows.append({
+                'fact_key': fact_key,
+                'index': i,
+                'data': data,
+            })
+    return render_template(
+        'timeshare/ingest/job_review.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='ingest',
+        job=job,
+        proposed_rows=proposed_rows,
+        no_facts_reason=facts.get('_no_facts_reason'),
+    )
+
+
+@bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>/commit', methods=['POST'])
+@group_member_required()
+def ingest_job_commit(group_uuid, job_id):
+    from utilities.timeshare_ingest import get_job, commit_job
+    job = get_job(group_uuid, job_id)
+    if not job:
+        abort(404)
+    if job['status'] not in ('review',):
+        flash(f"Job is {job['status']} — nothing to commit.", 'error')
+        return redirect(url_for('timeshare.ingest_job_review', group_uuid=group_uuid, job_id=job_id))
+
+    # Build the accepted-row list from the form — checkboxes named accept_<fact_key>_<index>
+    facts = job.get('extracted_facts') or {}
+    accepted = []
+    for fact_key, rows in facts.items():
+        if fact_key.startswith('_') or not isinstance(rows, list):
+            continue
+        for i, data in enumerate(rows):
+            if request.form.get(f'accept_{fact_key}_{i}') == 'on':
+                accepted.append({'fact_key': fact_key, 'data': data})
+    if not accepted:
+        flash('No rows selected for commit.', 'error')
+        return redirect(url_for('timeshare.ingest_job_review', group_uuid=group_uuid, job_id=job_id))
+
+    committed, errors = commit_job(group_uuid, job_id, accepted)
+    if committed:
+        flash(f'Committed {committed} row{"s" if committed != 1 else ""}.', 'success')
+    for err in errors[:5]:
+        flash(err, 'error')
+    return redirect(url_for('timeshare.ingest_job_review', group_uuid=group_uuid, job_id=job_id))
+
+
+@bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>/reject', methods=['POST'])
+@group_member_required()
+def ingest_job_reject(group_uuid, job_id):
+    from utilities.timeshare_ingest import reject_job
+    ok = reject_job(group_uuid, job_id, review_notes=request.form.get('notes'))
+    if ok:
+        flash('Job rejected.', 'success')
+    else:
+        abort(404)
+    return redirect(url_for('timeshare.ingest_jobs', group_uuid=group_uuid))

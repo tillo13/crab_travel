@@ -1,0 +1,49 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Ingest — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="grid md:grid-cols-2 gap-6">
+
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+    <h2 class="text-lg font-semibold mb-1">Paste text</h2>
+    <p class="text-xs text-crab-sand-dim mb-4">
+      An email thread from Royal Resorts, a text message, a copy of a confirmation. Claude extracts facts, you review before anything lands.
+    </p>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/paste" class="space-y-3">
+      <textarea name="content" rows="10" required placeholder="Paste the CSF history email, a maintenance-fee statement, a trip recap…"
+        class="w-full bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-crab-coral focus:outline-none"></textarea>
+      <div class="flex items-center justify-between">
+        <div class="text-xs text-crab-sand-dim">One Claude call, ~$0.05. Runs in-request — please wait up to 30s.</div>
+        <button type="submit" class="bg-crab-coral text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+          Extract facts
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+    <h2 class="text-lg font-semibold mb-1">Upload PDF</h2>
+    <p class="text-xs text-crab-sand-dim mb-4">
+      A CSF statement, an exchange confirmation, a contract scan. The file is read in-request and <strong>discarded immediately</strong> — crab.travel never stores your documents.
+    </p>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/upload" enctype="multipart/form-data" class="space-y-3">
+      <input type="file" name="pdf" accept="application/pdf" required
+        class="block w-full text-sm text-crab-sand-dim file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-crab-navy/60 file:text-crab-sand hover:file:bg-crab-navy/80">
+      <div class="flex items-center justify-between">
+        <div class="text-xs text-crab-sand-dim">Max 20 MB. Scanned PDFs without text layer won't work.</div>
+        <button type="submit" class="bg-crab-coral text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+          Extract facts
+        </button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<div class="mt-6 flex items-center justify-between">
+  <div class="text-xs text-crab-sand-dim">
+    Once extraction completes, you'll review proposed rows and pick which to commit.
+  </div>
+  <a href="/timeshare/g/{{ group_uuid }}/ingest/jobs" class="text-sm text-crab-coral hover:underline">View past jobs →</a>
+</div>
+{% endblock %}
