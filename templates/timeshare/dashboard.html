@@ -22,17 +22,39 @@
   </div>
 </div>
 
+<h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">The dossier</h2>
+<div class="grid sm:grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+  {% set cards = [
+    ('property',  'Property',   fact_counts.properties,       'home week details'),
+    ('finances',  'Fees',       fact_counts.maintenance_fees, 'CSF timeline + loan payments'),
+    ('trips',     'Trips',      fact_counts.trips,            'home weeks + exchanges'),
+    ('people',    'People',     fact_counts.people,           'family + co-owners'),
+    ('portals',   'Portals',    fact_counts.portals,          'II, RCI, developer'),
+    ('contacts',  'Contacts',   fact_counts.contacts,         'owner relations'),
+    ('documents', 'Documents',  fact_counts.documents,        'Drive / Dropbox links'),
+    ('timeline',  'Timeline',   fact_counts.timeline,         'calls, emails, decisions'),
+  ] %}
+  {% for slug, label, count, hint in cards %}
+  <a href="/timeshare/g/{{ group.group_id }}/{{ slug }}" class="block bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/40 transition-colors">
+    <div class="flex items-baseline justify-between">
+      <div class="text-sm font-semibold">{{ label }}</div>
+      <div class="text-xl font-display text-crab-coral">{{ count }}</div>
+    </div>
+    <div class="text-xs text-crab-sand-dim mt-1">{{ hint }}</div>
+  </a>
+  {% endfor %}
+</div>
+
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
   <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Up next</h2>
   <p class="text-sm text-crab-sand-dim leading-relaxed mb-4">
-    You've got the group. Phase 2 adds the structured tables —
-    property details, maintenance fee history, trips, people, portals, contacts.
-    Phase 3 brings PDF and paste-based ingestion (let Claude read the fee
-    statement and fill in the rows). Until then, invite your family and
-    we'll keep you posted.
+    The dossier accepts manual entry now — start with Property, then add the
+    people. Phase 3 brings paste- and PDF-based ingestion so Claude can fill
+    in years of fee history in one pass. Phase 4 adds Google Drive folder
+    ingestion.
   </p>
-  <a href="/timeshare/g/{{ group.group_id }}/members" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
-    Invite family
+  <a href="/timeshare/g/{{ group.group_id }}/property" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
+    Add the property
   </a>
 </div>
 {% endblock %}

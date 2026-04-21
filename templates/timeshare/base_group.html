@@ -1,16 +1,30 @@
 {% extends "base.html" %}
 {% block meta_robots %}noindex, nofollow{% endblock %}
 
+{% macro nav_link(key, label, group_uuid) -%}
+<a href="/timeshare/g/{{ group_uuid }}/{{ '' if key == 'dashboard' else key }}" class="{% if nav_active == key %}text-crab-coral{% else %}text-crab-sand-dim hover:text-crab-sand{% endif %} transition-colors whitespace-nowrap">{{ label }}</a>
+{%- endmacro %}
+
 {% block content %}
 <div class="animate-in">
-  <div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
-    <div>
-      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Timeshare</div>
-      <h1 class="text-2xl font-display mt-0.5">{{ group.name if group else 'Group' }}</h1>
+  <div class="mb-6">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Timeshare</div>
+        <h1 class="text-2xl font-display mt-0.5">{{ group.name if group else 'Group' }}</h1>
+      </div>
     </div>
-    <nav class="flex gap-4 text-sm">
-      <a href="/timeshare/g/{{ group_uuid }}/" class="{% if nav_active == 'dashboard' %}text-crab-coral{% else %}text-crab-sand-dim hover:text-crab-sand{% endif %} transition-colors">Dashboard</a>
-      <a href="/timeshare/g/{{ group_uuid }}/members" class="{% if nav_active == 'members' %}text-crab-coral{% else %}text-crab-sand-dim hover:text-crab-sand{% endif %} transition-colors">Members</a>
+    <nav class="flex gap-4 text-sm mt-4 overflow-x-auto pb-1 border-b border-white/5">
+      {{ nav_link('dashboard', 'Overview', group_uuid) }}
+      {{ nav_link('property', 'Property', group_uuid) }}
+      {{ nav_link('finances', 'Finances', group_uuid) }}
+      {{ nav_link('trips', 'Trips', group_uuid) }}
+      {{ nav_link('people', 'People', group_uuid) }}
+      {{ nav_link('portals', 'Portals', group_uuid) }}
+      {{ nav_link('contacts', 'Contacts', group_uuid) }}
+      {{ nav_link('documents', 'Documents', group_uuid) }}
+      {{ nav_link('timeline', 'Timeline', group_uuid) }}
+      {{ nav_link('members', 'Members', group_uuid) }}
     </nav>
   </div>
 

@@ -1,0 +1,101 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Finances — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+{% if not properties %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 text-center text-sm text-crab-sand-dim">
+    Add a property first — maintenance fees and loan payments are recorded per property.
+    <div class="mt-3">
+      <a href="/timeshare/g/{{ group_uuid }}/property" class="inline-block bg-crab-coral text-white px-4 py-2 rounded-lg text-sm font-semibold">Add property</a>
+    </div>
+  </div>
+{% endif %}
+
+{% for prop in properties %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-lg font-semibold mb-4">{{ prop.name }} — maintenance fees</h2>
+  {% set fees = fees_by_property[prop.pk_id] %}
+  {% if fees %}
+    <table class="w-full text-sm mb-4">
+      <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
+        <tr><th class="text-left py-2">Year</th><th class="text-right">Billed</th><th class="text-right">Paid</th><th class="text-right">Late</th><th class="text-right">Paid date</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for f in fees %}
+        <tr class="border-t border-white/5">
+          <td class="py-2 font-medium">{{ f.year }}</td>
+          <td class="text-right">{% if f.billed_amount_usd %}${{ '{:,.2f}'.format(f.billed_amount_usd) }}{% endif %}</td>
+          <td class="text-right">{% if f.paid_amount_usd %}${{ '{:,.2f}'.format(f.paid_amount_usd) }}{% endif %}</td>
+          <td class="text-right">{% if f.late_fees_usd %}${{ '{:,.2f}'.format(f.late_fees_usd) }}{% endif %}</td>
+          <td class="text-right text-crab-sand-dim">{{ f.paid_date or '' }}</td>
+          <td class="text-right">
+            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/maintenance_fees/{{ f.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-xs text-crab-sand-dim mb-4">No fees recorded yet.</p>
+  {% endif %}
+  <details>
+    <summary class="text-xs text-crab-coral cursor-pointer">+ Add a maintenance fee year</summary>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/maintenance_fees/new" class="mt-3 grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
+      <input type="hidden" name="parent_id" value="{{ prop.pk_id }}">
+      <input name="year" type="number" required placeholder="Year" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="billed_amount_usd" placeholder="Billed $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="paid_amount_usd" placeholder="Paid $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="late_fees_usd" placeholder="Late $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="billed_date" placeholder="Billed (YYYY-MM-DD)" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="paid_date" placeholder="Paid (YYYY-MM-DD)" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="notes" placeholder="Notes" class="col-span-2 md:col-span-5 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <button type="submit" class="bg-crab-coral text-white rounded-lg px-3 py-1.5 text-sm font-semibold">Save</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+
+{% for contract in contracts %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-lg font-semibold mb-4">Contract #{{ contract.contract_number or contract.pk_id }} — loan payments</h2>
+  {% set payments = loan_payments_by_contract[contract.pk_id] %}
+  {% if payments %}
+    <table class="w-full text-sm mb-4">
+      <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
+        <tr><th class="text-left py-2">Date</th><th class="text-right">Amount</th><th class="text-right">Principal</th><th class="text-right">Interest</th><th class="text-right">Balance</th><th class="text-left">Method</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in payments %}
+        <tr class="border-t border-white/5">
+          <td class="py-2">{{ p.payment_date or '' }}</td>
+          <td class="text-right">{% if p.amount_usd %}${{ '{:,.2f}'.format(p.amount_usd) }}{% endif %}</td>
+          <td class="text-right">{% if p.principal_usd %}${{ '{:,.2f}'.format(p.principal_usd) }}{% endif %}</td>
+          <td class="text-right">{% if p.interest_usd %}${{ '{:,.2f}'.format(p.interest_usd) }}{% endif %}</td>
+          <td class="text-right">{% if p.balance_after_usd %}${{ '{:,.2f}'.format(p.balance_after_usd) }}{% endif %}</td>
+          <td class="text-crab-sand-dim">{{ p.method or '' }}</td>
+          <td class="text-right">
+            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/loan_payments/{{ p.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-xs text-crab-sand-dim mb-4">No loan payments recorded.</p>
+  {% endif %}
+  <details>
+    <summary class="text-xs text-crab-coral cursor-pointer">+ Add a loan payment</summary>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/loan_payments/new" class="mt-3 grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
+      <input type="hidden" name="parent_id" value="{{ contract.pk_id }}">
+      <input name="payment_date" placeholder="Date (YYYY-MM-DD)" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="amount_usd" placeholder="Amount $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="principal_usd" placeholder="Principal $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="interest_usd" placeholder="Interest $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="balance_after_usd" placeholder="Balance after $" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <input name="method" placeholder="Method" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <button type="submit" class="col-span-2 md:col-span-6 bg-crab-coral text-white rounded-lg px-3 py-1.5 text-sm font-semibold">Save payment</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+{% endblock %}

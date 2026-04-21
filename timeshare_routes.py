@@ -1,7 +1,7 @@
 """
-Timeshare blueprint — Phase 1 scope.
+Timeshare blueprint — Phases 1 + 2.
 
-Routes shipped in Phase 1:
+Phase 1 (shipped 2026-04-21):
 - GET  /timeshare/                              indexable landing
 - GET  /timeshare/groups/new                    creation form
 - POST /timeshare/groups/new                    create + auto-add creator as owner
@@ -10,7 +10,13 @@ Routes shipped in Phase 1:
 - POST /timeshare/g/<uuid>/members/invite       create invite row + send shortlink email
 - GET  /timeshare/g/<uuid>/members/accept/<token>   accept (login-required; invite-token gated)
 
-Structured fact views, ingestion, chatbot, II catalog, cycle bridge — Phases 2+.
+Phase 2 (this commit):
+- GET  /timeshare/g/<uuid>/{property,finances,trips,people,portals,contacts,documents,timeline}
+- POST /timeshare/g/<uuid>/fact/<fact_key>/new        create fact row
+- POST /timeshare/g/<uuid>/fact/<fact_key>/<pk>       update fact row
+- POST /timeshare/g/<uuid>/fact/<fact_key>/<pk>/delete   delete fact row
+
+Ingestion, chatbot, II catalog, cycle bridge — Phases 3+.
 """
 
 import logging
@@ -24,6 +30,9 @@ from utilities.invite_utils import generate_token
 from utilities.postgres_utils import get_db_connection
 from utilities.shorturl_utils import create_short_url
 from utilities.timeshare_access import group_member_required
+from utilities.timeshare_facts import (
+    FACT_SCHEMAS, list_facts, insert_fact, update_fact, delete_fact, get_group_counts,
+)
 
 logger = logging.getLogger('crab_travel.timeshare_routes')
 
@@ -124,11 +133,14 @@ def dashboard(group_uuid):
     finally:
         conn.close()
 
+    fact_counts = get_group_counts(group_uuid)
+
     return render_template(
         'timeshare/dashboard.html',
         active_page='timeshare',
         group=group,
         member_counts=counts,
+        fact_counts=fact_counts,
         role=request.timeshare_role,
     )
 
@@ -327,3 +339,236 @@ def _send_invite_email(to_email, inviter_name, group_name, short_url):
         send_simple_email(subject, body, to_email, from_name="crab.travel")
     except Exception as e:
         logger.error(f"Failed to send timeshare invite email to {to_email}: {e}")
+
+
+# ── Phase 2: fact views ─────────────────────────────────────
+
+def _get_group_name(group_uuid):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name FROM crab.timeshare_groups WHERE group_id = %s::uuid",
+            (group_uuid,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+@bp.route('/g/<group_uuid>/property')
+@group_member_required()
+def view_property(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    properties = list_facts(group_uuid, 'properties')
+    contracts_by_property = {}
+    for prop in properties:
+        contracts_by_property[prop['pk_id']] = list_facts(
+            group_uuid, 'contracts', parent_id=prop['pk_id'])
+    return render_template(
+        'timeshare/fact_views/property.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='property',
+        properties=properties,
+        contracts_by_property=contracts_by_property,
+    )
+
+
+@bp.route('/g/<group_uuid>/finances')
+@group_member_required()
+def view_finances(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    properties = list_facts(group_uuid, 'properties')
+    fees_by_property = {}
+    for prop in properties:
+        fees_by_property[prop['pk_id']] = list_facts(
+            group_uuid, 'maintenance_fees', parent_id=prop['pk_id'])
+    contracts = []
+    for prop in properties:
+        contracts.extend(list_facts(group_uuid, 'contracts', parent_id=prop['pk_id']))
+    loan_payments_by_contract = {}
+    for c in contracts:
+        loan_payments_by_contract[c['pk_id']] = list_facts(
+            group_uuid, 'loan_payments', parent_id=c['pk_id'])
+    return render_template(
+        'timeshare/fact_views/finances.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='finances',
+        properties=properties,
+        fees_by_property=fees_by_property,
+        contracts=contracts,
+        loan_payments_by_contract=loan_payments_by_contract,
+    )
+
+
+@bp.route('/g/<group_uuid>/trips')
+@group_member_required()
+def view_trips(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    trips = list_facts(group_uuid, 'trips')
+    properties = list_facts(group_uuid, 'properties')
+    return render_template(
+        'timeshare/fact_views/trips.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='trips',
+        trips=trips,
+        properties=properties,
+    )
+
+
+@bp.route('/g/<group_uuid>/people')
+@group_member_required()
+def view_people(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    people = list_facts(group_uuid, 'people')
+    return render_template(
+        'timeshare/fact_views/people.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='people',
+        people=people,
+    )
+
+
+@bp.route('/g/<group_uuid>/portals')
+@group_member_required()
+def view_portals(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    portals = list_facts(group_uuid, 'portals')
+    # Password fields are never exposed — `encrypted_password_ref` is a pointer
+    # to Secret Manager and the reveal endpoint is deferred to Phase 8 (plan §12.4).
+    # Strip it from the rendered rows so no template can accidentally leak it.
+    for p in portals:
+        p.pop('encrypted_password_ref', None)
+    return render_template(
+        'timeshare/fact_views/portals.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='portals',
+        portals=portals,
+    )
+
+
+@bp.route('/g/<group_uuid>/contacts')
+@group_member_required()
+def view_contacts(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    contacts = list_facts(group_uuid, 'contacts')
+    return render_template(
+        'timeshare/fact_views/contacts.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='contacts',
+        contacts=contacts,
+    )
+
+
+@bp.route('/g/<group_uuid>/documents')
+@group_member_required()
+def view_documents(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    docs = list_facts(group_uuid, 'document_refs')
+    return render_template(
+        'timeshare/fact_views/documents.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='documents',
+        docs=docs,
+    )
+
+
+@bp.route('/g/<group_uuid>/timeline')
+@group_member_required()
+def view_timeline(group_uuid):
+    group_name = _get_group_name(group_uuid)
+    events = list_facts(group_uuid, 'timeline_events')
+    return render_template(
+        'timeshare/fact_views/timeline.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='timeline',
+        events=events,
+    )
+
+
+# ── Phase 2: generic fact CRUD ──────────────────────────────
+
+# Maps each fact_key to the fact-view route that should receive the post-mutation redirect.
+_FACT_VIEW_ROUTE = {
+    'properties': 'timeshare.view_property',
+    'contracts': 'timeshare.view_property',
+    'people': 'timeshare.view_people',
+    'maintenance_fees': 'timeshare.view_finances',
+    'loan_payments': 'timeshare.view_finances',
+    'trips': 'timeshare.view_trips',
+    'exchanges': 'timeshare.view_finances',
+    'portals': 'timeshare.view_portals',
+    'contacts': 'timeshare.view_contacts',
+    'document_refs': 'timeshare.view_documents',
+    'timeline_events': 'timeshare.view_timeline',
+}
+
+
+def _redirect_back(group_uuid, fact_key):
+    route = _FACT_VIEW_ROUTE.get(fact_key, 'timeshare.dashboard')
+    return redirect(url_for(route, group_uuid=group_uuid))
+
+
+@bp.route('/g/<group_uuid>/fact/<fact_key>/new', methods=['POST'])
+@group_member_required()
+def fact_new(group_uuid, fact_key):
+    if fact_key not in FACT_SCHEMAS:
+        abort(404)
+    parent_id = request.form.get('parent_id', type=int)
+    pk, err = insert_fact(group_uuid, fact_key, request.form, parent_id=parent_id)
+    if err:
+        flash(f"Couldn't save: {err}", 'error')
+    else:
+        flash("Saved.", 'success')
+    return _redirect_back(group_uuid, fact_key)
+
+
+@bp.route('/g/<group_uuid>/fact/<fact_key>/<int:pk>', methods=['POST'])
+@group_member_required()
+def fact_update(group_uuid, fact_key, pk):
+    if fact_key not in FACT_SCHEMAS:
+        abort(404)
+    ok, err = update_fact(group_uuid, fact_key, pk, request.form)
+    if err:
+        flash(f"Couldn't update: {err}", 'error')
+    else:
+        flash("Updated.", 'success')
+    return _redirect_back(group_uuid, fact_key)
+
+
+@bp.route('/g/<group_uuid>/fact/<fact_key>/<int:pk>/delete', methods=['POST'])
+@group_member_required()
+def fact_delete(group_uuid, fact_key, pk):
+    if fact_key not in FACT_SCHEMAS:
+        abort(404)
+    ok, err = delete_fact(group_uuid, fact_key, pk)
+    if err:
+        flash(f"Couldn't delete: {err}", 'error')
+    else:
+        flash("Deleted.", 'success')
+    return _redirect_back(group_uuid, fact_key)

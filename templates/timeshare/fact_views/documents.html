@@ -1,0 +1,58 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Documents — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 mb-6 text-xs text-crab-sand-dim">
+  crab.travel never stores your files. This is a link registry — Drive, Dropbox, anywhere you keep the original. Phase 3 adds paste + PDF ingestion; Phase 4 adds Drive-folder scanning.
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6">
+  {% if docs %}
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr><th class="text-left px-4 py-3">Title</th><th class="text-left">Type</th><th class="text-left">Date</th><th class="text-left">Source</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in docs %}
+      <tr class="border-t border-white/5">
+        <td class="px-4 py-3 font-medium">
+          {% if d.external_url %}<a href="{{ d.external_url }}" target="_blank" class="text-crab-coral hover:underline">{{ d.title }}</a>{% else %}{{ d.title }}{% endif %}
+        </td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ d.doc_type or '' }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ d.date_on_document or '' }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ (d.external_provider or '')|replace('_',' ') }}</td>
+        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/document_refs/{{ d.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">No documents linked yet.</div>
+  {% endif %}
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a document link</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/document_refs/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="title" required placeholder="CSF statement — 2024" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <select name="doc_type" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Type…</option>
+      <option value="contract">Contract</option>
+      <option value="csf_statement">CSF statement</option>
+      <option value="exchange_confirm">Exchange confirmation</option>
+      <option value="screenshot">Screenshot</option>
+      <option value="other">Other</option>
+    </select>
+    <select name="external_provider" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Hosted on…</option>
+      <option value="google_drive">Google Drive</option>
+      <option value="dropbox">Dropbox</option>
+      <option value="user_url">Other URL</option>
+    </select>
+    <input name="external_url" placeholder="https://…" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="date_on_document" placeholder="Date on document (YYYY-MM-DD)" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <textarea name="notes" rows="2" placeholder="Notes" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save link</button>
+  </form>
+</div>
+{% endblock %}

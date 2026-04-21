@@ -1,0 +1,46 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Portals — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mb-6 text-xs text-amber-200">
+  Passwords are never stored in crab. We keep usernames, member numbers, and support phone shortcuts — the actual password lives in your password manager.
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6">
+  {% if portals %}
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr><th class="text-left px-4 py-3">Portal</th><th class="text-left">URL</th><th class="text-left">Username</th><th class="text-left">Member #</th><th class="text-left">Support</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in portals %}
+      <tr class="border-t border-white/5">
+        <td class="px-4 py-3 font-medium">{{ p.portal_name }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{% if p.url %}<a href="{{ p.url }}" target="_blank" class="text-crab-coral hover:underline">{{ p.url[:40] }}{{ '…' if p.url|length > 40 }}</a>{% endif %}</td>
+        <td class="px-4 py-3">{{ p.username or '' }}</td>
+        <td class="px-4 py-3">{{ p.member_number or '' }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ p.support_phone or '' }}</td>
+        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/portals/{{ p.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">No portals added yet.</div>
+  {% endif %}
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a portal</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/portals/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="portal_name" required placeholder="Interval International" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="url" placeholder="https://…" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="username" placeholder="Username" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="member_number" placeholder="Member #" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="support_phone" placeholder="Support phone + shortcut" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="last_rotated" placeholder="Last rotated (YYYY-MM-DD)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <textarea name="notes" rows="2" placeholder="Notes" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save portal</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-Timeshare Phase 1 E2E test harness — runs against live prod via the
-Playwright test apikey (`?apikey=CRAB_TEST_APIKEY&user_id=N`).
+Timeshare E2E test harness — runs against live prod via the Playwright
+test apikey (`?apikey=CRAB_TEST_APIKEY&user_id=N`).
 
 Impersonates andy.tillo@gmail.com (user_id=1) for the owner path and the
 bot accounts (user_ids 13–21) as invitees — bot.* email addresses are
 real first-class user rows in crab.users and the existing email utility
 silently no-ops when sending to `bot.*` addresses, so no real inbox is touched.
 
-Covers every verification item in docs/timeshare_buildout.md §14 Phase 1
-plus extras: rate limit, email-match rejection, malformed UUID, expired
-token, re-clicking an accepted invite.
+Covers:
+  Phase 1 — landing, group create, invite/accept, 404-on-miss, rate limit,
+            email-match rejection, expired token, resend token rotation.
+  Phase 2 — schema presence (22 timeshare_* + 3 ii_* tables + crab.plans
+            timeshare_group_id FK), 8 fact views, generic fact CRUD,
+            cross-group write isolation, portals password redaction.
 
 Usage:
-    python dev/test_timeshare_phase1.py             # run all
-    python dev/test_timeshare_phase1.py --keep      # don't delete the test group
+    python dev/test_timeshare_e2e.py             # run all
+    python dev/test_timeshare_e2e.py --keep      # don't delete test groups
 """
 
 import argparse
@@ -397,6 +400,244 @@ def test_members_list_renders(group_uuid, andy_session):
     assert_true("noindex on members page", 'noindex, nofollow' in r.text)
 
 
+# ── Phase 2: schema + fact views + CRUD ─────────────────────────────
+
+PHASE2_TABLES = [
+    'timeshare_properties', 'timeshare_contracts', 'timeshare_people',
+    'timeshare_maintenance_fees', 'timeshare_loan_payments',
+    'timeshare_trips', 'timeshare_trip_participants', 'timeshare_exchanges',
+    'timeshare_portals', 'timeshare_contacts', 'timeshare_document_refs',
+    'timeshare_timeline_events', 'timeshare_group_shortlist',
+    'timeshare_ingest_jobs', 'timeshare_chat_conversations',
+    'timeshare_chat_messages', 'timeshare_audit_log',
+]
+PHASE2_II_TABLES = ['ii_regions', 'ii_areas', 'ii_resorts']
+
+FACT_VIEWS = ['property', 'finances', 'trips', 'people', 'portals',
+              'contacts', 'documents', 'timeline']
+
+
+def test_phase2_schema():
+    print("\n[16] Phase 2: all 19 new tables + 3 ii_* exist in crab schema")
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name FROM information_schema.tables
+             WHERE table_schema = 'crab'
+               AND table_name = ANY(%s)
+        """, (PHASE2_TABLES + PHASE2_II_TABLES,))
+        found = {r[0] for r in cur.fetchall()}
+        for t in PHASE2_TABLES + PHASE2_II_TABLES:
+            assert_true(f"crab.{t} exists", t in found)
+
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+             WHERE table_schema = 'crab' AND table_name = 'plans'
+               AND column_name = 'timeshare_group_id'
+        """)
+        assert_true("crab.plans.timeshare_group_id column exists",
+                    cur.fetchone() is not None)
+    finally:
+        conn.close()
+
+
+def test_phase2_fact_views_members(group_uuid, andy_session):
+    print("\n[17] Phase 2: every fact view returns 200 for member + has noindex")
+    for view in FACT_VIEWS:
+        r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/{view}", timeout=TIMEOUT)
+        assert_eq(f"member on /{view}", r.status_code, 200)
+        assert_true(f"/{view} has noindex", 'noindex, nofollow' in r.text)
+
+
+def test_phase2_fact_views_404_for_non_member(group_uuid):
+    print("\n[18] Phase 2: every fact view 404s for non-member")
+    # Use a bot user who isn't in this group (not user 14 which was invited)
+    outsider = authed_session(18)  # bot.priya.patel
+    for view in FACT_VIEWS:
+        r = outsider.get(f"{PROD_URL}/timeshare/g/{group_uuid}/{view}",
+                         timeout=TIMEOUT, allow_redirects=False)
+        assert_eq(f"non-member on /{view}", r.status_code, 404)
+
+
+def test_phase2_crud_property(group_uuid, andy_session):
+    print("\n[19] Phase 2: CRUD on properties + scope enforcement")
+    # Create a property
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/fact/properties/new",
+        data={'name': 'Royal Sands Cancún', 'unit_number': 'K5133',
+              'week_number': '38', 'usage_pattern': 'biennial_even',
+              'exchange_network': 'interval_international',
+              'country': 'Mexico', 'city': 'Cancún',
+              'trust_expiry_date': '2050-01-24'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("property create status", r.status_code, 302)
+
+    # Verify it landed via the finances page (which lists properties)
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/property", timeout=TIMEOUT)
+    assert_true("property appears on view", 'Royal Sands Cancún' in r.text)
+    assert_true("property unit appears", 'K5133' in r.text)
+
+    # Grab the pk_id + try a CSF fee row
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pk_id FROM crab.timeshare_properties
+             WHERE group_id = %s::uuid AND name = %s
+        """, (group_uuid, 'Royal Sands Cancún'))
+        prop_id = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/fact/maintenance_fees/new",
+        data={'parent_id': str(prop_id), 'year': '2024',
+              'billed_amount_usd': '1381.00', 'paid_amount_usd': '1381.00',
+              'paid_date': '2024-09-22'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("maintenance_fees create status", r.status_code, 302)
+
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/finances", timeout=TIMEOUT)
+    assert_true("CSF row visible on finances page", '1,381.00' in r.text or '1381.00' in r.text)
+
+    # Invalid year coercion → should flash error
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/fact/maintenance_fees/new",
+        data={'parent_id': str(prop_id), 'year': 'not-a-year'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("bad-year coercion redirects with flash", r.status_code, 302)
+
+    return prop_id
+
+
+def test_phase2_crud_portals_redaction(group_uuid, andy_session):
+    print("\n[20] Phase 2: portals view never leaks encrypted_password_ref")
+    # Seed a portal with an encrypted_password_ref in the DB (simulating what
+    # a future reveal endpoint would reference)
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO crab.timeshare_portals
+                (group_id, portal_name, url, username, encrypted_password_ref,
+                 member_number, support_phone)
+            VALUES (%s::uuid, 'Interval International',
+                    'https://intervalworld.com', 'TILLOAT',
+                    'SECRET_REF_SHOULD_NEVER_APPEAR', '3430769',
+                    '1-800-555-1234')
+        """, (group_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/portals", timeout=TIMEOUT)
+    assert_eq("portals view status", r.status_code, 200)
+    assert_true("portal_name renders", 'Interval International' in r.text)
+    assert_true("username renders", 'TILLOAT' in r.text)
+    assert_true(
+        "encrypted_password_ref NEVER in HTML",
+        'SECRET_REF_SHOULD_NEVER_APPEAR' not in r.text,
+        detail="(route strips it before rendering)",
+    )
+
+
+def test_phase2_cross_group_scope():
+    print("\n[21] Phase 2: fact writes cannot cross groups")
+    # Create two distinct groups owned by Andy
+    andy = authed_session(ANDY_USER_ID)
+    name_a = f"{TEST_GROUP_PREFIX} scope A {uuid.uuid4().hex[:6]}"
+    name_b = f"{TEST_GROUP_PREFIX} scope B {uuid.uuid4().hex[:6]}"
+    r = andy.post(f"{PROD_URL}/timeshare/groups/new", data={'name': name_a},
+                  timeout=TIMEOUT, allow_redirects=False)
+    uuid_a = r.headers['location'].rstrip('/').split('/')[-1]
+    r = andy.post(f"{PROD_URL}/timeshare/groups/new", data={'name': name_b},
+                  timeout=TIMEOUT, allow_redirects=False)
+    uuid_b = r.headers['location'].rstrip('/').split('/')[-1]
+
+    # Andy creates a property in group A
+    andy.post(
+        f"{PROD_URL}/timeshare/g/{uuid_a}/fact/properties/new",
+        data={'name': 'Group-A Property'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pk_id FROM crab.timeshare_properties
+             WHERE group_id = %s::uuid
+        """, (uuid_a,))
+        prop_a_id = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    # Now try to insert a maintenance_fee in group B using the group-A property
+    # as parent. The insert_fact helper should reject it with "parent not in
+    # this group" and no row should land.
+    r = andy.post(
+        f"{PROD_URL}/timeshare/g/{uuid_b}/fact/maintenance_fees/new",
+        data={'parent_id': str(prop_a_id), 'year': '2024',
+              'billed_amount_usd': '999'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cross-group insert redirects", r.status_code, 302)
+
+    # Verify nothing landed
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM crab.timeshare_maintenance_fees f
+              JOIN crab.timeshare_properties p ON p.pk_id = f.property_id
+             WHERE p.group_id = %s::uuid OR f.property_id = %s
+        """, (uuid_b, prop_a_id))
+        count_in_b_or_linking = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_eq("no cross-group fee row materialized", count_in_b_or_linking, 0)
+
+    # Andy tries to UPDATE group-A's property via group-B's URL — scope guard
+    # should prevent it
+    r = andy.post(
+        f"{PROD_URL}/timeshare/g/{uuid_b}/fact/properties/{prop_a_id}",
+        data={'name': 'HIJACKED'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("cross-group update redirects", r.status_code, 302)
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM crab.timeshare_properties WHERE pk_id = %s
+        """, (prop_a_id,))
+        still_name = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_eq("group-A property untouched by group-B update", still_name, 'Group-A Property')
+
+
+def test_phase2_unknown_fact_key(group_uuid, andy_session):
+    print("\n[22] Phase 2: unknown fact_key → 404")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/fact/users/new",
+        data={'anything': 'goes'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("unknown fact_key status", r.status_code, 404)
+
+
+def test_phase2_dashboard_shows_counts(group_uuid, andy_session):
+    print("\n[23] Phase 2: dashboard renders fact-count cards")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/", timeout=TIMEOUT)
+    assert_eq("dashboard status", r.status_code, 200)
+    for label in ('Property', 'Fees', 'Trips', 'People', 'Portals',
+                  'Contacts', 'Documents', 'Timeline'):
+        assert_true(f"dashboard card: {label}", f">{label}<" in r.text)
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -405,7 +646,7 @@ def main():
     args = ap.parse_args()
 
     print("=" * 60)
-    print("Timeshare Phase 1 — E2E against", PROD_URL)
+    print("Timeshare E2E against", PROD_URL)
     print("=" * 60)
 
     # Pre-clean any stale test groups from prior aborted runs
@@ -427,6 +668,15 @@ def main():
         test_invite_resend_refreshes_token(group_uuid, andy)
         test_admin_required_to_invite(group_uuid)
         test_members_list_renders(group_uuid, andy)
+        # Phase 2
+        test_phase2_schema()
+        test_phase2_fact_views_members(group_uuid, andy)
+        test_phase2_fact_views_404_for_non_member(group_uuid)
+        test_phase2_crud_property(group_uuid, andy)
+        test_phase2_crud_portals_redaction(group_uuid, andy)
+        test_phase2_cross_group_scope()
+        test_phase2_unknown_fact_key(group_uuid, andy)
+        test_phase2_dashboard_shows_counts(group_uuid, andy)
     finally:
         if not args.keep:
             cleanup_test_groups()

@@ -1,0 +1,99 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Property — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+{% for prop in properties %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold">{{ prop.name }}</h2>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/properties/{{ prop.pk_id }}/delete" onsubmit="return confirm('Delete this property? Linked contracts, fees, exchanges and trips will be preserved or cascade-deleted depending on FK setup.')">
+      <button type="submit" class="text-xs text-red-400 hover:text-red-300">Delete</button>
+    </form>
+  </div>
+  <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    {% for label, key in [('Developer','developer'),('Unit','unit_number'),('Week','week_number'),('Usage','usage_pattern'),('Network','exchange_network'),('Country','country'),('City','city'),('Trust expiry','trust_expiry_date')] %}
+      {% if prop[key] %}
+      <div>
+        <dt class="text-xs text-crab-sand-dim">{{ label }}</dt>
+        <dd class="mt-0.5">{{ prop[key] }}</dd>
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if prop.unit_configuration %}
+    <div class="col-span-2">
+      <dt class="text-xs text-crab-sand-dim">Configuration</dt>
+      <dd class="mt-0.5">{{ prop.unit_configuration }}</dd>
+    </div>
+    {% endif %}
+    {% if prop.notes %}
+    <div class="col-span-full">
+      <dt class="text-xs text-crab-sand-dim">Notes</dt>
+      <dd class="mt-0.5 whitespace-pre-wrap">{{ prop.notes }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  <div class="border-t border-white/5 mt-5 pt-5">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim mb-3">Contracts</div>
+    {% if contracts_by_property[prop.pk_id] %}
+      <ul class="space-y-2 text-sm">
+        {% for c in contracts_by_property[prop.pk_id] %}
+        <li class="flex items-center justify-between bg-crab-navy/40 rounded-lg px-3 py-2">
+          <div>
+            <span class="font-medium">#{{ c.contract_number or '(no number)' }}</span>
+            {% if c.purchase_date %}<span class="text-crab-sand-dim"> · purchased {{ c.purchase_date }}</span>{% endif %}
+            {% if c.purchase_price_usd %}<span class="text-crab-sand-dim"> · ${{ '{:,.2f}'.format(c.purchase_price_usd) }}</span>{% endif %}
+          </div>
+          <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/contracts/{{ c.pk_id }}/delete">
+            <button class="text-xs text-red-400 hover:text-red-300">Delete</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-xs text-crab-sand-dim mb-3">No contract yet.</p>
+    {% endif %}
+    <details class="mt-3">
+      <summary class="text-xs text-crab-coral cursor-pointer">+ Add a contract</summary>
+      <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/contracts/new" class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <input type="hidden" name="parent_id" value="{{ prop.pk_id }}">
+        <input name="contract_number" placeholder="Contract #" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+        <input name="purchase_date" placeholder="YYYY-MM-DD" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+        <input name="purchase_price_usd" placeholder="Price USD" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+        <input name="co_owners" placeholder="Co-owners" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+        <textarea name="notes" placeholder="Notes" rows="2" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+        <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-3 py-1.5 text-sm font-semibold">Save contract</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">{% if properties %}Add another property{% else %}Add your property{% endif %}</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/properties/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="name" required placeholder="Royal Sands Cancún" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="developer" placeholder="Royal Resorts" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="unit_number" placeholder="K5133" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="week_number" placeholder="Week 38" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <select name="usage_pattern" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Usage…</option>
+      <option value="annual">Annual</option>
+      <option value="biennial_even">Biennial (even)</option>
+      <option value="biennial_odd">Biennial (odd)</option>
+      <option value="float">Float</option>
+    </select>
+    <select name="exchange_network" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Network…</option>
+      <option value="interval_international">Interval International</option>
+      <option value="rci">RCI</option>
+    </select>
+    <input name="country" placeholder="Mexico" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="city" placeholder="Cancún" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="trust_expiry_date" placeholder="Trust expiry (YYYY-MM-DD)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="unit_configuration" placeholder="Configuration (e.g. 2BR lock-off)" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <textarea name="notes" rows="2" placeholder="Anything else" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save property</button>
+  </form>
+</div>
+{% endblock %}

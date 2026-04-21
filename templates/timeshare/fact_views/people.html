@@ -1,0 +1,41 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}People — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6">
+  {% if people %}
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr><th class="text-left px-4 py-3">Name</th><th class="text-left">Relationship</th><th class="text-left">Email</th><th class="text-left">Phone</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in people %}
+      <tr class="border-t border-white/5">
+        <td class="px-4 py-3 font-medium">{{ p.full_name }}{% if p.preferred_name %} <span class="text-crab-sand-dim">({{ p.preferred_name }})</span>{% endif %}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ p.relationship or '' }}</td>
+        <td class="px-4 py-3">{{ p.email or '' }}</td>
+        <td class="px-4 py-3">{{ p.phone or '' }}</td>
+        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/people/{{ p.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">No people added yet.</div>
+  {% endif %}
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a person</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/people/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="full_name" required placeholder="Full name" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="preferred_name" placeholder="Preferred name" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="relationship" placeholder="Relationship (e.g. mother)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="birth_date" placeholder="Birth date (YYYY-MM-DD)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="email" type="email" placeholder="Email" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="phone" placeholder="Phone" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <textarea name="notes" rows="2" placeholder="Notes" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save person</button>
+  </form>
+</div>
+{% endblock %}
