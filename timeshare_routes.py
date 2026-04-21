@@ -593,6 +593,97 @@ def view_timeline(group_uuid):
     )
 
 
+@bp.route('/g/<group_uuid>/timeline/<int:pk>/detail')
+@group_member_required()
+def timeline_event_detail(group_uuid, pk):
+    """JSON payload for the timeline modal — event + linked person/property/contact + overlapping trips."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT pk_id, event_date, event_type, title, description,
+                   related_person_id, related_property_id, related_contact_id
+              FROM crab.timeshare_timeline_events
+             WHERE pk_id = %s AND group_id = %s
+        """, (pk, group_uuid))
+        event = cur.fetchone()
+        if not event:
+            return jsonify({'error': 'not_found'}), 404
+
+        person = None
+        if event['related_person_id']:
+            cur.execute("""
+                SELECT pk_id, full_name, preferred_name, relationship, email, phone, birth_date, notes
+                  FROM crab.timeshare_people WHERE pk_id = %s AND group_id = %s
+            """, (event['related_person_id'], group_uuid))
+            person = cur.fetchone()
+
+        prop = None
+        if event['related_property_id']:
+            cur.execute("""
+                SELECT pk_id, name, developer, unit_number, week_number, usage_pattern,
+                       exchange_network, country, city
+                  FROM crab.timeshare_properties WHERE pk_id = %s AND group_id = %s
+            """, (event['related_property_id'], group_uuid))
+            prop = cur.fetchone()
+
+        contact = None
+        if event['related_contact_id']:
+            cur.execute("""
+                SELECT pk_id, full_name, role, organization, email, phone, last_contacted, notes
+                  FROM crab.timeshare_contacts WHERE pk_id = %s AND group_id = %s
+            """, (event['related_contact_id'], group_uuid))
+            contact = cur.fetchone()
+
+        trips = []
+        if event['event_date']:
+            cur.execute("""
+                SELECT t.pk_id, t.trip_date_start, t.trip_date_end, t.resort_name, t.location,
+                       t.trip_type, t.cost_usd, t.notes,
+                       COALESCE(
+                         (SELECT array_agg(p.full_name ORDER BY p.full_name)
+                            FROM crab.timeshare_trip_participants tp
+                            JOIN crab.timeshare_people p ON p.pk_id = tp.person_id
+                           WHERE tp.trip_id = t.pk_id),
+                         ARRAY[]::VARCHAR[]
+                       ) AS participants
+                  FROM crab.timeshare_trips t
+                 WHERE t.group_id = %s
+                   AND t.trip_date_start IS NOT NULL
+                   AND (
+                         (%s BETWEEN t.trip_date_start AND COALESCE(t.trip_date_end, t.trip_date_start))
+                      OR (t.trip_date_start BETWEEN (%s::date - INTERVAL '30 days')
+                                                AND (%s::date + INTERVAL '30 days'))
+                   )
+                 ORDER BY t.trip_date_start DESC
+                 LIMIT 5
+            """, (group_uuid, event['event_date'], event['event_date'], event['event_date']))
+            trips = cur.fetchall()
+
+        def ser(d):
+            if d is None:
+                return None
+            out = {}
+            for k, v in d.items():
+                if hasattr(v, 'isoformat'):
+                    out[k] = v.isoformat()
+                elif isinstance(v, list):
+                    out[k] = [str(x) for x in v if x]
+                else:
+                    out[k] = v
+            return out
+
+        return jsonify({
+            'event': ser(event),
+            'person': ser(person),
+            'property': ser(prop),
+            'contact': ser(contact),
+            'trips': [ser(t) for t in trips],
+        })
+    finally:
+        conn.close()
+
+
 # ── Phase 2: generic fact CRUD ──────────────────────────────
 
 # Maps each fact_key to the fact-view route that should receive the post-mutation redirect.

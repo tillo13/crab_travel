@@ -6,17 +6,20 @@
   {% if events %}
   <ol class="relative border-l border-white/10 ml-3 space-y-5">
     {% for e in events %}
-    <li class="ml-5">
-      <span class="absolute -left-1.5 w-3 h-3 rounded-full bg-crab-coral mt-1.5"></span>
+    <li class="ml-5 group">
+      <span class="absolute -left-1.5 w-3 h-3 rounded-full bg-crab-coral mt-1.5 group-hover:ring-2 group-hover:ring-crab-coral/40 transition"></span>
       <div class="flex items-baseline justify-between gap-3">
-        <div>
-          <div class="font-medium">{{ e.title }}</div>
+        <button type="button"
+                class="ts-timeline-open text-left flex-1 rounded-lg -mx-2 px-2 py-1 hover:bg-white/5 transition cursor-pointer"
+                data-event-id="{{ e.pk_id }}">
+          <div class="font-medium group-hover:text-crab-coral transition">{{ e.title }}</div>
           <div class="text-xs text-crab-sand-dim mt-0.5">
             {% if e.event_date %}{{ e.event_date.strftime('%b %d, %Y') }}{% endif %}
             {% if e.event_type %} · <span class="capitalize">{{ e.event_type|replace('_',' ') }}</span>{% endif %}
+            <span class="ml-2 text-crab-coral/70 opacity-0 group-hover:opacity-100 transition">→ details</span>
           </div>
           {% if e.description %}<p class="text-sm text-crab-sand-dim mt-1 whitespace-pre-wrap">{{ e.description }}</p>{% endif %}
-        </div>
+        </button>
         {% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/timeline_events/{{ e.pk_id }}/delete" onsubmit="return confirm('Delete this timeline event? This can\'t be undone.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}
       </div>
     </li>
@@ -26,6 +29,164 @@
   <p class="text-sm text-crab-sand-dim text-center">No timeline events yet.</p>
   {% endif %}
 </div>
+
+<div id="ts-timeline-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
+  <div class="bg-crab-navy border border-white/10 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-crab-card/40">
+      <div>
+        <div class="text-xs uppercase tracking-wide text-crab-sand-dim" id="ts-modal-kicker">Timeline event</div>
+        <div class="text-lg font-semibold mt-0.5" id="ts-modal-title">—</div>
+      </div>
+      <button type="button" class="ts-modal-close text-crab-sand-dim hover:text-white transition text-xl leading-none">✕</button>
+    </div>
+    <div class="p-6 overflow-y-auto text-sm" id="ts-modal-body">
+      <p class="text-crab-sand-dim">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const modal = document.getElementById('ts-timeline-modal');
+  const titleEl = document.getElementById('ts-modal-title');
+  const kickerEl = document.getElementById('ts-modal-kicker');
+  const bodyEl = document.getElementById('ts-modal-body');
+  const groupUuid = {{ group_uuid|tojson }};
+
+  function esc(s){
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function money(n){
+    if (n === null || n === undefined || n === '') return '';
+    const v = Number(n);
+    if (isNaN(v)) return '';
+    return '$' + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function fmtDate(iso){
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'T00:00:00');
+      return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'});
+    } catch(e){ return iso; }
+  }
+  function openModal(){ modal.classList.remove('hidden'); modal.classList.add('flex'); document.body.style.overflow = 'hidden'; }
+  function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('flex'); document.body.style.overflow = ''; }
+
+  function renderSection(label, rows){
+    const filled = rows.filter(r => r[1] !== null && r[1] !== undefined && r[1] !== '');
+    if (!filled.length) return '';
+    return `<div class="mb-5">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">${esc(label)}</div>
+      <dl class="grid grid-cols-3 gap-x-4 gap-y-2">
+        ${filled.map(([k, v]) => `<dt class="text-crab-sand-dim">${esc(k)}</dt><dd class="col-span-2">${esc(v)}</dd>`).join('')}
+      </dl>
+    </div>`;
+  }
+
+  function render(data){
+    const e = data.event || {};
+    titleEl.textContent = e.title || 'Timeline event';
+    const bits = [];
+    if (e.event_date) bits.push(fmtDate(e.event_date));
+    if (e.event_type) bits.push(String(e.event_type).replace(/_/g, ' '));
+    kickerEl.textContent = bits.length ? bits.join(' · ') : 'Timeline event';
+
+    let html = '';
+
+    if (e.description){
+      html += `<div class="mb-5 bg-crab-card/30 border border-white/5 rounded-lg p-4 whitespace-pre-wrap text-crab-sand">${esc(e.description)}</div>`;
+    }
+
+    if (data.trips && data.trips.length){
+      html += `<div class="mb-5">
+        <div class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">${data.trips.length === 1 ? 'Linked trip' : 'Linked trips'} <span class="text-crab-sand-dim/70 normal-case">(within 30 days of event)</span></div>
+        <div class="space-y-2">
+          ${data.trips.map(t => {
+            const dates = t.trip_date_start
+              ? fmtDate(t.trip_date_start) + (t.trip_date_end && t.trip_date_end !== t.trip_date_start ? ' → ' + fmtDate(t.trip_date_end) : '')
+              : '';
+            const participants = (t.participants || []).join(', ');
+            return `<div class="bg-crab-card/40 border border-white/5 rounded-lg p-3">
+              <div class="flex items-baseline justify-between gap-3">
+                <div class="font-medium">${esc(t.resort_name || '(unnamed trip)')}</div>
+                ${t.cost_usd ? `<div class="text-crab-coral font-semibold text-sm">${esc(money(t.cost_usd))}</div>` : ''}
+              </div>
+              <div class="text-xs text-crab-sand-dim mt-1">
+                ${esc(dates)}
+                ${t.location ? ' · ' + esc(t.location) : ''}
+                ${t.trip_type ? ' · ' + esc(String(t.trip_type).replace(/_/g, ' ')) : ''}
+              </div>
+              ${participants ? `<div class="text-xs text-crab-sand-dim mt-1"><span class="text-crab-sand-dim/70">With:</span> ${esc(participants)}</div>` : ''}
+              ${t.notes ? `<div class="text-xs text-crab-sand-dim mt-2 whitespace-pre-wrap">${esc(t.notes)}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    if (data.person){
+      html += renderSection('Person', [
+        ['Name', data.person.full_name],
+        ['Relationship', data.person.relationship],
+        ['Email', data.person.email],
+        ['Phone', data.person.phone],
+        ['Notes', data.person.notes],
+      ]);
+    }
+
+    if (data.property){
+      html += renderSection('Property', [
+        ['Name', data.property.name],
+        ['Developer', data.property.developer],
+        ['Unit', data.property.unit_number],
+        ['Week', data.property.week_number],
+        ['Network', data.property.exchange_network],
+        ['Location', [data.property.city, data.property.country].filter(Boolean).join(', ')],
+      ]);
+    }
+
+    if (data.contact){
+      html += renderSection('Contact', [
+        ['Name', data.contact.full_name],
+        ['Role', data.contact.role],
+        ['Organization', data.contact.organization],
+        ['Email', data.contact.email],
+        ['Phone', data.contact.phone],
+        ['Last contacted', fmtDate(data.contact.last_contacted)],
+      ]);
+    }
+
+    if (!html.trim()){
+      html = `<p class="text-crab-sand-dim">No linked facts on this event yet. Add related people, properties, contacts, or trips to enrich it.</p>`;
+    }
+
+    bodyEl.innerHTML = html;
+  }
+
+  document.querySelectorAll('.ts-timeline-open').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.eventId;
+      titleEl.textContent = '—';
+      kickerEl.textContent = 'Loading…';
+      bodyEl.innerHTML = '<p class="text-crab-sand-dim">Loading…</p>';
+      openModal();
+      try {
+        const r = await fetch(`/timeshare/g/${groupUuid}/timeline/${id}/detail`, {credentials: 'same-origin'});
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        render(data);
+      } catch(err){
+        bodyEl.innerHTML = `<p class="text-red-400">Couldn't load: ${esc(err.message)}</p>`;
+      }
+    });
+  });
+
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.querySelectorAll('.ts-modal-close').forEach(el => el.addEventListener('click', closeModal));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
+})();
+</script>
 
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
   <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a timeline event</h2>
