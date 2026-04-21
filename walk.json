@@ -11,7 +11,10 @@
     "/crab-animations",
     "/health",
     "/sitemap.xml",
-    "/robots.txt"
+    "/robots.txt",
+    "/timeshare/",
+    { "path": "/timeshare/catalog", "expectText": "Interval International" },
+    { "path": "/timeshare/catalog/resort/AVR", "expectText": "Acadia Village" }
   ],
   "checks": {
     "noBrokenImages": true,

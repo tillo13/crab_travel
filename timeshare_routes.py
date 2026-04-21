@@ -1019,10 +1019,63 @@ def catalog_resort(ii_code):
     resort = get_resort(ii_code)
     if not resort:
         abort(404)
+    user = session.get('user') or {}
+
+    # "What we have" — cross-reference this resort against every group the user
+    # belongs to. Trips where resort_ii_code matches, and any shortlist hits.
+    trips_here = []
+    shortlisted_in = []
+    sibling_resorts = []
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        if user.get('id'):
+            cur.execute("""
+                SELECT t.pk_id, t.group_id, g.name AS group_name,
+                       t.trip_date_start, t.trip_date_end, t.trip_type,
+                       t.cost_usd, t.notes
+                  FROM crab.timeshare_trips t
+                  JOIN crab.timeshare_groups g ON g.group_id = t.group_id
+                  JOIN crab.timeshare_group_members gm ON gm.group_id = g.group_id
+                 WHERE gm.user_id = %s AND gm.accepted_at IS NOT NULL
+                   AND (t.resort_ii_code = %s OR t.resort_name ILIKE %s)
+                 ORDER BY t.trip_date_start DESC NULLS LAST
+            """, (user['id'], ii_code, f"%{resort['name']}%"))
+            trips_here = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT sl.group_id, g.name AS group_name
+                  FROM crab.timeshare_group_shortlist sl
+                  JOIN crab.timeshare_groups g ON g.group_id = sl.group_id
+                  JOIN crab.timeshare_group_members gm ON gm.group_id = g.group_id
+                 WHERE gm.user_id = %s AND gm.accepted_at IS NOT NULL
+                   AND sl.resort_code = %s
+            """, (user['id'], ii_code))
+            shortlisted_in = [dict(r) for r in cur.fetchall()]
+
+        # Other resorts in the same area — "what swap options are nearby"
+        if resort.get('area_id'):
+            cur.execute("""
+                SELECT ii_code, name, tier, photo_urls, sleeping_capacity
+                  FROM crab.ii_resorts
+                 WHERE area_id = %s AND ii_code != %s AND status = 'active'
+                 ORDER BY
+                    CASE WHEN tier = 'Premier_Boutique' THEN 0
+                         WHEN tier = 'Premier' THEN 1 ELSE 2 END,
+                    name ASC
+                 LIMIT 8
+            """, (resort['area_id'], ii_code))
+            sibling_resorts = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
     return render_template(
         'timeshare/catalog/resort.html',
         active_page='timeshare',
         resort=resort,
+        trips_here=trips_here,
+        shortlisted_in=shortlisted_in,
+        sibling_resorts=sibling_resorts,
     )
 
 

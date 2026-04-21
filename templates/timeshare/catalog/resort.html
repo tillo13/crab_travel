@@ -3,7 +3,7 @@
 {% block meta_robots %}noindex, nofollow{% endblock %}
 
 {% block content %}
-<div class="animate-in max-w-4xl mx-auto">
+<div class="animate-in max-w-5xl mx-auto">
   <div class="mb-6">
     <a href="/timeshare/catalog" class="text-sm text-crab-sand-dim hover:text-crab-sand">← Catalog</a>
     <div class="text-xs uppercase tracking-wide text-crab-sand-dim mt-2">
@@ -11,18 +11,34 @@
       {% if resort.area_name %} · {{ resort.area_name }}{% endif %}
       {% if resort.country %} · {{ resort.country }}{% endif %}
     </div>
-    <h1 class="text-2xl font-display mt-1">{{ resort.name }}</h1>
-    <div class="text-sm text-crab-sand-dim mt-1">
-      II code: <code class="text-crab-sand">{{ resort.ii_code }}</code>
-      {% if resort.rating_overall %}
-        · <span class="text-crab-coral">★ {{ resort.rating_overall }}</span>
-        {% if resort.rating_response_count %}<span class="text-crab-sand-dim"> ({{ resort.rating_response_count }})</span>{% endif %}
+    <h1 class="text-3xl font-display mt-1">{{ resort.name }}</h1>
+    <div class="text-sm text-crab-sand-dim mt-1 flex flex-wrap items-center gap-3">
+      <span>II code: <code class="text-crab-sand">{{ resort.ii_code }}</code></span>
+      {% if resort.tier %}
+        <span class="text-xs uppercase tracking-wider font-semibold
+          {% if resort.tier == 'Premier_Boutique' %}text-amber-300
+          {% elif resort.tier == 'Premier' %}text-amber-400
+          {% else %}text-emerald-300{% endif %}">★ {{ resort.tier|replace('_', ' ') }}</span>
       {% endif %}
     </div>
   </div>
 
+  {# ── Photo grid ────────────────────────────────────────────── #}
+  {% if resort.photo_urls %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+    {% for url in resort.photo_urls[:8] %}
+    <a href="{{ url }}" target="_blank"
+       class="aspect-[4/3] bg-crab-navy/40 rounded-lg overflow-hidden block hover:opacity-80 transition-opacity">
+      <img src="{{ url }}" loading="lazy" alt="{{ resort.name }} photo"
+           class="w-full h-full object-cover"
+           onerror="this.parentElement.style.display='none'">
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if my_timeshare_groups %}
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 mb-6 flex items-center justify-between">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
     <div class="text-sm text-crab-sand-dim">Shortlist this resort for one of your groups:</div>
     <div class="flex flex-wrap gap-2">
       {% for g in my_timeshare_groups %}
@@ -30,7 +46,7 @@
         <input type="hidden" name="resort_code" value="{{ resort.ii_code }}">
         <input type="hidden" name="network" value="interval_international">
         <button class="text-xs px-3 py-1.5 rounded-lg bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 transition-colors">
-          + {{ g.name|truncate(25) }}
+          + {{ g.name|truncate(30) }}
         </button>
       </form>
       {% endfor %}
@@ -39,54 +55,138 @@
   {% endif %}
 
   <div class="grid md:grid-cols-2 gap-6">
-    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 space-y-2 text-sm">
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 text-sm space-y-2">
       <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Details</h2>
-      {% if resort.address %}<div><span class="text-crab-sand-dim">Address:</span> {{ resort.address }}</div>{% endif %}
-      {% if resort.phone %}<div><span class="text-crab-sand-dim">Phone:</span> {{ resort.phone }}</div>{% endif %}
-      {% if resort.nearest_airport %}<div><span class="text-crab-sand-dim">Airport:</span> {{ resort.nearest_airport }}</div>{% endif %}
-      {% if resort.check_in_day %}<div><span class="text-crab-sand-dim">Check-in:</span> {{ resort.check_in_day }}</div>{% endif %}
-      {% if resort.website %}<div><span class="text-crab-sand-dim">Website:</span> <a href="{{ resort.website }}" target="_blank" class="text-crab-coral hover:underline">{{ resort.website|truncate(40) }}</a></div>{% endif %}
-      {% if resort.tdi_score %}<div><span class="text-crab-sand-dim">TDI:</span> {{ resort.tdi_score }}</div>{% endif %}
+      {% if resort.nearest_airport %}<div><span class="text-crab-sand-dim">Airport:</span> <span class="text-crab-sand">{{ resort.nearest_airport }}</span></div>{% endif %}
+      {% if resort.check_in_day %}<div><span class="text-crab-sand-dim">Check-in:</span> <span class="text-crab-sand">{{ resort.check_in_day }}</span></div>{% endif %}
+      {% if resort.phone %}<div><span class="text-crab-sand-dim">Phone:</span> <span class="text-crab-sand">{{ resort.phone }}</span></div>{% endif %}
+      {% if resort.address %}<div><span class="text-crab-sand-dim">Address:</span> <span class="text-crab-sand">{{ resort.address }}</span></div>{% endif %}
+      {% if resort.website and 'intervalworld.com' in resort.website %}
+        <div><span class="text-crab-sand-dim">II page:</span> <a href="{{ resort.website }}" target="_blank" class="text-crab-coral hover:underline">open on II ↗</a></div>
+      {% endif %}
     </div>
 
-    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 space-y-2 text-sm">
-      <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Ratings</h2>
-      {% for label, key in [('Services','rating_services'),('Property','rating_property'),('Accommodations','rating_accommodations'),('Experience','rating_experience')] %}
-        {% if resort[key] %}
-          <div class="flex justify-between">
-            <span class="text-crab-sand-dim">{{ label }}</span>
-            <span>★ {{ resort[key] }}</span>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 text-sm">
+      <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Sleeping capacity</h2>
+      {% if resort.sleeping_capacity %}
+        <dl class="grid grid-cols-3 gap-3">
+          {% for k, v in resort.sleeping_capacity.items() %}
+          <div>
+            <dt class="text-xs text-crab-sand-dim capitalize">{{ k }}</dt>
+            <dd class="text-2xl font-display text-crab-coral">{{ v }}</dd>
           </div>
-        {% endif %}
-      {% endfor %}
+          {% endfor %}
+        </dl>
+      {% else %}
+        <div class="text-crab-sand-dim">Not listed on the II directory page.</div>
+      {% endif %}
     </div>
   </div>
 
-  {% if resort.sleeping_capacity %}
+  {# ── Description: only show if we got a real one (not the generic II meta).
+        The II resort pages embed the SITE-wide meta description on every resort;
+        we skip it unless it's actually resort-specific. #}
+  {% set generic_meta = "Interval International is a timeshare exchange company" %}
+  {% if resort.description and generic_meta not in resort.description %}
   <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 mt-6">
-    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Sleeping capacity</h2>
-    <dl class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-      {% for k, v in resort.sleeping_capacity.items() %}
-      <div>
-        <dt class="text-crab-sand-dim">{{ k }}</dt>
-        <dd>{{ v }}</dd>
+    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">About this resort</h2>
+    <p class="text-sm text-crab-sand leading-relaxed whitespace-pre-wrap">{{ resort.description }}</p>
+  </div>
+  {% endif %}
+
+  {# ── Your history with this resort ────────────────────────── #}
+  {% if trips_here %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 mt-6">
+    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-3">Your family's history here</h2>
+    <div class="space-y-2 text-sm">
+      {% for t in trips_here %}
+      <div class="flex items-start justify-between gap-3 py-1.5 border-b border-white/5 last:border-0">
+        <div>
+          <div class="font-medium">
+            {% if t.trip_date_start %}{{ t.trip_date_start.strftime('%b %Y') }}{% endif %}
+            {% if t.trip_type %} · <span class="text-crab-sand-dim capitalize">{{ t.trip_type|replace('_',' ') }}</span>{% endif %}
+          </div>
+          <div class="text-xs text-crab-sand-dim mt-0.5">
+            Group: <a href="/timeshare/g/{{ t.group_id }}/trips" class="text-crab-coral hover:underline">{{ t.group_name }}</a>
+            {% if t.cost_usd %} · ${{ '{:,.0f}'.format(t.cost_usd) }}{% endif %}
+          </div>
+          {% if t.notes %}<div class="text-xs text-crab-sand-dim mt-1">{{ t.notes|truncate(140) }}</div>{% endif %}
+        </div>
       </div>
       {% endfor %}
-    </dl>
+    </div>
   </div>
   {% endif %}
 
-  {% if resort.description %}
+  {% if shortlisted_in %}
+  <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mt-6 text-sm text-amber-200">
+    ★ On your shortlist in:
+    {% for s in shortlisted_in %}<a href="/timeshare/g/{{ s.group_id }}/catalog" class="underline hover:no-underline">{{ s.group_name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Other resorts in the same area ────────────────────────── #}
+  {% if sibling_resorts %}
   <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 mt-6">
-    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Description</h2>
-    <p class="text-sm text-crab-sand-dim whitespace-pre-wrap">{{ resort.description }}</p>
+    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-3">
+      Other resorts in {{ resort.area_name or resort.country or 'this area' }}
+    </h2>
+    <div class="grid sm:grid-cols-2 md:grid-cols-4 gap-3">
+      {% for s in sibling_resorts %}
+      <a href="/timeshare/catalog/resort/{{ s.ii_code }}"
+         class="block bg-crab-navy/40 border border-white/5 rounded-lg p-3 hover:border-crab-coral/40 transition-colors">
+        {% if s.photo_urls %}
+          <div class="aspect-[4/3] rounded overflow-hidden mb-2 bg-crab-navy">
+            <img src="{{ s.photo_urls[0] }}" class="w-full h-full object-cover" loading="lazy" alt=""
+                 onerror="this.parentElement.style.display='none'">
+          </div>
+        {% endif %}
+        <div class="text-sm font-medium truncate">{{ s.name }}</div>
+        <div class="flex items-center justify-between text-xs mt-1">
+          {% if s.tier %}
+            <span class="
+              {% if s.tier == 'Premier_Boutique' %}text-amber-300
+              {% elif s.tier == 'Premier' %}text-amber-400
+              {% else %}text-emerald-300{% endif %}">★ {{ s.tier|replace('_',' ') }}</span>
+          {% else %}<span></span>{% endif %}
+          {% if s.sleeping_capacity and s.sleeping_capacity.total %}
+            <span class="text-crab-sand-dim">sleeps {{ s.sleeping_capacity.total }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 
-  {% if resort.scraped_at %}
-  <div class="text-xs text-crab-sand-dim mt-6 text-right">
-    Last scraped: {{ resort.scraped_at.strftime('%b %d, %Y') if resort.scraped_at.strftime else resort.scraped_at }}
+  {# ── City/area intel + booking hop-off ───────────────────────── #}
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 mt-6">
+    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-3">Explore &amp; book</h2>
+    <div class="grid sm:grid-cols-3 gap-3 text-sm">
+      <a href="{{ resort.website }}" target="_blank"
+         class="block bg-crab-coral/10 border border-crab-coral/40 rounded-lg p-4 hover:bg-crab-coral/20 transition-colors">
+        <div class="font-semibold text-crab-coral">Check availability on II ↗</div>
+        <div class="text-xs text-crab-sand-dim mt-1">Real swap dates require an II member login — we hand you off cleanly.</div>
+      </a>
+      {% set city_q = (resort.area_name or resort.country or resort.name)|urlencode %}
+      <a href="https://www.google.com/search?q={{ resort.name|urlencode }}+reviews" target="_blank"
+         class="block bg-crab-navy/40 border border-white/10 rounded-lg p-4 hover:border-crab-coral/40 transition-colors">
+        <div class="font-semibold">Reviews on Google ↗</div>
+        <div class="text-xs text-crab-sand-dim mt-1">See real traveler reviews for this resort.</div>
+      </a>
+      <a href="https://www.google.com/search?q=things+to+do+in+{{ city_q }}" target="_blank"
+         class="block bg-crab-navy/40 border border-white/10 rounded-lg p-4 hover:border-crab-coral/40 transition-colors">
+        <div class="font-semibold">Things to do in {{ resort.area_name or resort.country }} ↗</div>
+        <div class="text-xs text-crab-sand-dim mt-1">Restaurants, attractions, activities nearby.</div>
+      </a>
+    </div>
+    <p class="text-xs text-crab-sand-dim mt-3">
+      Phase 8c wires live Google Places reviews + restaurants + activities directly into this page. For now these open Google in a new tab.
+    </p>
   </div>
-  {% endif %}
+
+  <div class="text-xs text-crab-sand-dim mt-6 text-right">
+    {% if resort.scraped_at %}Last scraped: {{ resort.scraped_at.strftime('%b %d, %Y') if resort.scraped_at.strftime else resort.scraped_at }}{% endif %}
+  </div>
 </div>
 {% endblock %}
