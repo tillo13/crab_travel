@@ -97,9 +97,14 @@ def get_file_metadata(file_id: str) -> dict:
     return r.json()
 
 
-def list_folder_children(folder_id: str, max_items: int = 200) -> list:
-    """Returns [{id, name, mimeType, modifiedTime}, ...] for a public folder.
-    Skips subfolders for MVP (Phase 4.5 can recurse)."""
+def list_folder_children(folder_id: str, max_items: int = 200,
+                          max_depth: int = 3, _depth: int = 0) -> list:
+    """Recursively list every file under a public folder. Subfolders are
+    walked up to `max_depth` levels deep; only leaf files (docs, sheets,
+    PDFs) are returned — folder entries themselves are consumed for the
+    walk. Each returned item gets an extra `_path` field showing the
+    relative path from the starting folder (useful for UI display and
+    provenance)."""
     r = requests.get(
         f"{DRIVE_API_BASE}/files",
         params={
@@ -116,7 +121,27 @@ def list_folder_children(folder_id: str, max_items: int = 200) -> list:
     if r.status_code == 403:
         raise DriveError("Drive refused the request — try making the folder 'anyone with the link — viewer'.")
     r.raise_for_status()
-    return r.json().get('files', [])
+    direct_children = r.json().get('files', [])
+
+    flat = []
+    for child in direct_children:
+        if child.get('mimeType') == MIME_GOOGLE_FOLDER:
+            if _depth >= max_depth:
+                continue
+            # Recurse — prefix child names with the subfolder path
+            sub = list_folder_children(
+                child['id'],
+                max_items=max_items,
+                max_depth=max_depth,
+                _depth=_depth + 1,
+            )
+            for s in sub:
+                s['_path'] = f"{child['name']}/{s.get('_path', s['name'])}"
+                flat.append(s)
+        else:
+            child['_path'] = child['name']
+            flat.append(child)
+    return flat
 
 
 # ── Content fetch (unauthenticated export endpoints) ────────────────

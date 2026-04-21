@@ -890,3 +890,46 @@ Return ONLY the JSON array, no other text."""
             results[trip_token] = f'error: {str(e)[:200]}'
 
     return jsonify({'success': True, 'results': results})
+
+
+# ── II catalog scraper ──────────────────────────────────────────────
+
+def _ii_scrape_auth_ok():
+    """Allow when called by App Engine cron OR by a logged-in admin OR with the task secret."""
+    if request.headers.get('X-Appengine-Cron') == 'true':
+        return True
+    if session.get('user_is_admin'):
+        return True
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if request.args.get('secret') == task_secret and task_secret != 'dev':
+        return True
+    return False
+
+
+@bp.route('/tasks/ii-scrape-seed', methods=['GET', 'POST'])
+def ii_scrape_seed():
+    if not _ii_scrape_auth_ok():
+        return jsonify({'error': 'forbidden'}), 403
+    from utilities.timeshare_ii_scraper import start_run
+    try:
+        run_id = start_run(triggered_by='cron' if request.headers.get('X-Appengine-Cron') else 'admin')
+        return jsonify({'ok': True, 'run_id': run_id})
+    except Exception as e:
+        logger.exception(f'ii-scrape-seed failed: {e}')
+        return jsonify({'error': str(e).split(chr(10))[0][:200]}), 500
+
+
+@bp.route('/tasks/ii-scrape-next', methods=['GET', 'POST'])
+def ii_scrape_next():
+    if not _ii_scrape_auth_ok():
+        return jsonify({'error': 'forbidden'}), 403
+    from utilities.timeshare_ii_scraper import process_next
+    try:
+        # Default: 1 region per call = ~3-5 min of work. Admin can pass ?max=N.
+        max_regions = int(request.args.get('max', 1))
+        max_regions = max(1, min(max_regions, 5))   # hard cap: 5 per call
+        summary = process_next(max_regions=max_regions)
+        return jsonify({'ok': True, **summary})
+    except Exception as e:
+        logger.exception(f'ii-scrape-next failed: {e}')
+        return jsonify({'error': str(e).split(chr(10))[0][:200]}), 500

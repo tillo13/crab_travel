@@ -21,3 +21,8 @@ cron:
 #   url: /tasks/vote-reminders
 #   schedule: every day 09:00
 #   timezone: America/Los_Angeles
+
+- description: "Timeshare — process next II catalog region (polite chunk)"
+  url: /tasks/ii-scrape-next
+  schedule: every 15 mins
+  timezone: America/Los_Angeles

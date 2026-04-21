@@ -753,8 +753,9 @@ def ingest_job_reject(group_uuid, job_id):
 # ── Phase 4: public-link Drive ingestion ────────────────────────────
 
 # Per-request cap so a user can't accidentally submit a 500-doc folder and
-# chew through $25 of Claude budget in one click. 20 docs × $0.05/doc ≈ $1/scan.
-MAX_DRIVE_ITEMS_PER_SCAN = 20
+# chew through $25 of Claude budget in one click. 75 docs × $0.05/doc ≈ $4/scan.
+# Covers the Tillo-size dossier (≈ 40 text-extractable files) with headroom.
+MAX_DRIVE_ITEMS_PER_SCAN = 75
 
 
 @bp.route('/g/<group_uuid>/ingest/drive', methods=['POST'])

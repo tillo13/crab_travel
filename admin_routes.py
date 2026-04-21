@@ -578,3 +578,30 @@ def api_admin_bots_cleanup():
     conn.close()
     logger.info(f"🧹 Bot cleanup: deleted {deleted} bot plans")
     return jsonify({'success': True, 'deleted': deleted})
+
+
+@bp.route('/admin/ii-scrape')
+@login_required
+def admin_ii_scrape():
+    from utilities.admin_utils import is_admin
+    from utilities.timeshare_ii_scraper import get_run_summary
+    real_uid = session.get('_real_uid') or session['user']['id']
+    if not is_admin(real_uid):
+        return redirect('/dashboard')
+    runs = get_run_summary(limit=10)
+    # Fact-table counts for sanity
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT (SELECT COUNT(*) FROM crab.ii_regions),
+                   (SELECT COUNT(*) FROM crab.ii_areas),
+                   (SELECT COUNT(*) FROM crab.ii_resorts),
+                   (SELECT COUNT(*) FROM crab.ii_resorts WHERE status='missing')
+        """)
+        regions, areas, resorts, missing = cur.fetchone()
+    finally:
+        conn.close()
+    totals = {'regions': regions, 'areas': areas, 'resorts': resorts, 'missing': missing}
+    return render_template('admin_ii_scrape.html', active_page='admin',
+                            runs=runs, totals=totals)

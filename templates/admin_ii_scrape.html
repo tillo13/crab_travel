@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}II Scrape — Admin{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-5xl mx-auto">
+  <div class="mb-6">
+    <h1 class="text-2xl font-display">Interval International catalog scraper</h1>
+    <p class="text-sm text-crab-sand-dim mt-1">
+      Anonymous scrape of the public resort directory. Polite rate limit (~1.5s/request). Crawl chunks one region at a time via cron; full pass takes a few hours.
+    </p>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Regions</div>
+      <div class="text-2xl font-display text-crab-coral mt-1">{{ totals.regions }}</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Areas</div>
+      <div class="text-2xl font-display text-crab-coral mt-1">{{ totals.areas }}</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Resorts</div>
+      <div class="text-2xl font-display text-crab-coral mt-1">{{ totals.resorts }}</div>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Marked missing</div>
+      <div class="text-2xl font-display text-amber-400 mt-1">{{ totals.missing }}</div>
+    </div>
+  </div>
+
+  <div class="flex gap-3 mb-6">
+    <form method="POST" action="/tasks/ii-scrape-seed" class="inline">
+      <button type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+        Start new crawl
+      </button>
+    </form>
+    <form method="POST" action="/tasks/ii-scrape-next?max=3" class="inline">
+      <button type="submit" class="bg-crab-navy/60 border border-white/10 text-sm px-5 py-2.5 rounded-xl hover:border-crab-coral/40 transition-colors">
+        Process 3 regions now
+      </button>
+    </form>
+  </div>
+
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      Recent runs
+    </div>
+    {% if runs %}
+    <table class="w-full text-sm">
+      <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
+        <tr>
+          <th class="text-left px-5 py-3">Started</th>
+          <th class="text-left">Status</th>
+          <th class="text-right">Regions</th>
+          <th class="text-right">New</th>
+          <th class="text-right">Updated</th>
+          <th class="text-right">Unchanged</th>
+          <th class="text-right">Errors</th>
+          <th class="text-right">Pending</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr class="border-t border-white/5">
+          <td class="px-5 py-3">{{ r.started_at.strftime('%b %d, %H:%M') }}</td>
+          <td class="px-5 py-3">
+            {% if r.status == 'done' %}<span class="text-emerald-400">done</span>
+            {% elif r.status == 'running' %}<span class="text-amber-400">running</span>
+            {% else %}<span class="text-crab-sand-dim">{{ r.status }}</span>{% endif %}
+          </td>
+          <td class="px-5 py-3 text-right">{{ r.regions_done }}/{{ r.regions_total }}</td>
+          <td class="px-5 py-3 text-right text-emerald-400">+{{ r.resorts_new }}</td>
+          <td class="px-5 py-3 text-right">{{ r.resorts_updated }}</td>
+          <td class="px-5 py-3 text-right text-crab-sand-dim">{{ r.resorts_unchanged }}</td>
+          <td class="px-5 py-3 text-right {% if r.error_count %}text-red-400{% else %}text-crab-sand-dim{% endif %}">{{ r.error_count }}</td>
+          <td class="px-5 py-3 text-right">{{ r.pending_regions }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="p-8 text-center text-sm text-crab-sand-dim">No crawls yet. Click <strong>Start new crawl</strong> to seed 31 regions.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -361,6 +361,80 @@ def _ensure_ii_catalog(cur):
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_area ON crab.ii_resorts(area_id)")
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_rating ON crab.ii_resorts(rating_overall)")
 
+    # Phase 8a — diff tracking + crawl history. Every ii_* row gets a content
+    # hash so crawls can tell new/changed/unchanged without a deep compare.
+    for t in ('ii_regions', 'ii_areas', 'ii_resorts'):
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)")
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS tier VARCHAR(30)")  # Premier/Select/Standard on resorts; null on others
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ DEFAULT NOW()")
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW()")
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'")  # active | missing
+        _run(cur, f"ALTER TABLE crab.{t} ADD COLUMN IF NOT EXISTS last_run_id INTEGER")
+
+    _run(cur, """
+        CREATE TABLE IF NOT EXISTS crab.ii_scrape_runs (
+            pk_id SERIAL PRIMARY KEY,
+            started_at TIMESTAMPTZ DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            status VARCHAR(20) DEFAULT 'running',
+            regions_total INTEGER,
+            regions_done INTEGER DEFAULT 0,
+            resorts_new INTEGER DEFAULT 0,
+            resorts_updated INTEGER DEFAULT 0,
+            resorts_unchanged INTEGER DEFAULT 0,
+            resorts_missing INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            triggered_by VARCHAR(30)
+        )
+    """)
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_scrape_runs_started ON crab.ii_scrape_runs(started_at DESC)")
+
+    _run(cur, """
+        CREATE TABLE IF NOT EXISTS crab.ii_scrape_queue (
+            pk_id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL REFERENCES crab.ii_scrape_runs(pk_id) ON DELETE CASCADE,
+            region_code INTEGER NOT NULL,
+            region_name VARCHAR(200),
+            status VARCHAR(20) DEFAULT 'pending',
+            areas_scraped INTEGER DEFAULT 0,
+            resorts_scraped INTEGER DEFAULT 0,
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            error_message TEXT,
+            UNIQUE(run_id, region_code)
+        )
+    """)
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_scrape_queue_status ON crab.ii_scrape_queue(status, pk_id)")
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_scrape_queue_run ON crab.ii_scrape_queue(run_id)")
+
+    # Google Places enrichment cache — one row per resort, populated lazily
+    # on resort-detail open. Refreshable via a staleness check (e.g. older
+    # than 30 days). REAL reviews for the UI, unlike II's marketing ratings.
+    _run(cur, """
+        CREATE TABLE IF NOT EXISTS crab.ii_resort_google (
+            pk_id SERIAL PRIMARY KEY,
+            resort_ii_code VARCHAR(10) UNIQUE NOT NULL,
+            place_id VARCHAR(200),
+            google_name VARCHAR(500),
+            google_formatted_address TEXT,
+            google_rating DECIMAL(2,1),
+            google_user_ratings_total INTEGER,
+            google_price_level INTEGER,
+            google_phone VARCHAR(50),
+            google_website VARCHAR(500),
+            google_photos JSONB,
+            google_reviews JSONB,
+            google_types JSONB,
+            map_lat DECIMAL(9,6),
+            map_lng DECIMAL(9,6),
+            fetched_at TIMESTAMPTZ DEFAULT NOW(),
+            error_message TEXT
+        )
+    """)
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_google_code ON crab.ii_resort_google(resort_ii_code)")
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_resort_google_rating ON crab.ii_resort_google(google_rating)")
+
 
 def _ensure_group_shortlist(cur):
     _run(cur, """
