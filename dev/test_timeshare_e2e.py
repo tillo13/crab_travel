@@ -1117,6 +1117,259 @@ def test_phase5_kill_switch(group_uuid, andy_session):
         conn.close()
 
 
+# ── Phase 6: II catalog + shortlist ────────────────────────────────
+
+PHASE6_REGION_CODE = 99001
+PHASE6_AREA_CODE = 99002
+PHASE6_RESORT_CODE = 'TEST99'
+
+
+def _seed_phase6_catalog():
+    """Insert 1 region / 1 area / 1 resort for the catalog tests. Idempotent."""
+    import json
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO crab.ii_regions (ii_code, name, scraped_at)
+            VALUES (%s, 'E2E Test Region', NOW())
+            ON CONFLICT (ii_code) DO UPDATE SET name = EXCLUDED.name, scraped_at = NOW()
+            RETURNING pk_id
+        """, (PHASE6_REGION_CODE,))
+        region_pk = cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO crab.ii_areas (ii_code, name, country, region_id, scraped_at)
+            VALUES (%s, 'E2E Test Area', 'Testlandia', %s, NOW())
+            ON CONFLICT (ii_code) DO UPDATE SET name = EXCLUDED.name,
+                country = EXCLUDED.country, region_id = EXCLUDED.region_id,
+                scraped_at = NOW()
+            RETURNING pk_id
+        """, (PHASE6_AREA_CODE, region_pk))
+        area_pk = cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO crab.ii_resorts
+                (ii_code, name, address, area_id, rating_overall,
+                 rating_response_count, sleeping_capacity, description, scraped_at)
+            VALUES (%s, 'E2E Test Resort', '123 Test Blvd, Testlandia',
+                    %s, 4.3, 248, %s::jsonb,
+                    'A fictional resort seeded by the E2E test harness.', NOW())
+            ON CONFLICT (ii_code) DO UPDATE SET
+                name = EXCLUDED.name, area_id = EXCLUDED.area_id,
+                rating_overall = EXCLUDED.rating_overall,
+                rating_response_count = EXCLUDED.rating_response_count,
+                sleeping_capacity = EXCLUDED.sleeping_capacity,
+                description = EXCLUDED.description,
+                scraped_at = NOW()
+        """, (PHASE6_RESORT_CODE, area_pk,
+              json.dumps({'studio': 2, '1BR': 4, '2BR': 6})))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _cleanup_phase6_catalog():
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM crab.ii_resorts WHERE ii_code = %s", (PHASE6_RESORT_CODE,))
+        cur.execute("DELETE FROM crab.ii_areas WHERE ii_code = %s", (PHASE6_AREA_CODE,))
+        cur.execute("DELETE FROM crab.ii_regions WHERE ii_code = %s", (PHASE6_REGION_CODE,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_phase6_catalog_pages(andy_session):
+    print("\n[44] Phase 6: catalog region grid + region + resort pages render")
+    _seed_phase6_catalog()
+    r = andy_session.get(f"{PROD_URL}/timeshare/catalog", timeout=TIMEOUT)
+    assert_eq("/catalog status", r.status_code, 200)
+    assert_true("catalog shows seeded region", 'E2E Test Region' in r.text)
+
+    r = andy_session.get(f"{PROD_URL}/timeshare/catalog/region/{PHASE6_REGION_CODE}",
+                         timeout=TIMEOUT)
+    assert_eq("/catalog/region status", r.status_code, 200)
+    assert_true("region page shows seeded area", 'E2E Test Area' in r.text)
+
+    r = andy_session.get(f"{PROD_URL}/timeshare/catalog/resort/{PHASE6_RESORT_CODE}",
+                         timeout=TIMEOUT)
+    assert_eq("/catalog/resort status", r.status_code, 200)
+    assert_true("resort page shows name", 'E2E Test Resort' in r.text)
+    assert_true("resort page shows rating", '4.3' in r.text)
+    assert_true("resort page shows sleeping capacity keys",
+                '1BR' in r.text and '2BR' in r.text)
+
+    # Unknown ii_code → 404
+    r = andy_session.get(f"{PROD_URL}/timeshare/catalog/resort/NO_SUCH_CODE_99",
+                         timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("unknown resort → 404", r.status_code, 404)
+
+
+def test_phase6_catalog_login_required():
+    print("\n[45] Phase 6: catalog pages require login")
+    r = requests.get(f"{PROD_URL}/timeshare/catalog",
+                     timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("anon on /catalog", r.status_code, 302)
+    assert_true("redirects to login",
+                r.headers.get('location', '').endswith('/login'))
+
+
+def test_phase6_group_catalog_page(group_uuid, andy_session):
+    print("\n[46] Phase 6: group-framed catalog renders with shortlist section")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/catalog", timeout=TIMEOUT)
+    assert_eq("/g/<uuid>/catalog status", r.status_code, 200)
+    assert_true("group catalog shows seeded region", 'E2E Test Region' in r.text)
+    assert_true("noindex", 'noindex, nofollow' in r.text)
+
+    # Non-member → 404
+    outsider = authed_session(18)
+    r = outsider.get(f"{PROD_URL}/timeshare/g/{group_uuid}/catalog",
+                     timeout=TIMEOUT, allow_redirects=False)
+    assert_eq("non-member on /g/<uuid>/catalog", r.status_code, 404)
+
+
+def test_phase6_shortlist_toggle(group_uuid, andy_session):
+    print("\n[47] Phase 6: shortlist toggle adds/removes row")
+    # Toggle ON
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/shortlist/toggle",
+        data={'resort_code': PHASE6_RESORT_CODE, 'network': 'interval_international'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("toggle-on redirect", r.status_code, 302)
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM crab.timeshare_group_shortlist
+             WHERE group_id = %s::uuid AND resort_code = %s
+        """, (group_uuid, PHASE6_RESORT_CODE))
+        count_on = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_eq("row present after toggle-on", count_on, 1)
+
+    # Toggle OFF
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/shortlist/toggle",
+        data={'resort_code': PHASE6_RESORT_CODE, 'network': 'interval_international'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("toggle-off redirect", r.status_code, 302)
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM crab.timeshare_group_shortlist
+             WHERE group_id = %s::uuid AND resort_code = %s
+        """, (group_uuid, PHASE6_RESORT_CODE))
+        count_off = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert_eq("row gone after toggle-off", count_off, 0)
+
+
+def test_phase6_writeback_requires_bearer():
+    print("\n[48] Phase 6: /api/ii-catalog-sync rejects without bearer token")
+    r = requests.post(
+        f"{PROD_URL}/timeshare/api/ii-catalog-sync",
+        json={'regions': []}, timeout=TIMEOUT,
+    )
+    assert_eq("no-bearer status", r.status_code, 401)
+
+    r = requests.post(
+        f"{PROD_URL}/timeshare/api/ii-catalog-sync",
+        json={'regions': []},
+        headers={'Authorization': 'Bearer not-the-real-token'},
+        timeout=TIMEOUT,
+    )
+    assert_eq("bad-bearer status", r.status_code, 401)
+
+
+def test_phase6_writeback_upserts():
+    print("\n[49] Phase 6: /api/ii-catalog-sync upserts with valid bearer")
+    from utilities.google_auth_utils import get_secret
+    token = get_secret('CRAB_TIMESHARE_BEARER_TOKEN')
+    payload = {
+        'regions': [{'ii_code': 99101, 'name': 'Writeback Region'}],
+        'areas': [{'ii_code': 99102, 'name': 'Writeback Area',
+                   'country': 'Writelandia', 'region_ii_code': 99101}],
+        'resorts': [{
+            'ii_code': 'WB99', 'name': 'Writeback Resort',
+            'area_ii_code': 99102, 'rating_overall': 4.1,
+            'rating_response_count': 87,
+            'sleeping_capacity': {'studio': 2, '1BR': 4},
+            'description': 'Seeded via bearer-authed writeback.',
+        }],
+    }
+    r = requests.post(
+        f"{PROD_URL}/timeshare/api/ii-catalog-sync",
+        json=payload,
+        headers={'Authorization': f'Bearer {token}'},
+        timeout=TIMEOUT,
+    )
+    assert_eq("writeback status", r.status_code, 200)
+    data = r.json()
+    assert_eq("counts.regions", data['counts']['regions'], 1)
+    assert_eq("counts.areas", data['counts']['areas'], 1)
+    assert_eq("counts.resorts", data['counts']['resorts'], 1)
+
+    # Verify DB state
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM crab.ii_resorts WHERE ii_code = 'WB99'")
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    assert_true("resort row exists after writeback",
+                row is not None and row[0] == 'Writeback Resort')
+
+    # Cleanup the writeback fixtures
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM crab.ii_resorts WHERE ii_code = 'WB99'")
+        cur.execute("DELETE FROM crab.ii_areas WHERE ii_code = 99102")
+        cur.execute("DELETE FROM crab.ii_regions WHERE ii_code = 99101")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_phase6_chat_catalog_tool(group_uuid, andy_session):
+    print("\n[50] Phase 6: chatbot search_resort_catalog tool surfaces seeded resort")
+    # Reset rate limit + kill switch in case a prior test left them off
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_group_members
+               SET chat_daily_count = 0, chat_daily_reset_at = NOW()
+             WHERE group_id = %s::uuid AND user_id = %s
+        """, (group_uuid, ANDY_USER_ID))
+        cur.execute("""
+            UPDATE crab.timeshare_groups SET settings = '{}'::jsonb
+             WHERE group_id = %s::uuid
+        """, (group_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/api/chat/send",
+        json={'message': 'Search the II catalog for resorts in Testlandia.'},
+        timeout=CHAT_TIMEOUT,
+    )
+    assert_eq("catalog-search chat status", r.status_code, 200)
+    answer = (r.json().get('assistant_text') or '').lower()
+    assert_true(
+        "answer references the seeded resort",
+        'e2e test resort' in answer or 'testlandia' in answer,
+        detail=f"answer={answer[:200]}",
+    )
+
+
 def test_phase5_cross_group_isolation():
     print("\n[43] Phase 5: chat tools bind group_id — empty group returns empty")
     # Spin up a fresh empty group, ask "what property do we have?", verify
@@ -1259,7 +1512,16 @@ def main():
         test_phase5_rate_limit(group_uuid, andy)
         test_phase5_kill_switch(group_uuid, andy)
         test_phase5_cross_group_isolation()
+        # Phase 6 — II catalog + shortlist + writeback
+        test_phase6_catalog_pages(andy)
+        test_phase6_catalog_login_required()
+        test_phase6_group_catalog_page(group_uuid, andy)
+        test_phase6_shortlist_toggle(group_uuid, andy)
+        test_phase6_writeback_requires_bearer()
+        test_phase6_writeback_upserts()
+        test_phase6_chat_catalog_tool(group_uuid, andy)
     finally:
+        _cleanup_phase6_catalog()
         if not args.keep:
             cleanup_test_groups()
         else:

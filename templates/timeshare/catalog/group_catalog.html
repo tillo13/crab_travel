@@ -1,0 +1,52 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Catalog — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+{% if shortlist %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">
+    Your shortlist — {{ shortlist|length }} resort{{ 's' if shortlist|length != 1 else '' }}
+  </h2>
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+    {% for s in shortlist %}
+    <div class="bg-crab-navy/40 border border-white/5 rounded-lg p-3 text-sm">
+      <div class="flex items-center justify-between gap-2">
+        <a href="/timeshare/catalog/resort/{{ s.resort_code }}" class="font-semibold hover:text-crab-coral">
+          {{ s.resort_name or s.resort_code }}
+        </a>
+        <form method="POST" action="/timeshare/g/{{ group_uuid }}/shortlist/toggle">
+          <input type="hidden" name="resort_code" value="{{ s.resort_code }}">
+          <input type="hidden" name="network" value="{{ s.network }}">
+          <button class="text-xs text-red-400 hover:text-red-300">✕</button>
+        </form>
+      </div>
+      <div class="text-xs text-crab-sand-dim mt-1">
+        {% if s.area_name %}{{ s.area_name }}{% endif %}
+        {% if s.country %}, {{ s.country }}{% endif %}
+        {% if s.rating_overall %} · ★ {{ s.rating_overall }}{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide">Regions</h2>
+    <a href="/timeshare/catalog" class="text-xs text-crab-coral hover:underline">Full catalog →</a>
+  </div>
+  {% if regions %}
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+    {% for r in regions %}
+    <a href="/timeshare/catalog/region/{{ r.ii_code }}" class="block bg-crab-navy/40 border border-white/5 rounded-lg p-3 hover:border-crab-coral/40 transition-colors">
+      <div class="font-medium">{{ r.name }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">{{ r.area_count }} area{{ 's' if r.area_count != 1 else '' }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-sm text-crab-sand-dim">Catalog is empty — the VPS scraper hasn't populated it yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

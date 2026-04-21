@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ region.name }} — II Catalog{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-5xl mx-auto">
+  <div class="mb-6">
+    <a href="/timeshare/catalog" class="text-sm text-crab-sand-dim hover:text-crab-sand">← All regions</a>
+    <h1 class="text-2xl font-display mt-2">{{ region.name }}</h1>
+    <p class="text-sm text-crab-sand-dim mt-1">{{ areas|length }} area{{ 's' if areas|length != 1 else '' }}</p>
+  </div>
+
+  {% if areas %}
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+    {% for a in areas %}
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="font-semibold">{{ a.name }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">{{ a.country or '—' }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">{{ a.resort_count }} resort{{ 's' if a.resort_count != 1 else '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-sm text-crab-sand-dim">No areas scraped yet for this region.</div>
+  {% endif %}
+</div>
+{% endblock %}

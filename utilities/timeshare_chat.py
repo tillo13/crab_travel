@@ -118,6 +118,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "search_resort_catalog",
+        "description": "Search the shared II (Interval International) resort catalog across all groups. Use to answer 'what Hawaiian resorts rate 4+?' or 'is Royal Sands in the catalog?'. Catalog is not group-scoped — every group sees the same entries.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "Free-text location or name substring — matches resort name, area, country, or address."},
+                "min_rating": {"type": "number", "description": "Minimum rating_overall (0–5)."},
+                "min_sleeps": {"type": "integer", "description": "Minimum sleeping capacity across any unit type."},
+            },
+        },
+    },
+    {
+        "name": "get_shortlist",
+        "description": "Return this group's shortlisted resorts — the ones family members have flagged as interesting for future cycles.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -286,6 +303,19 @@ def _handle_get_document_refs(group_id, doc_type=None, **_):
     return {'document_refs': rows}
 
 
+def _handle_search_resort_catalog(group_id, location=None, min_rating=None, min_sleeps=None, **_):
+    # Catalog is shared across groups — no group_id binding needed for the query
+    # itself, but we still accept group_id as the first arg for dispatch uniformity.
+    from utilities.timeshare_catalog import search_resorts
+    rows = search_resorts(location=location, min_rating=min_rating, min_sleeps=min_sleeps)
+    return {'resorts': rows}
+
+
+def _handle_get_shortlist(group_id, **_):
+    from utilities.timeshare_catalog import list_shortlist
+    return {'shortlist': list_shortlist(group_id)}
+
+
 TOOL_HANDLERS = {
     'get_property': _handle_get_property,
     'get_maintenance_fees': _handle_get_maintenance_fees,
@@ -296,6 +326,8 @@ TOOL_HANDLERS = {
     'get_contacts': _handle_get_contacts,
     'get_timeline': _handle_get_timeline,
     'get_document_refs': _handle_get_document_refs,
+    'search_resort_catalog': _handle_search_resort_catalog,
+    'get_shortlist': _handle_get_shortlist,
 }
 
 

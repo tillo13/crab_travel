@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg2.extras
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
-from route_helpers import login_required
+from route_helpers import login_required, bearer_auth_required
 from utilities.invite_utils import generate_token
 from utilities.postgres_utils import get_db_connection
 from utilities.shorturl_utils import create_short_url
@@ -952,3 +952,107 @@ def chat_send(group_uuid):
         'tool_calls_made': len(result['tool_calls']),
         'cost_usd': result['cost_usd'],
     })
+
+
+# ── Phase 6: II catalog + shortlist ─────────────────────────────────
+
+@bp.route('/catalog')
+@login_required
+def catalog_regions():
+    from utilities.timeshare_catalog import list_regions
+    regions = list_regions()
+    return render_template(
+        'timeshare/catalog/regions.html',
+        active_page='timeshare',
+        regions=regions,
+    )
+
+
+@bp.route('/catalog/region/<int:ii_code>')
+@login_required
+def catalog_region(ii_code):
+    from utilities.timeshare_catalog import get_region, list_areas_in_region
+    region = get_region(ii_code)
+    if not region:
+        abort(404)
+    areas = list_areas_in_region(region['pk_id'])
+    return render_template(
+        'timeshare/catalog/region.html',
+        active_page='timeshare',
+        region=region,
+        areas=areas,
+    )
+
+
+@bp.route('/catalog/resort/<ii_code>')
+@login_required
+def catalog_resort(ii_code):
+    from utilities.timeshare_catalog import get_resort
+    resort = get_resort(ii_code)
+    if not resort:
+        abort(404)
+    return render_template(
+        'timeshare/catalog/resort.html',
+        active_page='timeshare',
+        resort=resort,
+    )
+
+
+@bp.route('/g/<group_uuid>/catalog')
+@group_member_required()
+def group_catalog(group_uuid):
+    """Group-framed catalog view — shows shortlist stats + region grid."""
+    from utilities.timeshare_catalog import list_regions, list_shortlist
+    group_name = _get_group_name(group_uuid)
+    regions = list_regions()
+    shortlist = list_shortlist(group_uuid)
+    return render_template(
+        'timeshare/catalog/group_catalog.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='catalog',
+        regions=regions,
+        shortlist=shortlist,
+    )
+
+
+@bp.route('/g/<group_uuid>/shortlist/toggle', methods=['POST'])
+@group_member_required()
+def shortlist_toggle(group_uuid):
+    from utilities.timeshare_catalog import toggle_shortlist
+    user = session['user']
+    resort_code = (request.form.get('resort_code') or '').strip()
+    network = (request.form.get('network') or 'interval_international').strip()
+    if not resort_code:
+        flash('Missing resort_code.', 'error')
+        return redirect(request.referrer or url_for('timeshare.group_catalog', group_uuid=group_uuid))
+    action = toggle_shortlist(group_uuid, network, resort_code, added_by=user['id'])
+    flash(f"Resort {resort_code} {action}.", 'success')
+    # Send the user back where they came from (catalog or resort detail)
+    return redirect(request.referrer or url_for('timeshare.group_catalog', group_uuid=group_uuid))
+
+
+# Server-to-server: bearer-authed writeback from the VPS scraper.
+@bp.route('/api/ii-catalog-sync', methods=['POST'])
+@bearer_auth_required('CRAB_TIMESHARE_BEARER_TOKEN')
+def ii_catalog_sync():
+    from utilities.timeshare_catalog import upsert_catalog
+    payload = request.get_json(silent=True) or {}
+    try:
+        counts = upsert_catalog(
+            regions=payload.get('regions'),
+            areas=payload.get('areas'),
+            resorts=payload.get('resorts'),
+        )
+    except KeyError as e:
+        return jsonify({'error': f'missing required field: {e}'}), 400
+    except Exception as e:
+        logger.exception(f"ii-catalog-sync failed: {e}")
+        return jsonify({'error': str(e).split(chr(10))[0][:200]}), 500
+    return jsonify({'ok': True, 'counts': counts})
+
+
+# Cron kick endpoint lives in tasks_routes.py (matches crab convention). It'll
+# be added when the OpenCrab-style VPS scraper is actually deployed — plan §7.1.
