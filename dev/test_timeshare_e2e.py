@@ -618,6 +618,19 @@ def test_phase2_cross_group_scope():
         conn.close()
     assert_eq("group-A property untouched by group-B update", still_name, 'Group-A Property')
 
+    # Tear down the two scope-test groups immediately so the per-day group-
+    # creation rate limit doesn't trip later tests.
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM crab.timeshare_groups
+             WHERE group_id IN (%s::uuid, %s::uuid)
+        """, (uuid_a, uuid_b))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def test_phase2_unknown_fact_key(group_uuid, andy_session):
     print("\n[22] Phase 2: unknown fact_key → 404")
