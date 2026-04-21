@@ -3,58 +3,451 @@
 {% set nav_active = 'dashboard' %}
 {% block title %}{{ group.name }} — crab.travel{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+
+<style>
+  /* "Private travel journal meets deep-sea chart" — navy waters, coral
+     land highlights, sand parchment text. */
+  #ts-map { background: #0a1729; }
+  #ts-map .leaflet-tile { filter: saturate(0.7) brightness(0.9); }
+  #ts-map .leaflet-control-attribution {
+    background: rgba(10, 23, 41, 0.7) !important;
+    color: #c9b88a !important;
+    font-size: 10px !important;
+    backdrop-filter: blur(6px);
+  }
+  #ts-map .leaflet-control-attribution a { color: #ff8a65 !important; }
+  .ts-hex-pin {
+    background: transparent;
+    border: none;
+  }
+  .ts-hex-pin svg { overflow: visible; }
+  .ts-home-ring {
+    animation: ts-home-pulse 2.6s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes ts-home-pulse {
+    0%, 100% { opacity: 0.35; r: 22; }
+    50% { opacity: 0.8; r: 32; }
+  }
+  @keyframes ts-pin-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+  }
+  .ts-pin-bouncing { animation: ts-pin-bounce 0.6s ease-in-out 2; }
+  .ts-result-card {
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .ts-result-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 138, 101, 0.5);
+    background: rgba(255, 138, 101, 0.04);
+  }
+  .ts-tier-premier_boutique { color: #ffd166; }
+  .ts-tier-premier { color: #e9c46a; }
+  .ts-tier-select { color: #a8c5a5; }
+  .ts-chip-active {
+    background: rgba(255, 138, 101, 0.16);
+    border-color: rgba(255, 138, 101, 0.55);
+    color: #ff8a65;
+  }
+  /* Keep the map's div crisp on high-DPI */
+  .leaflet-container { font-family: inherit; }
+</style>
+{% endblock %}
+
 {% block group_content %}
-<div class="grid md:grid-cols-3 gap-4 mb-8">
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
-    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Members</div>
-    <div class="text-2xl font-display mt-1">{{ member_counts.accepted }}</div>
-    {% if member_counts.pending %}
-    <div class="text-xs text-crab-sand-dim mt-1">{{ member_counts.pending }} pending invite{{ 's' if member_counts.pending != 1 }}</div>
-    {% endif %}
-  </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
-    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Your role</div>
-    <div class="text-2xl font-display mt-1 capitalize">{{ role }}</div>
-  </div>
-  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
-    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Created</div>
-    <div class="text-2xl font-display mt-1">{{ group.created_at.strftime('%b %Y') }}</div>
-  </div>
-</div>
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 min-h-[78vh]">
 
-<h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">The dossier</h2>
-<div class="grid sm:grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-  {% set cards = [
-    ('property',  'Property',   fact_counts.properties,       'home week details'),
-    ('finances',  'Fees',       fact_counts.maintenance_fees, 'CSF timeline + loan payments'),
-    ('trips',     'Trips',      fact_counts.trips,            'home weeks + exchanges'),
-    ('people',    'People',     fact_counts.people,           'family + co-owners'),
-    ('portals',   'Portals',    fact_counts.portals,          'II, RCI, developer'),
-    ('contacts',  'Contacts',   fact_counts.contacts,         'owner relations'),
-    ('documents', 'Documents',  fact_counts.documents,        'Drive / Dropbox links'),
-    ('timeline',  'Timeline',   fact_counts.timeline,         'calls, emails, decisions'),
-  ] %}
-  {% for slug, label, count, hint in cards %}
-  <a href="/timeshare/g/{{ group.group_id }}/{{ slug }}" class="block bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/40 transition-colors">
-    <div class="flex items-baseline justify-between">
-      <div class="text-sm font-semibold">{{ label }}</div>
-      <div class="text-xl font-display text-crab-coral">{{ count }}</div>
+  <!-- Left: search + map -->
+  <div class="flex flex-col gap-4 min-h-[78vh]">
+
+    <!-- Hero search -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <div class="flex items-center gap-3 mb-3">
+        <svg class="w-5 h-5 text-crab-coral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <input id="ts-search" type="text" autocomplete="off"
+               placeholder="Search by resort, area, country, airport…"
+               class="flex-1 bg-transparent text-lg font-display focus:outline-none placeholder:text-crab-sand-dim/60">
+        <span id="ts-result-count" class="text-xs text-crab-sand-dim whitespace-nowrap"></span>
+      </div>
+      <div id="ts-chips" class="flex flex-wrap gap-1.5 text-xs">
+        <button data-chip="tier" data-value="Premier_Boutique"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">★ Premier Boutique</button>
+        <button data-chip="tier" data-value="Premier"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Premier</button>
+        <button data-chip="min_sleeps" data-value="4"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Sleeps 4+</button>
+        <button data-chip="min_sleeps" data-value="6"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Sleeps 6+</button>
+        <span class="w-px bg-white/10 mx-1"></span>
+        {% for c in countries[:8] %}
+        <button data-chip="country" data-value="{{ c.country }}"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">
+          {{ c.country }}<span class="ml-1 text-[10px] text-crab-sand-dim/70">{{ c.resort_count }}</span>
+        </button>
+        {% endfor %}
+      </div>
     </div>
-    <div class="text-xs text-crab-sand-dim mt-1">{{ hint }}</div>
-  </a>
-  {% endfor %}
+
+    <!-- Map -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden flex-1 relative min-h-[420px]">
+      <div id="ts-map" class="absolute inset-0"></div>
+      <div class="absolute top-3 left-3 z-[400] text-[10px] uppercase tracking-wider text-crab-sand-dim bg-crab-navy/70 backdrop-blur px-2.5 py-1 rounded-full border border-white/5">
+        world catalog · tap a country to filter
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: results + dossier -->
+  <aside class="flex flex-col gap-4">
+    <div id="ts-results" class="bg-crab-card/40 border border-white/6 rounded-xl p-2 overflow-y-auto max-h-[62vh] flex-1">
+      <div class="text-center text-sm text-crab-sand-dim py-8" id="ts-empty">Loading…</div>
+    </div>
+
+    <!-- Dossier quick-links, secondary -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xs uppercase tracking-wide text-crab-sand-dim">Dossier</h3>
+        <span class="text-[10px] text-crab-sand-dim">{{ member_counts.accepted }} member{{ 's' if member_counts.accepted != 1 else '' }}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-1.5 text-sm">
+        {% set links = [
+          ('property',  'Property',   fact_counts.properties),
+          ('finances',  'Fees',       fact_counts.maintenance_fees),
+          ('trips',     'Trips',      fact_counts.trips),
+          ('people',    'People',     fact_counts.people),
+          ('portals',   'Portals',    fact_counts.portals),
+          ('contacts',  'Contacts',   fact_counts.contacts),
+          ('documents', 'Documents',  fact_counts.documents),
+          ('timeline',  'Timeline',   fact_counts.timeline),
+        ] %}
+        {% for slug, label, count in links %}
+        <a href="/timeshare/g/{{ group.group_id }}/{{ slug }}"
+           class="group flex items-center justify-between px-3 py-2 rounded-lg hover:bg-crab-navy/40 transition-colors">
+          <span class="text-crab-sand">{{ label }}</span>
+          <span class="text-xs text-crab-sand-dim group-hover:text-crab-coral">{{ count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
 </div>
 
-<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
-  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Up next</h2>
-  <p class="text-sm text-crab-sand-dim leading-relaxed mb-4">
-    The dossier accepts manual entry now — start with Property, then add the
-    people. Phase 3 brings paste- and PDF-based ingestion so Claude can fill
-    in years of fee history in one pass. Phase 4 adds Google Drive folder
-    ingestion.
-  </p>
-  <a href="/timeshare/g/{{ group.group_id }}/property" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
-    Add the property
-  </a>
+<!-- Resort detail drawer (hidden by default) -->
+<div id="ts-drawer" class="fixed inset-0 z-[500] hidden" aria-hidden="true">
+  <div class="absolute inset-0 bg-crab-navy/70 backdrop-blur-sm" data-drawer-close></div>
+  <aside class="absolute right-0 top-0 bottom-0 w-full md:w-[540px] bg-crab-navy border-l border-white/6 overflow-y-auto animate-in">
+    <div class="sticky top-0 bg-crab-navy/95 backdrop-blur border-b border-white/6 p-4 flex items-center justify-between">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim" id="ts-drawer-crumbs">—</div>
+      <button data-drawer-close class="text-crab-sand-dim hover:text-crab-coral text-xl leading-none px-2">×</button>
+    </div>
+    <div id="ts-drawer-body" class="p-5"></div>
+  </aside>
 </div>
+
+<script>
+(function () {
+  const GROUP_UUID = {{ group.group_id|tojson }};
+  const HOME_PROPERTY_NAME = {{ (home_property.name if home_property else '')|tojson }};
+
+  /* ── country centroids — rough anchor points for II's main countries.
+     Not perfect, but gives Celeste geography at a glance before the Phase
+     8c per-resort geocode lands. */
+  const CENTROIDS = {
+    'USA':[39.5,-98.35], 'United States':[39.5,-98.35], 'Canada':[56.1,-106.3],
+    'Mexico':[23.6,-102.5], 'Spain':[40.4,-3.7], 'Portugal':[39.4,-8.2],
+    'France':[46.2,2.2], 'Italy':[41.9,12.6], 'Malta':[35.9,14.5],
+    'United Kingdom':[54.0,-2.0], 'UK':[54.0,-2.0], 'Ireland':[53.1,-7.6],
+    'Germany':[51.2,10.4], 'Netherlands':[52.1,5.3], 'Belgium':[50.5,4.5],
+    'Switzerland':[46.8,8.2], 'Austria':[47.5,14.5], 'Greece':[39.1,21.8],
+    'Turkey':[39.0,35.2], 'Croatia':[45.1,15.2], 'Czech Republic':[49.8,15.5],
+    'Hungary':[47.2,19.5], 'Slovenia':[46.1,14.8], 'Morocco':[31.8,-7.1],
+    'Egypt':[26.8,30.8], 'Kenya':[-0.0,37.9], 'South Africa':[-30.6,22.9],
+    'Tanzania':[-6.4,34.9], 'UAE':[23.4,53.8], 'Israel':[31.0,34.9],
+    'India':[20.6,78.9], 'Sri Lanka':[7.9,80.8], 'Thailand':[15.9,100.9],
+    'Vietnam':[14.1,108.3], 'Indonesia':[-0.8,113.9], 'Philippines':[12.9,121.8],
+    'Malaysia':[4.2,101.9], 'Japan':[36.2,138.3], 'China':[35.9,104.2],
+    'Australia':[-25.3,133.8], 'New Zealand':[-40.9,174.9], 'Fiji':[-17.7,178.1],
+    'Aruba':[12.5,-69.9], 'Bahamas':[25.0,-77.4], 'Barbados':[13.2,-59.5],
+    'Jamaica':[18.1,-77.3], 'Dominican Republic':[18.7,-70.2],
+    'Puerto Rico':[18.2,-66.6], 'Curaçao':[12.2,-69.0], 'Cuba':[21.5,-77.8],
+    'Saint Lucia':[13.9,-61.0], 'Saint Martin':[18.1,-63.1],
+    'Cayman Islands':[19.5,-80.6], 'Turks and Caicos':[21.7,-71.8],
+    'Antigua':[17.1,-61.8], 'Costa Rica':[9.9,-84.0], 'Panama':[8.5,-80.8],
+    'Guatemala':[15.8,-90.2], 'Belize':[17.2,-88.5], 'Honduras':[15.2,-86.2],
+    'Brazil':[-14.2,-51.9], 'Argentina':[-38.4,-63.6], 'Chile':[-35.7,-71.5],
+    'Colombia':[4.6,-74.3], 'Peru':[-9.2,-75.0], 'Uruguay':[-32.5,-55.8],
+    'Canada - Eastern':[46.0,-71.0], 'Canada - Western':[54.0,-120.0],
+    'USA - Florida':[27.8,-81.7], 'USA - Hawaii':[20.7,-156.4],
+  };
+
+  /* ── state */
+  const state = { q: '', filters: { tier: null, country: null, min_sleeps: null }, results: [] };
+
+  /* ── DOM refs */
+  const searchInput = document.getElementById('ts-search');
+  const chipsRow = document.getElementById('ts-chips');
+  const resultsBox = document.getElementById('ts-results');
+  const countEl = document.getElementById('ts-result-count');
+  const emptyEl = document.getElementById('ts-empty');
+  const drawer = document.getElementById('ts-drawer');
+  const drawerBody = document.getElementById('ts-drawer-body');
+  const drawerCrumbs = document.getElementById('ts-drawer-crumbs');
+
+  /* ── map */
+  let map, countryLayer, markerByCountry = new Map();
+
+  function initMap() {
+    map = L.map('ts-map', {
+      zoomControl: true, attributionControl: true,
+      worldCopyJump: true, minZoom: 2, maxZoom: 9,
+    }).setView([30, 0], 2);
+    // Stadia Alidade Smooth Dark — free tier, matches our palette
+    L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openstreetmap.org/">OSM</a>',
+      maxZoom: 20,
+    }).addTo(map);
+    countryLayer = L.layerGroup().addTo(map);
+  }
+
+  /* ── hex-pin factory */
+  function hexIcon({size = 28, color = '#ff8a65', stroke = '#ffb89a', label = '', ring = false}) {
+    const s = size, cx = s / 2, cy = s / 2;
+    const glow = ring ? `<circle class="ts-home-ring" cx="${cx}" cy="${cy}" r="22" fill="none" stroke="${color}" stroke-width="2"/>` : '';
+    const hex = `<polygon points="${cx},${cy - s/2.2} ${cx + s/2.5},${cy - s/4.5} ${cx + s/2.5},${cy + s/4.5} ${cx},${cy + s/2.2} ${cx - s/2.5},${cy + s/4.5} ${cx - s/2.5},${cy - s/4.5}"
+                    fill="${color}" stroke="${stroke}" stroke-width="1.5" opacity="0.92"/>`;
+    const text = label ? `<text x="${cx}" y="${cy + 3}" text-anchor="middle" fill="#0a1729" font-size="9" font-weight="700" font-family="ui-sans-serif,system-ui">${label}</text>` : '';
+    return L.divIcon({
+      html: `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" overflow="visible">${glow}${hex}${text}</svg>`,
+      className: 'ts-hex-pin', iconSize: [s, s], iconAnchor: [cx, cy],
+    });
+  }
+
+  /* ── rebuild country pins from current result set */
+  function updateMap(results) {
+    countryLayer.clearLayers();
+    markerByCountry.clear();
+    const byCountry = new Map();
+    for (const r of results) {
+      if (!r.country) continue;
+      const c = r.country;
+      if (!byCountry.has(c)) byCountry.set(c, []);
+      byCountry.get(c).push(r);
+    }
+    for (const [country, rs] of byCountry) {
+      const coord = CENTROIDS[country];
+      if (!coord) continue;
+      const isHome = HOME_PROPERTY_NAME && rs.some(r => r.name === HOME_PROPERTY_NAME);
+      const size = Math.min(44, 20 + Math.log2(rs.length + 1) * 4);
+      const icon = hexIcon({
+        size, label: rs.length,
+        color: isHome ? '#ffd166' : '#ff8a65',
+        stroke: isHome ? '#fff0b8' : '#ffb89a',
+        ring: isHome,
+      });
+      const m = L.marker(coord, {icon, title: country})
+        .on('click', () => { setFilter('country', country); })
+        .addTo(countryLayer);
+      markerByCountry.set(country, m);
+    }
+  }
+
+  /* ── render result cards */
+  function photoThumb(r) {
+    const urls = r.photo_urls || [];
+    if (!urls.length) return '';
+    return `<img src="${urls[0]}" loading="lazy" alt="" class="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-crab-navy/40">`;
+  }
+  function tierBadge(r) {
+    if (!r.tier) return '';
+    const cls = 'ts-tier-' + r.tier.toLowerCase();
+    const label = r.tier.replace('_', ' ');
+    return `<span class="text-[10px] uppercase tracking-wider font-semibold ${cls}">★ ${label}</span>`;
+  }
+  function sleepLabel(r) {
+    const s = r.sleeping_capacity || {};
+    if (!s.total) return '';
+    return `<span class="text-xs text-crab-sand-dim">sleeps ${s.total}</span>`;
+  }
+  function renderResults(results) {
+    countEl.textContent = results.length === 1 ? '1 resort' : `${results.length} resorts`;
+    if (!results.length) {
+      resultsBox.innerHTML = `<div class="text-center text-sm text-crab-sand-dim py-10">No matches. Try a different country or clear filters.</div>`;
+      return;
+    }
+    const html = results.map(r => `
+      <button data-ii-code="${r.ii_code}" class="ts-result-card w-full text-left border border-white/5 rounded-lg p-3 mb-1.5 flex gap-3 items-start">
+        ${photoThumb(r)}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 justify-between">
+            <div class="font-semibold truncate">${escapeHtml(r.name || r.ii_code)}</div>
+            ${tierBadge(r)}
+          </div>
+          <div class="text-xs text-crab-sand-dim mt-0.5 truncate">
+            ${escapeHtml([r.area_name, r.country].filter(Boolean).join(' · '))}
+          </div>
+          <div class="flex items-center gap-3 mt-1.5">
+            ${sleepLabel(r)}
+            ${r.check_in_day ? `<span class="text-xs text-crab-sand-dim">check-in ${escapeHtml(r.check_in_day.split(',')[0].trim())}</span>` : ''}
+          </div>
+        </div>
+      </button>
+    `).join('');
+    resultsBox.innerHTML = html;
+    resultsBox.querySelectorAll('[data-ii-code]').forEach(el => {
+      el.addEventListener('click', () => openResort(el.dataset.iiCode));
+      el.addEventListener('mouseenter', () => highlightCountry(findById(el.dataset.iiCode)?.country));
+    });
+  }
+
+  /* ── detail drawer */
+  async function openResort(code) {
+    const r = findById(code);
+    if (!r) return;
+    drawerCrumbs.textContent = [r.region_name, r.area_name, r.country].filter(Boolean).join(' › ');
+    drawerBody.innerHTML = renderResortDetail(r);
+    drawer.classList.remove('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+    // bounce pin
+    const m = markerByCountry.get(r.country);
+    if (m && m._icon) {
+      m._icon.classList.add('ts-pin-bouncing');
+      setTimeout(() => m._icon && m._icon.classList.remove('ts-pin-bouncing'), 1400);
+    }
+  }
+  function renderResortDetail(r) {
+    const photos = r.photo_urls || [];
+    const photoGrid = photos.length ? `
+      <div class="grid grid-cols-3 gap-1.5 mb-5">
+        ${photos.slice(0, 6).map(u => `<img src="${u}" alt="" class="aspect-[4/3] object-cover rounded-lg bg-crab-navy/40">`).join('')}
+      </div>` : '';
+    const sc = r.sleeping_capacity || {};
+    const facts = [
+      ['Tier', r.tier ? r.tier.replace('_', ' ') : null],
+      ['Nearest airport', r.nearest_airport],
+      ['Check-in', r.check_in_day],
+      ['Bedrooms', sc.bedrooms],
+      ['Sleeps private', sc.private],
+      ['Sleeps total', sc.total],
+    ].filter(([,v]) => v);
+    return `
+      ${tierBadge(r)}
+      <h2 class="text-2xl font-display mt-1 mb-1">${escapeHtml(r.name || r.ii_code)}</h2>
+      <div class="text-sm text-crab-sand-dim mb-4">${escapeHtml([r.area_name, r.country].filter(Boolean).join(', '))}</div>
+      ${photoGrid}
+      ${facts.length ? `<dl class="grid grid-cols-2 gap-3 text-sm mb-5">
+        ${facts.map(([k, v]) => `
+          <div>
+            <dt class="text-xs text-crab-sand-dim">${k}</dt>
+            <dd class="mt-0.5">${escapeHtml(String(v))}</dd>
+          </div>`).join('')}
+      </dl>` : ''}
+      ${r.description ? `<p class="text-sm text-crab-sand-dim leading-relaxed mb-5">${escapeHtml(r.description)}</p>` : ''}
+      <div class="flex gap-2 pt-3 border-t border-white/5">
+        <form method="POST" action="/timeshare/g/${GROUP_UUID}/shortlist/toggle" class="flex-1">
+          <input type="hidden" name="resort_code" value="${r.ii_code}">
+          <input type="hidden" name="network" value="interval_international">
+          <button class="w-full bg-crab-coral text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+            ★ Shortlist for {{ group.name }}
+          </button>
+        </form>
+        <a href="/timeshare/catalog/resort/${r.ii_code}" target="_blank"
+           class="px-4 py-2 rounded-xl text-sm bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 transition-colors whitespace-nowrap">
+          Full page ↗
+        </a>
+      </div>
+    `;
+  }
+  document.querySelectorAll('[data-drawer-close]').forEach(el => el.addEventListener('click', closeDrawer));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+  function closeDrawer() {
+    drawer.classList.add('hidden');
+    drawer.setAttribute('aria-hidden', 'true');
+  }
+
+  function findById(code) { return state.results.find(r => r.ii_code === code); }
+  function highlightCountry(country) {
+    if (!country) return;
+    const m = markerByCountry.get(country);
+    if (m && m._icon) {
+      m._icon.classList.add('ts-pin-bouncing');
+      setTimeout(() => m._icon && m._icon.classList.remove('ts-pin-bouncing'), 600);
+    }
+  }
+
+  /* ── helpers */
+  function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+  /* ── fetch */
+  let fetchToken = 0;
+  async function fetchResults() {
+    const token = ++fetchToken;
+    const params = new URLSearchParams();
+    if (state.q) params.set('q', state.q);
+    if (state.filters.tier) params.set('tier', state.filters.tier);
+    if (state.filters.country) params.set('country', state.filters.country);
+    if (state.filters.min_sleeps) params.set('min_sleeps', state.filters.min_sleeps);
+    params.set('limit', '200');
+    try {
+      const r = await fetch(`/timeshare/g/${GROUP_UUID}/api/resorts/search?${params}`);
+      const data = await r.json();
+      if (token !== fetchToken) return;
+      state.results = data.results || [];
+      renderResults(state.results);
+      updateMap(state.results);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  /* ── chip toggles */
+  function setFilter(key, value) {
+    if (state.filters[key] === value) state.filters[key] = null;
+    else state.filters[key] = value;
+    refreshChipStates();
+    fetchResults();
+  }
+  function refreshChipStates() {
+    chipsRow.querySelectorAll('.ts-chip').forEach(el => {
+      const k = el.dataset.chip, v = el.dataset.value;
+      const active = String(state.filters[k]) === v;
+      el.classList.toggle('ts-chip-active', active);
+    });
+  }
+  chipsRow.addEventListener('click', e => {
+    const btn = e.target.closest('.ts-chip');
+    if (!btn) return;
+    setFilter(btn.dataset.chip, btn.dataset.value);
+  });
+
+  /* ── search */
+  let searchTimer = 0;
+  searchInput.addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.q = e.target.value.trim();
+      fetchResults();
+    }, 200);
+  });
+
+  /* ── init */
+  document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    fetchResults();
+    searchInput.focus();
+  });
+  // If DOM already ready (late-attached script)
+  if (document.readyState !== 'loading') {
+    setTimeout(() => { initMap(); fetchResults(); searchInput.focus(); }, 0);
+  }
+})();
+</script>
 {% endblock %}

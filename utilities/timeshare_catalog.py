@@ -98,6 +98,65 @@ def get_resort(ii_code):
     """, (ii_code,))
 
 
+def search_resorts_rich(q=None, country=None, tier=None, min_sleeps=None, limit=300):
+    """Richer search for the /api/ii-resorts/search endpoint — matches on
+    name, area, country, or address substring; filters by country, tier,
+    min bedroom count. Returns fields the search UI needs."""
+    params = []
+    clauses = ["rs.status = 'active'"]
+    if q:
+        clauses.append(
+            "(rs.name ILIKE %s OR a.name ILIKE %s OR a.country ILIKE %s OR rs.nearest_airport ILIKE %s)"
+        )
+        w = f"%{q}%"
+        params.extend([w, w, w, w])
+    if country:
+        clauses.append("a.country ILIKE %s")
+        params.append(country)
+    if tier:
+        clauses.append("rs.tier = %s")
+        params.append(tier)
+    if min_sleeps is not None:
+        clauses.append("(rs.sleeping_capacity->>'total')::int >= %s")
+        params.append(min_sleeps)
+    where = " AND ".join(clauses)
+    sql = f"""
+        SELECT rs.ii_code, rs.name, rs.tier, rs.nearest_airport,
+               rs.check_in_day, rs.sleeping_capacity, rs.photo_urls,
+               rs.description,
+               a.name AS area_name, a.country,
+               r.name AS region_name
+          FROM crab.ii_resorts rs
+          LEFT JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+          LEFT JOIN crab.ii_regions r ON r.pk_id = a.region_id
+         WHERE {where}
+         ORDER BY
+            CASE WHEN rs.tier = 'Premier_Boutique' THEN 0
+                 WHEN rs.tier = 'Premier' THEN 1
+                 WHEN rs.tier = 'Select' THEN 2
+                 ELSE 3 END,
+            rs.name ASC
+         LIMIT %s
+    """
+    params.append(limit)
+    return _fetchall(sql, tuple(params))
+
+
+def country_counts():
+    """Return [{country, resort_count, region_name}, ...] for the search
+    sidebar's 'Browse by country' chips and the country-centroid map."""
+    return _fetchall("""
+        SELECT a.country, COUNT(*) AS resort_count,
+               MIN(r.name) AS region_name
+          FROM crab.ii_resorts rs
+          JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+          LEFT JOIN crab.ii_regions r ON r.pk_id = a.region_id
+         WHERE rs.status = 'active' AND a.country IS NOT NULL
+         GROUP BY a.country
+         ORDER BY resort_count DESC
+    """, ())
+
+
 def search_resorts(location=None, min_rating=None, min_sleeps=None, limit=25):
     """Free-text + filter search over the catalog. Used by the chatbot's
     search_resort_catalog tool AND any future /timeshare/catalog?q= form."""

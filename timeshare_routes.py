@@ -113,6 +113,7 @@ def groups_new_submit():
 @bp.route('/g/<group_uuid>/')
 @group_member_required()
 def dashboard(group_uuid):
+    from utilities.timeshare_catalog import country_counts
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -130,10 +131,18 @@ def dashboard(group_uuid):
              WHERE group_id = %s::uuid
         """, (group_uuid,))
         counts = cur.fetchone()
+        # Get the group's own property code (for "home halo" highlight on the map)
+        cur.execute("""
+            SELECT exchange_network, name FROM crab.timeshare_properties
+             WHERE group_id = %s::uuid
+             ORDER BY pk_id ASC LIMIT 1
+        """, (group_uuid,))
+        home_property = cur.fetchone()
     finally:
         conn.close()
 
     fact_counts = get_group_counts(group_uuid)
+    countries = country_counts()
 
     return render_template(
         'timeshare/dashboard.html',
@@ -141,8 +150,26 @@ def dashboard(group_uuid):
         group=group,
         member_counts=counts,
         fact_counts=fact_counts,
+        countries=countries,
+        home_property=home_property,
         role=request.timeshare_role,
     )
+
+
+@bp.route('/g/<group_uuid>/api/resorts/search')
+@group_member_required()
+def api_resorts_search(group_uuid):
+    """Live search feed for the dashboard. Returns JSON ranked by tier."""
+    from utilities.timeshare_catalog import search_resorts_rich
+    q = (request.args.get('q') or '').strip() or None
+    country = (request.args.get('country') or '').strip() or None
+    tier = (request.args.get('tier') or '').strip() or None
+    min_sleeps = request.args.get('min_sleeps', type=int)
+    limit = min(request.args.get('limit', default=200, type=int), 500)
+    results = search_resorts_rich(
+        q=q, country=country, tier=tier, min_sleeps=min_sleeps, limit=limit,
+    )
+    return jsonify({'results': results, 'count': len(results)})
 
 
 # ── Members ─────────────────────────────────────────────────
