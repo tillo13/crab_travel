@@ -154,6 +154,12 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ Database init deferred: {e}")
 
+try:
+    from utilities.shorturl_utils import ensure_table_exists as _ensure_short_urls_table
+    _ensure_short_urls_table()
+except Exception as e:
+    logger.warning(f"⚠️ crab.short_urls init deferred: {e}")
+
 
 # ── Background job status (in-memory, same pattern as inroads) ────
 
@@ -744,6 +750,7 @@ from watches_routes import bp as watches_bp
 from admin_routes import bp as admin_bp
 from tasks_routes import bp as tasks_bp
 from opencrab_routes import bp as opencrab_bp
+from shorturl_routes import bp as shorturl_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
@@ -752,6 +759,7 @@ app.register_blueprint(watches_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(tasks_bp)
 app.register_blueprint(opencrab_bp)
+app.register_blueprint(shorturl_bp)
 
 # ── Eagerly init kumori_free_llms at startup ─────────────────
 

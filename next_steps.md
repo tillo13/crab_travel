@@ -5,11 +5,22 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-18 05:35*
+*Last refreshed: 2026-04-21 04:32*
 
 ## 🎯 Pending
 
 <!-- pending:start -->
+- [ ] **OpenClaw tenant expansion — survey complete, ready to pick next migration**
+  - Canonical spec: [`~/Desktop/code/_infrastructure/docs/openclaw/MANIFEST.md`](../_infrastructure/docs/openclaw/MANIFEST.md) (least-privilege rules, layout, reuse checklist)
+  - Community consensus (from 336-comment r/LocalLLaMA thread + r/OpenClawCentral scrapes, Apr 2026): scheduled digests, cron-driven deterministic ops, DB-backed monitors, IM bridges
+  - **Top 3 candidates, ranked by practical fit + impact today:**
+    1. **scatterbrain / `dev-intel` Reddit scan** (fit 10/10) — daily 20-sub scrape → kumori gateway Haiku tagging → `POST /api/dev-intel/results` write-back. Highest ROI, lowest risk (public Reddit, scraper logic already exists).
+    2. **wattson / Shelly Cloud poll** (fit 9/10) — every-minute polling for gym device meters; isolates from App Engine web tier. Bigger blast radius (B2B customer data) — do this AFTER scatterbrain validates the multi-tenant pattern.
+    3. **kumori / heartbeat** (fit 9/10) — `ping-apps` (10min) + `db-health-check` (5min) across the 12-app fleet. Recursive elegance: the thing monitoring App Engine isn't itself on App Engine. Add panel to `claw.crab.travel` dashboard.
+  - **Medium fit** (do opportunistically): kindness_social scrape-topics + daily-digest, taco_and_red/tiktok_automation trend scraper, galactica QA bot, stealth LinkedIn refresh crawler
+  - **Hard skips** (disqualified by manifest rules): kicksaw (Salesforce/QBO/Bill.com paid creds on request path), personal_finance (PII max), dr_nick (needs VPN kill-switch, fixed VPS IP defeats threat model), zynga_sweeper (ToS/ban risk with fixed IP), rog_gateway (peer infra not tenant)
+  - **Order of operations:** scatterbrain → kumori → wattson. Each migration: design owning-service discovery + guardrailed write-back endpoint FIRST, save reference memory in that project's memory dir pointing back to the manifest, watch dashboard for 24h before adding the next tenant.
+
 - [ ] _legacy next_steps contents preserved below — Andy, curate manually_
 
 ```
@@ -62,6 +73,11 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `2b5e68e` · 2026-04-18 15:35 — twilio A2P approved: update sms.html banner + roadmap + twilio_a2p_campaign.md / next_steps.md / ...
+- `9170ca7` · 2026-04-18 15:33 — copy refresh: CrabAI hunting framing + OpenClaw nerd callout on about page
+- `c33be6d` · 2026-04-18 14:43 — opencrab: expose source_watch_id on legs-to-hunt + board reads from transport_options
+- `467f547` · 2026-04-18 13:25 — add trip_legs + transport_options schema, /transport-options + /legs-to-hunt endpoints, backfill ...
+- `180b564` · 2026-04-18 08:25 — OpenCrab deal board: plan-page 🦀 CrabAI Deal Hunter accordion + /watch-results write-back endpoin...
 - `de71074` · 2026-04-17 18:15 — duffel adapter: switch fallback deep link from deprecated Google Flights #flt= hash (lands on hom...
 - `a7cd0ae` · 2026-04-17 17:02 — duffel adapter: build Google Flights deep links with real dates so users land on actual results
 - `68494ff` · 2026-04-17 16:50 — opencrab: exclude [BOT] plans from plans-eligible — crawl only real plans
@@ -72,15 +88,13 @@
 - `6907a79` · 2026-04-16 14:44 — disable vote-reminder cron
 - `a203b5b` · 2026-04-16 14:44 — disable vote-reminder cron until prod — burst sends (3 emails in 6s to same inbox across plans) g...
 - `2f08196` · 2026-04-15 20:29 — Twilio A2P attempt 8 prep: uncheck demo consent box, hide Premium badge on demo, add 'not a condi...
-- `af35c9a` · 2026-04-15 07:29 — utilities: sync backend_registry banner from _infrastructure
-- `48e2017` · 2026-04-15 07:03 — kumori_free_llms: tag gateway requests with metadata.app_name
-- `a549b1b` · 2026-04-15 06:13 — pick up new LITELLM_GATEWAY_URL (llm.kumori.ai)
-- `fcab2bb` · 2026-04-13 20:34 — fix: accept and pass user_id to log_api_usage in generate_text
-- `a0a8507` · 2026-04-13 16:08 — refactor: crab_travel kumori compliance — split app.py, postgres_utils.py, trip_bots.py; eliminat...
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-_(clean working tree, no TODO markers in recent files)_
+**2 file(s) with uncommitted changes:**
+- ` M next_steps.md`
+- `?? timeshare.md`
+
 <!-- wip:end -->
