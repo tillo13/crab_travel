@@ -906,6 +906,33 @@ def _ii_scrape_auth_ok():
     return False
 
 
+@bp.route('/tasks/ii-scrape-debug', methods=['GET', 'POST'])
+def ii_scrape_debug():
+    if not _ii_scrape_auth_ok():
+        return jsonify({'error': 'forbidden'}), 403
+    import re
+    from bs4 import BeautifulSoup
+    from utilities.timeshare_ii_scraper import _http_get
+    try:
+        html = _http_get('/web/cs', {'a': '1501'})
+    except Exception as e:
+        return jsonify({'http_error': str(e)}), 500
+    soup = BeautifulSoup(html, 'html.parser')
+    all_anchors = soup.find_all('a')
+    region_anchors = soup.find_all('a', href=re.compile(r'regionCode=\d+'))
+    regex_hits = len(re.findall(r'regionCode=\d+', html))
+    sample_hrefs = [a.get('href', '')[:100] for a in region_anchors[:3]]
+    return jsonify({
+        'html_size': len(html),
+        'total_anchors': len(all_anchors),
+        'regionCode_anchors_via_bs4': len(region_anchors),
+        'regionCode_regex_hits_total': regex_hits,
+        'first_region_hrefs': sample_hrefs,
+        'has_html_tag': '<html' in html.lower(),
+        'html_first_300': html[:300],
+    })
+
+
 @bp.route('/tasks/ii-scrape-seed', methods=['GET', 'POST'])
 def ii_scrape_seed():
     if not _ii_scrape_auth_ok():
