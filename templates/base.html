@@ -312,6 +312,13 @@
         <div class="hidden md:flex gap-5 text-sm font-medium">
           <a href="/" class="{% if active_page == 'home' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Home</a>
           <a href="/dashboard" class="{% if active_page == 'dashboard' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Plans</a>
+          {% if my_timeshare_groups %}
+            {% if my_timeshare_groups|length == 1 %}
+              <a href="/timeshare/g/{{ my_timeshare_groups[0].group_id }}/" class="{% if active_page == 'timeshare' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Timeshare</a>
+            {% else %}
+              <a href="/timeshare/" class="{% if active_page == 'timeshare' %}text-crab-coral{% else %}text-gray-500 dark:text-crab-sand-dim hover:text-gray-900 dark:hover:text-crab-sand{% endif %} transition-colors">Timeshare</a>
+            {% endif %}
+          {% endif %}
         </div>
         {% endif %}
       </div>

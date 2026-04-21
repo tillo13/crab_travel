@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in">
+  <div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Timeshare</div>
+      <h1 class="text-2xl font-display mt-0.5">{{ group.name if group else 'Group' }}</h1>
+    </div>
+    <nav class="flex gap-4 text-sm">
+      <a href="/timeshare/g/{{ group_uuid }}/" class="{% if nav_active == 'dashboard' %}text-crab-coral{% else %}text-crab-sand-dim hover:text-crab-sand{% endif %} transition-colors">Dashboard</a>
+      <a href="/timeshare/g/{{ group_uuid }}/members" class="{% if nav_active == 'members' %}text-crab-coral{% else %}text-crab-sand-dim hover:text-crab-sand{% endif %} transition-colors">Members</a>
+    </nav>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for category, msg in messages %}
+      <div class="px-4 py-3 rounded-lg text-sm {% if category == 'error' %}bg-red-500/10 text-red-400 border border-red-500/20{% elif category == 'success' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% else %}bg-crab-card/40 border border-white/6{% endif %}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block group_content %}{% endblock %}
+</div>
+{% endblock %}

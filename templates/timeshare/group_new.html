@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Start a timeshare group — crab.travel{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-xl mx-auto">
+  <h1 class="text-2xl font-display mb-2">Start a timeshare group</h1>
+  <p class="text-sm text-crab-sand-dim mb-6">
+    Give it a name only your family will see. You'll invite members on the next screen.
+  </p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for category, msg in messages %}
+      <div class="px-4 py-3 rounded-lg text-sm {% if category == 'error' %}bg-red-500/10 text-red-400 border border-red-500/20{% else %}bg-crab-card/40 border border-white/6{% endif %}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" action="/timeshare/groups/new" class="bg-crab-card/40 border border-white/6 rounded-xl p-6 space-y-4">
+    <div>
+      <label class="block text-xs uppercase tracking-wide text-crab-sand-dim mb-2" for="name">Group name</label>
+      <input
+        id="name"
+        type="text"
+        name="name"
+        required
+        maxlength="200"
+        placeholder="Tillo Family — Royal Sands Cancún"
+        class="w-full bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:border-crab-coral focus:outline-none">
+      <p class="text-xs text-crab-sand-dim mt-2">
+        Displayed at the top of the dashboard. Not shown in URLs.
+      </p>
+    </div>
+    <div class="flex gap-3 pt-2">
+      <button type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
+        Create group
+      </button>
+      <a href="/dashboard" class="px-5 py-2.5 rounded-xl text-sm text-crab-sand-dim hover:text-crab-sand transition-colors">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

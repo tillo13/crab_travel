@@ -1,0 +1,38 @@
+{% extends "timeshare/base_group.html" %}
+{% set group_uuid = group.group_id %}
+{% set nav_active = 'dashboard' %}
+{% block title %}{{ group.name }} — crab.travel{% endblock %}
+
+{% block group_content %}
+<div class="grid md:grid-cols-3 gap-4 mb-8">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Members</div>
+    <div class="text-2xl font-display mt-1">{{ member_counts.accepted }}</div>
+    {% if member_counts.pending %}
+    <div class="text-xs text-crab-sand-dim mt-1">{{ member_counts.pending }} pending invite{{ 's' if member_counts.pending != 1 }}</div>
+    {% endif %}
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Your role</div>
+    <div class="text-2xl font-display mt-1 capitalize">{{ role }}</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Created</div>
+    <div class="text-2xl font-display mt-1">{{ group.created_at.strftime('%b %Y') }}</div>
+  </div>
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Up next</h2>
+  <p class="text-sm text-crab-sand-dim leading-relaxed mb-4">
+    You've got the group. Phase 2 adds the structured tables —
+    property details, maintenance fee history, trips, people, portals, contacts.
+    Phase 3 brings PDF and paste-based ingestion (let Claude read the fee
+    statement and fill in the rows). Until then, invite your family and
+    we'll keep you posted.
+  </p>
+  <a href="/timeshare/g/{{ group.group_id }}/members" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
+    Invite family
+  </a>
+</div>
+{% endblock %}

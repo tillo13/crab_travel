@@ -160,6 +160,12 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ crab.short_urls init deferred: {e}")
 
+try:
+    from utilities.timeshare_schema import init_timeshare_schema
+    init_timeshare_schema()
+except Exception as e:
+    logger.warning(f"⚠️ crab.timeshare_* schema init deferred: {e}")
+
 
 # ── Background job status (in-memory, same pattern as inroads) ────
 
@@ -334,7 +340,13 @@ def sitemap():
 @app.route('/robots.txt')
 def robots():
     host = request.host_url.rstrip('/')
-    content = f'User-agent: *\nAllow: /\nSitemap: {host}/sitemap.xml\nFeed: {host}/feed.xml\n'
+    content = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        'Disallow: /timeshare/g/\n'
+        f'Sitemap: {host}/sitemap.xml\n'
+        f'Feed: {host}/feed.xml\n'
+    )
     return Response(content, mimetype='text/plain')
 
 
@@ -751,6 +763,7 @@ from admin_routes import bp as admin_bp
 from tasks_routes import bp as tasks_bp
 from opencrab_routes import bp as opencrab_bp
 from shorturl_routes import bp as shorturl_bp
+from timeshare_routes import bp as timeshare_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
@@ -760,6 +773,21 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(tasks_bp)
 app.register_blueprint(opencrab_bp)
 app.register_blueprint(shorturl_bp)
+app.register_blueprint(timeshare_bp)
+
+
+@app.context_processor
+def inject_timeshare_groups():
+    """Expose my_timeshare_groups to every template so base.html can render
+    a Timeshare nav link when the user belongs to ≥1 group."""
+    user = session.get('user') or {}
+    if not user.get('id'):
+        return {'my_timeshare_groups': []}
+    try:
+        from utilities.timeshare_access import get_user_timeshare_groups
+        return {'my_timeshare_groups': get_user_timeshare_groups(user['id'])}
+    except Exception:
+        return {'my_timeshare_groups': []}
 
 # ── Eagerly init kumori_free_llms at startup ─────────────────
 

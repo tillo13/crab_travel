@@ -1,0 +1,76 @@
+{% extends "timeshare/base_group.html" %}
+{% set nav_active = 'members' %}
+{% block title %}Members — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+{% if role in ('owner', 'admin') %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Invite a member</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/members/invite" class="grid md:grid-cols-[1fr_auto_auto] gap-3 items-end">
+    <div>
+      <label for="invite-email" class="block text-xs text-crab-sand-dim mb-1.5">Email</label>
+      <input id="invite-email" type="email" name="email" required placeholder="mom@example.com"
+        class="w-full bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:border-crab-coral focus:outline-none">
+    </div>
+    <div>
+      <label for="invite-role" class="block text-xs text-crab-sand-dim mb-1.5">Role</label>
+      <select id="invite-role" name="role"
+        class="bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:border-crab-coral focus:outline-none">
+        {% for r in invite_roles %}
+        <option value="{{ r }}" {% if r == 'family' %}selected{% endif %}>{{ r|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all whitespace-nowrap">
+      Send invite
+    </button>
+  </form>
+  <p class="text-xs text-crab-sand-dim mt-3">
+    They'll get a short link (e.g., <code class="text-crab-sand">crab.travel/s/xyz</code>) that only works when they sign in with this email.
+  </p>
+</div>
+{% endif %}
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40">
+      <tr class="text-left text-xs uppercase tracking-wide text-crab-sand-dim">
+        <th class="px-5 py-3">Member</th>
+        <th class="px-5 py-3">Role</th>
+        <th class="px-5 py-3">Status</th>
+        <th class="px-5 py-3">Invited</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      <tr class="border-t border-white/5">
+        <td class="px-5 py-3">
+          <div class="flex items-center gap-3">
+            {% if m.picture_url %}
+            <img src="{{ m.picture_url }}" class="w-7 h-7 rounded-full" alt="">
+            {% else %}
+            <div class="w-7 h-7 rounded-full bg-crab-coral/20 flex items-center justify-center text-xs">{{ m.email[0]|upper }}</div>
+            {% endif %}
+            <div>
+              <div class="font-medium">{{ m.full_name or m.email }}</div>
+              {% if m.full_name %}<div class="text-xs text-crab-sand-dim">{{ m.email }}</div>{% endif %}
+            </div>
+          </div>
+        </td>
+        <td class="px-5 py-3 capitalize text-crab-sand-dim">{{ m.role }}</td>
+        <td class="px-5 py-3">
+          {% if m.status == 'accepted' %}
+            <span class="text-emerald-400">Accepted</span>
+          {% elif m.status == 'expired' %}
+            <span class="text-red-400">Expired</span>
+          {% else %}
+            <span class="text-amber-400">Pending</span>
+          {% endif %}
+        </td>
+        <td class="px-5 py-3 text-crab-sand-dim">{{ m.invited_at.strftime('%b %d, %Y') if m.invited_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
