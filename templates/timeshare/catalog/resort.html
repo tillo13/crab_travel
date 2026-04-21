@@ -20,6 +20,13 @@
           {% elif resort.tier == 'Premier' %}text-amber-400
           {% else %}text-emerald-300{% endif %}">★ {{ resort.tier|replace('_', ' ') }}</span>
       {% endif %}
+      {% if google and google.google_rating %}
+        <span class="inline-flex items-center gap-1 text-sm bg-crab-coral/10 border border-crab-coral/30 rounded-full px-3 py-0.5">
+          <span class="text-amber-300">★</span>
+          <span class="font-semibold text-crab-sand">{{ '%.1f'|format(google.google_rating) }}</span>
+          <span class="text-xs text-crab-sand-dim">Google · {{ '{:,}'.format(google.google_user_ratings_total) }} reviews</span>
+        </span>
+      {% endif %}
     </div>
   </div>
 
@@ -59,10 +66,17 @@
       <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Details</h2>
       {% if resort.nearest_airport %}<div><span class="text-crab-sand-dim">Airport:</span> <span class="text-crab-sand">{{ resort.nearest_airport }}</span></div>{% endif %}
       {% if resort.check_in_day %}<div><span class="text-crab-sand-dim">Check-in:</span> <span class="text-crab-sand">{{ resort.check_in_day }}</span></div>{% endif %}
-      {% if resort.phone %}<div><span class="text-crab-sand-dim">Phone:</span> <span class="text-crab-sand">{{ resort.phone }}</span></div>{% endif %}
-      {% if resort.address %}<div><span class="text-crab-sand-dim">Address:</span> <span class="text-crab-sand">{{ resort.address }}</span></div>{% endif %}
+      {% set phone = resort.phone or (google.google_phone if google else None) %}
+      {% set address = resort.address or (google.google_formatted_address if google else None) %}
+      {% if phone %}<div><span class="text-crab-sand-dim">Phone:</span> <a href="tel:{{ phone }}" class="text-crab-sand hover:text-crab-coral">{{ phone }}</a></div>{% endif %}
+      {% if address %}<div><span class="text-crab-sand-dim">Address:</span> <span class="text-crab-sand">{{ address }}</span></div>{% endif %}
       {% if resort.website and 'intervalworld.com' in resort.website %}
         <div><span class="text-crab-sand-dim">II page:</span> <a href="{{ resort.website }}" target="_blank" class="text-crab-coral hover:underline">open on II ↗</a></div>
+      {% endif %}
+      {% if google and google.map_lat %}
+        <div><span class="text-crab-sand-dim">Map:</span>
+          <a href="https://www.google.com/maps/search/?api=1&query={{ google.map_lat }},{{ google.map_lng }}" target="_blank" class="text-crab-coral hover:underline">Google Maps ↗</a>
+        </div>
       {% endif %}
     </div>
 

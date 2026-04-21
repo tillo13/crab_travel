@@ -251,18 +251,34 @@
     });
   }
 
-  /* ── rebuild country pins from current result set */
+  /* ── rebuild map from current result set
+     If a resort has Google-sourced map_lat/map_lng, drop an individual pin.
+     Resorts WITHOUT coords get grouped into country-centroid cluster pins.
+     As Google enrichment fills in over time, the map gets more granular. */
   function updateMap(results) {
     countryLayer.clearLayers();
     markerByCountry.clear();
-    const byCountry = new Map();
+    const needCluster = new Map();   // country → [resort,...]
     for (const r of results) {
-      if (!r.country) continue;
-      const c = r.country;
-      if (!byCountry.has(c)) byCountry.set(c, []);
-      byCountry.get(c).push(r);
+      if (r.map_lat != null && r.map_lng != null) {
+        // Per-resort pin
+        const isHome = HOME_PROPERTY_NAME && r.name === HOME_PROPERTY_NAME;
+        const icon = hexIcon({
+          size: isHome ? 26 : 18,
+          color: isHome ? '#ffd166' : (r.tier === 'Premier_Boutique' ? '#ffd166' : '#ff8a65'),
+          stroke: isHome ? '#fff0b8' : '#ffb89a',
+          ring: isHome,
+        });
+        const m = L.marker([r.map_lat, r.map_lng], {icon, title: r.name})
+          .on('click', () => openResort(r.ii_code))
+          .addTo(countryLayer);
+        if (!markerByCountry.has(r.country)) markerByCountry.set(r.country, m);
+      } else if (r.country) {
+        if (!needCluster.has(r.country)) needCluster.set(r.country, []);
+        needCluster.get(r.country).push(r);
+      }
     }
-    for (const [country, rs] of byCountry) {
+    for (const [country, rs] of needCluster) {
       const coord = CENTROIDS[country];
       if (!coord) continue;
       const isHome = HOME_PROPERTY_NAME && rs.some(r => r.name === HOME_PROPERTY_NAME);
@@ -276,7 +292,7 @@
       const m = L.marker(coord, {icon, title: country})
         .on('click', () => { setFilter('country', country); })
         .addTo(countryLayer);
-      markerByCountry.set(country, m);
+      if (!markerByCountry.has(country)) markerByCountry.set(country, m);
     }
   }
 
@@ -303,7 +319,11 @@
       resultsBox.innerHTML = `<div class="text-center text-sm text-crab-sand-dim py-10">No matches. Try a different country or clear filters.</div>`;
       return;
     }
-    const html = results.map(r => `
+    const html = results.map(r => {
+      const ratingBadge = r.google_rating
+        ? `<span class="text-xs text-amber-300">★ ${Number(r.google_rating).toFixed(1)} <span class="text-crab-sand-dim">(${Number(r.google_user_ratings_total||0).toLocaleString()})</span></span>`
+        : '';
+      return `
       <button data-ii-code="${r.ii_code}" class="ts-result-card w-full text-left border border-white/5 rounded-lg p-3 mb-1.5 flex gap-3 items-start">
         ${photoThumb(r)}
         <div class="min-w-0 flex-1">
@@ -315,12 +335,13 @@
             ${escapeHtml([r.area_name, r.country].filter(Boolean).join(' · '))}
           </div>
           <div class="flex items-center gap-3 mt-1.5">
+            ${ratingBadge}
             ${sleepLabel(r)}
             ${r.check_in_day ? `<span class="text-xs text-crab-sand-dim">check-in ${escapeHtml(r.check_in_day.split(',')[0].trim())}</span>` : ''}
           </div>
         </div>
       </button>
-    `).join('');
+    `;}).join('');
     resultsBox.innerHTML = html;
     resultsBox.querySelectorAll('[data-ii-code]').forEach(el => {
       el.addEventListener('click', () => openResort(el.dataset.iiCode));

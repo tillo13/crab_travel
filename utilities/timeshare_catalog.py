@@ -125,16 +125,19 @@ def search_resorts_rich(q=None, country=None, tier=None, min_sleeps=None, limit=
                rs.check_in_day, rs.sleeping_capacity, rs.photo_urls,
                rs.description,
                a.name AS area_name, a.country,
-               r.name AS region_name
+               r.name AS region_name,
+               g.map_lat, g.map_lng, g.google_rating, g.google_user_ratings_total
           FROM crab.ii_resorts rs
           LEFT JOIN crab.ii_areas a ON a.pk_id = rs.area_id
           LEFT JOIN crab.ii_regions r ON r.pk_id = a.region_id
+          LEFT JOIN crab.ii_resort_google g ON g.resort_ii_code = rs.ii_code
          WHERE {where}
          ORDER BY
             CASE WHEN rs.tier = 'Premier_Boutique' THEN 0
                  WHEN rs.tier = 'Premier' THEN 1
                  WHEN rs.tier = 'Select' THEN 2
                  ELSE 3 END,
+            COALESCE(g.google_rating, 0) DESC,
             rs.name ASC
          LIMIT %s
     """
