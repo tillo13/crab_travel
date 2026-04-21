@@ -46,6 +46,10 @@ def _http_get(path: str, params: dict = None) -> str:
         timeout=HTTP_TIMEOUT,
         allow_redirects=True,
     )
+    logger.info(
+        f"ii GET {path} params={params} → {r.status_code} {len(r.content)}B "
+        f"(final_url={r.url[:120]})"
+    )
     r.raise_for_status()
     time.sleep(SLEEP_BETWEEN_REQUESTS)
     return r.text
