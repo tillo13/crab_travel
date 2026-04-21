@@ -851,6 +851,98 @@ def test_phase3_reject_path(group_uuid, andy_session):
     assert_eq("review notes recorded", notes, 'Test reject')
 
 
+# ── Phase 4: public-link Drive ingestion ───────────────────────────
+
+def test_phase4_url_parser():
+    print("\n[31] Phase 4: Drive URL parser")
+    from utilities.timeshare_drive import parse_drive_url
+    cases = [
+        ('https://drive.google.com/drive/folders/1C0IgQJn9mChJqAjs9OMCQas27oYjk1Jz',
+         'folder', '1C0IgQJn9mChJqAjs9OMCQas27oYjk1Jz'),
+        ('https://drive.google.com/drive/u/0/folders/1ABCDEFGHIJKL',
+         'folder', '1ABCDEFGHIJKL'),
+        ('https://docs.google.com/document/d/1VKp7vxnqcA6lQNRBCZ1aUPJeKObM/edit?usp=sharing',
+         'document', '1VKp7vxnqcA6lQNRBCZ1aUPJeKObM'),
+        ('https://docs.google.com/spreadsheets/d/1_sheetIDxyz789/edit#gid=0',
+         'spreadsheet', '1_sheetIDxyz789'),
+        ('https://drive.google.com/file/d/1fileID_abcdef_longer/view',
+         'file', '1fileID_abcdef_longer'),
+        ('https://drive.google.com/open?id=1openID456_longer',
+         'file', '1openID456_longer'),
+        ('https://example.com/not-a-drive-url', None, None),
+        ('', None, None),
+    ]
+    for url, want_kind, want_id in cases:
+        got_kind, got_id = parse_drive_url(url)
+        label = f"parse: {url[:50]}"
+        assert_true(label, (got_kind, got_id) == (want_kind, want_id),
+                    detail=f"want=({want_kind},{want_id}) got=({got_kind},{got_id})")
+
+
+def test_phase4_wizard_has_drive_section(group_uuid, andy_session):
+    print("\n[32] Phase 4: /ingest wizard exposes Drive URL form")
+    r = andy_session.get(f"{PROD_URL}/timeshare/g/{group_uuid}/ingest", timeout=TIMEOUT)
+    assert_eq("wizard status", r.status_code, 200)
+    assert_true("wizard has Drive URL section",
+                'ingest/drive' in r.text and 'drive_url' in r.text)
+    assert_true("wizard copy mentions anyone-with-link",
+                'anyone with the link' in r.text.lower())
+
+
+def test_phase4_invalid_url_flashes(group_uuid, andy_session):
+    print("\n[33] Phase 4: non-Drive URL → flash error")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/drive",
+        data={'drive_url': 'https://example.com/nothing-here'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("non-drive URL redirect", r.status_code, 302)
+    assert_true("redirects back to wizard",
+                '/ingest' in r.headers.get('location', ''))
+    # Follow the redirect to capture the flashed message
+    r2 = andy_session.get(f"{PROD_URL}{r.headers['location']}", timeout=TIMEOUT)
+    assert_true("wizard shows 'Google Drive URL' error",
+                'Google Drive URL' in r2.text or "doesn't look like" in r2.text.lower())
+
+
+def test_phase4_private_folder_flashes(group_uuid, andy_session):
+    print("\n[34] Phase 4: non-public Drive URL → 'not shared' flash")
+    # Tillo's dossier folder ID is real but the plan explicitly says Andy
+    # hasn't flipped it public yet, so Drive API returns 404 — the perfect
+    # fixture for the 'not shared' error path.
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/drive",
+        data={'drive_url': 'https://drive.google.com/drive/folders/1C0IgQJn9mChJqAjs9OMCQas27oYjk1Jz'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("private-folder redirect", r.status_code, 302)
+    r2 = andy_session.get(f"{PROD_URL}{r.headers['location']}", timeout=TIMEOUT)
+    assert_true("wizard shows 'anyone with the link' error",
+                'anyone with the link' in r2.text.lower() or 'not found' in r2.text.lower())
+
+
+def test_phase4_empty_url_flashes(group_uuid, andy_session):
+    print("\n[35] Phase 4: empty drive_url → flash error")
+    r = andy_session.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/drive",
+        data={'drive_url': ''},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    # HTML5 `required` prevents this in browsers; the server should also reject
+    assert_eq("empty-url response", r.status_code, 302)
+
+
+def test_phase4_non_member_blocked(group_uuid):
+    print("\n[36] Phase 4: non-member POSTing to /ingest/drive → 404")
+    outsider = authed_session(18)
+    r = outsider.post(
+        f"{PROD_URL}/timeshare/g/{group_uuid}/ingest/drive",
+        data={'drive_url': 'https://docs.google.com/document/d/abc/edit'},
+        timeout=TIMEOUT, allow_redirects=False,
+    )
+    assert_eq("non-member /ingest/drive", r.status_code, 404)
+
+
 def test_phase3_cross_group_job_access(group_uuid, andy_session):
     print("\n[30] Phase 3: reviewing another group's job → 404")
     # Create a second Andy-owned group, seed a job there, then try to view it via group_uuid
@@ -931,6 +1023,15 @@ def main():
         test_phase3_job_list_renders(group_uuid, andy, phase3_job_id)
         test_phase3_reject_path(group_uuid, andy)
         test_phase3_cross_group_job_access(group_uuid, andy)
+        # Phase 4 — URL parser + error paths (happy path is a manual check
+        # against Andy's own public folder; can't create a public Drive file
+        # programmatically without the OAuth scope the plan deliberately avoids).
+        test_phase4_url_parser()
+        test_phase4_wizard_has_drive_section(group_uuid, andy)
+        test_phase4_invalid_url_flashes(group_uuid, andy)
+        test_phase4_private_folder_flashes(group_uuid, andy)
+        test_phase4_empty_url_flashes(group_uuid, andy)
+        test_phase4_non_member_blocked(group_uuid)
     finally:
         if not args.keep:
             cleanup_test_groups()

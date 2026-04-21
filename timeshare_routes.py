@@ -748,3 +748,151 @@ def ingest_job_reject(group_uuid, job_id):
     else:
         abort(404)
     return redirect(url_for('timeshare.ingest_jobs', group_uuid=group_uuid))
+
+
+# ── Phase 4: public-link Drive ingestion ────────────────────────────
+
+# Per-request cap so a user can't accidentally submit a 500-doc folder and
+# chew through $25 of Claude budget in one click. 20 docs × $0.05/doc ≈ $1/scan.
+MAX_DRIVE_ITEMS_PER_SCAN = 20
+
+
+@bp.route('/g/<group_uuid>/ingest/drive', methods=['POST'])
+@group_member_required()
+def ingest_drive(group_uuid):
+    """Resolve the pasted Drive URL to one or more public Docs/Sheets/PDFs,
+    create one ingest_job per item, run Claude on each, stamp a document_refs
+    row back to the Drive URL. Synchronous in-request per plan §12.3."""
+    from utilities.timeshare_drive import (
+        DriveError, resolve_drive_input, fetch_item_text, create_document_ref,
+        build_drive_web_url,
+    )
+    from utilities.timeshare_ingest import (
+        create_ingest_job, finalize_ingest_job, call_claude_extractor,
+    )
+    from utilities.postgres_utils import get_db_connection
+
+    user = session['user']
+    drive_url = (request.form.get('drive_url') or '').strip()
+    if not drive_url:
+        flash('Paste a Drive URL first.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+
+    try:
+        resolved = resolve_drive_input(drive_url)
+    except DriveError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    except Exception as e:
+        logger.exception(f"Drive resolve failed: {e}")
+        flash('Could not read that Drive URL.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+
+    items = resolved['items']
+    if not items:
+        flash('That folder contains no Google Docs, Sheets, or PDFs we can read.', 'error')
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+    if len(items) > MAX_DRIVE_ITEMS_PER_SCAN:
+        flash(
+            f'That folder has {len(items)} supported files — please ingest in '
+            f'batches of {MAX_DRIVE_ITEMS_PER_SCAN} (paste individual file URLs).',
+            'error',
+        )
+        return redirect(url_for('timeshare.ingest_wizard', group_uuid=group_uuid))
+
+    # Pull group context for the Claude system prompt (single call, cached per scan)
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name FROM crab.timeshare_groups WHERE group_id = %s::uuid",
+            (group_uuid,),
+        )
+        group_name = cur.fetchone()[0]
+        cur.execute("""
+            SELECT name, unit_number, week_number, exchange_network
+              FROM crab.timeshare_properties
+             WHERE group_id = %s::uuid ORDER BY pk_id ASC LIMIT 1
+        """, (group_uuid,))
+        prop = cur.fetchone()
+    finally:
+        conn.close()
+    property_hint = None
+    if prop:
+        name, unit, week, network = prop
+        bits = [name]
+        if unit:
+            bits.append(f"unit {unit}")
+        if week:
+            bits.append(f"week {week}")
+        if network:
+            bits.append(f"on {network.replace('_', ' ')}")
+        property_hint = ', '.join(bits)
+
+    created_jobs = []
+    errors = []
+    for item in items:
+        try:
+            text = fetch_item_text(item)
+        except DriveError as e:
+            errors.append(f"{item['name']}: {e}")
+            continue
+        except Exception as e:
+            logger.exception(f"Drive fetch failed for {item['id']}: {e}")
+            errors.append(f"{item['name']}: fetch failed")
+            continue
+        if not text or not text.strip():
+            errors.append(f"{item['name']}: empty after text extraction")
+            continue
+
+        job_id = create_ingest_job(
+            group_id=group_uuid,
+            source_type=item['source_type'],
+            source_ref=build_drive_web_url(
+                'document' if item['source_type'] == 'google_doc' else
+                'spreadsheet' if item['source_type'] == 'google_sheet' else 'file',
+                item['id'],
+            ),
+            source_content=text,
+            created_by=user['id'],
+        )
+        # Stamp a document_refs row up front so the user can re-open the
+        # original Drive file regardless of whether Claude succeeded below.
+        create_document_ref(group_uuid, item, ingest_job_id=job_id)
+
+        try:
+            result = call_claude_extractor(
+                group_name=group_name,
+                property_hint=property_hint,
+                source_content=text,
+                user_id=user['id'],
+            )
+            finalize_ingest_job(
+                job_id=job_id,
+                extracted_facts=result['extracted_facts'],
+                tool_calls=result['tool_calls'],
+                cost_usd=result['cost_usd'],
+                no_facts_reason=result['no_facts_reason'],
+            )
+        except Exception as e:
+            logger.exception(f"Claude extraction failed on Drive job {job_id}: {e}")
+            finalize_ingest_job(
+                job_id=job_id, extracted_facts={}, tool_calls=[], cost_usd=0,
+                error_message=str(e).split('\n')[0][:500],
+            )
+        created_jobs.append(job_id)
+
+    if created_jobs:
+        flash(
+            f'Ingested {len(created_jobs)} file{"s" if len(created_jobs) != 1 else ""} '
+            f'from Drive. Review each below.',
+            'success',
+        )
+    for err in errors[:5]:
+        flash(err, 'error')
+    # Single-file scans go straight to the review page; multi-file redirects
+    # to the job list so the user can see them all.
+    if len(created_jobs) == 1:
+        return redirect(url_for('timeshare.ingest_job_review',
+                                 group_uuid=group_uuid, job_id=created_jobs[0]))
+    return redirect(url_for('timeshare.ingest_jobs', group_uuid=group_uuid))

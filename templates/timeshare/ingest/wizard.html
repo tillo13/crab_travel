@@ -40,6 +40,24 @@
 
 </div>
 
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mt-6">
+  <h2 class="text-lg font-semibold mb-1">Paste a Google Drive URL</h2>
+  <p class="text-xs text-crab-sand-dim mb-4">
+    Share the Drive folder or file with <strong class="text-crab-sand">anyone with the link — viewer</strong>, then paste the URL. Crab reads the files via the public link only — we never request Drive OAuth, never see your other folders, never store the bytes.
+  </p>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/drive" class="grid md:grid-cols-[1fr_auto] gap-3 items-start">
+    <input type="url" name="drive_url" required
+      placeholder="https://drive.google.com/drive/folders/… or docs.google.com/document/d/…"
+      class="bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-crab-coral focus:outline-none">
+    <button type="submit" class="bg-crab-coral text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors whitespace-nowrap">
+      Scan + extract
+    </button>
+  </form>
+  <p class="text-xs text-crab-sand-dim mt-2">
+    Folder scans ingest up to 20 Docs/Sheets/PDFs at a time. Subfolders are skipped for now.
+  </p>
+</div>
+
 <div class="mt-6 flex items-center justify-between">
   <div class="text-xs text-crab-sand-dim">
     Once extraction completes, you'll review proposed rows and pick which to commit.
