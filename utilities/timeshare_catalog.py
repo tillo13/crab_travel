@@ -145,6 +145,108 @@ def search_resorts_rich(q=None, country=None, tier=None, min_sleeps=None, limit=
     return _fetchall(sql, tuple(params))
 
 
+def destination_overview(country):
+    """Everything the destination page needs, in one round-trip."""
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT rs.ii_code, rs.name, rs.tier, rs.nearest_airport,
+                   rs.check_in_day, rs.sleeping_capacity, rs.photo_urls,
+                   rs.description,
+                   a.name AS area_name, a.country,
+                   r.name AS region_name,
+                   g.google_rating, g.google_user_ratings_total,
+                   g.google_formatted_address, g.map_lat, g.map_lng
+              FROM crab.ii_resorts rs
+              LEFT JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+              LEFT JOIN crab.ii_regions r ON r.pk_id = a.region_id
+              LEFT JOIN crab.ii_resort_google g ON g.resort_ii_code = rs.ii_code
+             WHERE a.country = %s AND rs.status = 'active'
+             ORDER BY
+                CASE WHEN rs.tier = 'Premier_Boutique' THEN 0
+                     WHEN rs.tier = 'Premier' THEN 1
+                     WHEN rs.tier = 'Select' THEN 2
+                     ELSE 3 END,
+                COALESCE(g.google_rating, 0) DESC,
+                rs.name ASC
+        """, (country,))
+        resorts = [dict(r) for r in cur.fetchall()]
+
+        # Areas (subregions) within this destination for the sidebar
+        cur.execute("""
+            SELECT a.name, a.ii_code, COUNT(rs.pk_id) AS resort_count
+              FROM crab.ii_areas a
+              LEFT JOIN crab.ii_resorts rs ON rs.area_id = a.pk_id AND rs.status = 'active'
+             WHERE a.country = %s
+             GROUP BY a.pk_id, a.name, a.ii_code
+             ORDER BY resort_count DESC, a.name ASC
+        """, (country,))
+        areas = [dict(r) for r in cur.fetchall()]
+
+        # Distinct airports across the destination
+        cur.execute("""
+            SELECT DISTINCT
+                   SUBSTRING(nearest_airport FROM '([A-Z]{3})') AS iata,
+                   nearest_airport
+              FROM crab.ii_resorts rs
+              JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+             WHERE a.country = %s AND nearest_airport IS NOT NULL
+        """, (country,))
+        airports = [dict(r) for r in cur.fetchall()]
+
+    finally:
+        conn.close()
+    return {'resorts': resorts, 'areas': areas, 'airports': airports}
+
+
+def destination_trips_for_group(group_id, country):
+    """The Tillo family's past trips in this destination."""
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT t.pk_id, t.trip_date_start, t.trip_date_end, t.resort_name,
+                   t.resort_ii_code, t.trip_type, t.cost_usd, t.notes,
+                   t.location, t.exchange_number, t.uncertainty_level
+              FROM crab.timeshare_trips t
+              LEFT JOIN crab.ii_resorts rs ON rs.ii_code = t.resort_ii_code
+              LEFT JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+             WHERE t.group_id = %s::uuid
+               AND (a.country = %s OR t.location ILIKE %s OR t.resort_name ILIKE %s)
+             ORDER BY t.trip_date_start DESC NULLS LAST
+        """, (group_id, country, f"%{country}%", f"%{country}%"))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def destination_shortlist_for_group(group_id, country):
+    from utilities.postgres_utils import get_db_connection
+    import psycopg2.extras
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT sl.pk_id, sl.resort_code, rs.name AS resort_name,
+                   rs.tier, rs.photo_urls,
+                   g.google_rating, g.google_user_ratings_total
+              FROM crab.timeshare_group_shortlist sl
+              JOIN crab.ii_resorts rs ON rs.ii_code = sl.resort_code
+              JOIN crab.ii_areas a ON a.pk_id = rs.area_id
+              LEFT JOIN crab.ii_resort_google g ON g.resort_ii_code = rs.ii_code
+             WHERE sl.group_id = %s::uuid AND a.country = %s
+             ORDER BY sl.priority DESC, sl.created_at ASC
+        """, (group_id, country))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def country_counts():
     """Return [{country, resort_count, region_name}, ...] for the search
     sidebar's 'Browse by country' chips and the country-centroid map."""

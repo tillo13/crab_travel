@@ -156,6 +156,61 @@ def dashboard(group_uuid):
     )
 
 
+@bp.route('/g/<group_uuid>/destinations/<country>')
+@group_member_required()
+def destination_page(group_uuid, country):
+    """Rich destination-first page — 'Hawaii might be interesting' → this view.
+    Shows Claude-generated briefing + all II resorts in the country + your
+    family's history there + shortlist + airport options. Designed to beat
+    II's directory by giving Celeste real context instead of a resort list."""
+    from urllib.parse import unquote
+    from utilities.timeshare_catalog import (
+        destination_overview, destination_trips_for_group,
+        destination_shortlist_for_group,
+    )
+    from utilities.timeshare_destination import get_or_generate_blurb
+
+    country = unquote(country)
+    overview = destination_overview(country)
+    if not overview['resorts']:
+        abort(404)
+    trips = destination_trips_for_group(group_uuid, country)
+    shortlist = destination_shortlist_for_group(group_uuid, country)
+    group_name = _get_group_name(group_uuid)
+    area_names = [a['name'] for a in overview['areas']]
+    blurb = get_or_generate_blurb(country, areas=area_names)
+
+    # Rollup stats for the hero
+    resorts = overview['resorts']
+    n_resorts = len(resorts)
+    with_google = [r for r in resorts if r.get('google_rating')]
+    avg_rating = (sum(float(r['google_rating']) for r in with_google) / len(with_google)) if with_google else None
+    total_reviews = sum(int(r['google_user_ratings_total'] or 0) for r in with_google)
+    n_premier = sum(1 for r in resorts if r.get('tier') in ('Premier', 'Premier_Boutique'))
+
+    return render_template(
+        'timeshare/destinations/detail.html',
+        active_page='timeshare',
+        group_uuid=group_uuid,
+        group={'name': group_name},
+        role=request.timeshare_role,
+        nav_active='dashboard',
+        country=country,
+        blurb=blurb,
+        resorts=resorts,
+        areas=overview['areas'],
+        airports=overview['airports'],
+        trips=trips,
+        shortlist=shortlist,
+        stats={
+            'resorts': n_resorts,
+            'premier': n_premier,
+            'avg_rating': avg_rating,
+            'total_reviews': total_reviews,
+        },
+    )
+
+
 @bp.route('/g/<group_uuid>/api/resorts/search')
 @group_member_required()
 def api_resorts_search(group_uuid):

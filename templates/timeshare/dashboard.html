@@ -88,10 +88,14 @@
           class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Sleeps 6+</button>
         <span class="w-px bg-white/10 mx-1"></span>
         {% for c in countries[:8] %}
-        <button data-chip="country" data-value="{{ c.country }}"
-          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">
-          {{ c.country }}<span class="ml-1 text-[10px] text-crab-sand-dim/70">{{ c.resort_count }}</span>
-        </button>
+        <span class="ts-chip inline-flex items-stretch rounded-full border border-white/10 bg-crab-navy/40 overflow-hidden hover:border-crab-coral/40 transition-colors" data-chip-group="country" data-country="{{ c.country }}">
+          <button data-chip="country" data-value="{{ c.country }}"
+            class="ts-chip-filter px-2.5 py-1 text-crab-sand-dim hover:text-crab-sand transition-colors" title="Filter results to {{ c.country }}">
+            {{ c.country }}<span class="ml-1 text-[10px] text-crab-sand-dim/70">{{ c.resort_count }}</span>
+          </button>
+          <a href="/timeshare/g/{{ group.group_id }}/destinations/{{ c.country|urlencode }}"
+             class="ts-chip-open px-2 py-1 border-l border-white/10 text-crab-coral hover:bg-crab-coral/10 transition-colors" title="Open {{ c.country }} destination page">→</a>
+        </span>
         {% endfor %}
       </div>
     </div>
@@ -332,9 +336,27 @@
         stroke: isHome ? '#fff0b8' : '#ffb89a',
         ring: isHome,
       });
+      const popupHtml = `
+        <div class="text-sm">
+          <div class="font-semibold text-crab-sand mb-1">${country}</div>
+          <div class="text-xs text-crab-sand-dim mb-2">${rs.length} resort${rs.length !== 1 ? 's' : ''} indexed</div>
+          <a href="/timeshare/g/${GROUP_UUID}/destinations/${encodeURIComponent(country)}"
+             class="inline-block text-xs bg-crab-coral text-white px-2.5 py-1 rounded-md font-semibold">Explore ${country} →</a>
+          <a href="#" data-filter-country="${country}"
+             class="inline-block text-xs text-crab-coral ml-2">Just filter results</a>
+        </div>`;
       const m = L.marker(coord, {icon, title: country})
-        .on('click', () => { setFilter('country', country); })
+        .bindPopup(popupHtml, {className: 'ts-country-popup'})
+        .on('click', function(e) { this.openPopup(); })
         .addTo(countryLayer);
+      m.on('popupopen', function(e) {
+        const link = e.popup.getElement().querySelector('[data-filter-country]');
+        if (link) link.addEventListener('click', ev => {
+          ev.preventDefault();
+          setFilter('country', country);
+          m.closePopup();
+        });
+      });
       if (!markerByCountry.has(country)) markerByCountry.set(country, m);
     }
   }
@@ -544,15 +566,21 @@
     fetchResults();
   }
   function refreshChipStates() {
-    chipsRow.querySelectorAll('.ts-chip').forEach(el => {
+    chipsRow.querySelectorAll('button.ts-chip, .ts-chip-filter').forEach(el => {
       const k = el.dataset.chip, v = el.dataset.value;
+      if (!k) return;
       const active = String(state.filters[k]) === v;
-      el.classList.toggle('ts-chip-active', active);
+      // Highlight the whole split-chip wrapper when it's a country filter
+      const wrapper = el.closest('[data-chip-group="country"]');
+      (wrapper || el).classList.toggle('ts-chip-active', active);
     });
   }
   chipsRow.addEventListener('click', e => {
-    const btn = e.target.closest('.ts-chip');
-    if (!btn) return;
+    // If user clicked the arrow-link half of the split chip, let the anchor work
+    if (e.target.closest('.ts-chip-open')) return;
+    // Filter buttons (both legacy .ts-chip and the new .ts-chip-filter work)
+    const btn = e.target.closest('.ts-chip-filter, button.ts-chip');
+    if (!btn || !btn.dataset.chip) return;
     setFilter(btn.dataset.chip, btn.dataset.value);
   });
 

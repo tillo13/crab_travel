@@ -1,0 +1,134 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}{{ country }} — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<!-- HERO -->
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 md:p-8 mb-6 relative overflow-hidden">
+  <div class="relative z-10">
+    <div class="text-xs uppercase tracking-widest text-crab-sand-dim">Destination</div>
+    <h1 class="text-3xl md:text-4xl font-display mt-1 mb-3">{{ country }}</h1>
+    {% if blurb %}
+    <div class="text-base text-crab-sand leading-relaxed max-w-3xl whitespace-pre-line">{{ blurb }}</div>
+    {% endif %}
+  </div>
+  <!-- ambient gradient -->
+  <div class="absolute top-0 right-0 w-64 h-64 bg-crab-coral/5 rounded-full blur-3xl pointer-events-none"></div>
+</div>
+
+<!-- QUICK STATS -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Resorts in {{ country }}</div>
+    <div class="text-2xl font-display text-crab-coral mt-1">{{ stats.resorts }}</div>
+    {% if stats.premier %}<div class="text-xs text-amber-300 mt-1">{{ stats.premier }} premier</div>{% endif %}
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Google rating</div>
+    <div class="text-2xl font-display text-crab-coral mt-1">
+      {% if stats.avg_rating %}★ {{ '%.1f'|format(stats.avg_rating) }}{% else %}—{% endif %}
+    </div>
+    {% if stats.total_reviews %}<div class="text-xs text-crab-sand-dim mt-1">{{ '{:,}'.format(stats.total_reviews) }} reviews indexed</div>{% endif %}
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Your trips here</div>
+    <div class="text-2xl font-display {% if trips %}text-emerald-400{% else %}text-crab-sand-dim{% endif %} mt-1">{{ trips|length }}</div>
+    {% if shortlist %}<div class="text-xs text-amber-300 mt-1">{{ shortlist|length }} shortlisted</div>{% endif %}
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Areas</div>
+    <div class="text-2xl font-display text-crab-coral mt-1">{{ areas|length }}</div>
+  </div>
+</div>
+
+<!-- YOUR HISTORY BAND (if any) -->
+{% if trips %}
+<div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 mb-6">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="text-xs uppercase tracking-wide text-emerald-300 font-semibold">Your family has been here</span>
+    <span class="text-xs text-crab-sand-dim">({{ trips|length }} trip{{ 's' if trips|length != 1 else '' }})</span>
+  </div>
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+    {% for t in trips[:6] %}
+    <div class="bg-crab-navy/40 border border-white/5 rounded-lg px-3 py-2.5">
+      <div class="font-medium">{{ t.resort_name or '—' }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">
+        {% if t.trip_date_start %}{{ t.trip_date_start.strftime('%b %Y') }}{% endif %}
+        {% if t.trip_type %} · <span class="capitalize">{{ t.trip_type|replace('_',' ') }}</span>{% endif %}
+        {% if t.cost_usd %} · ${{ '{:,.0f}'.format(t.cost_usd) }}{% endif %}
+      </div>
+      {% if t.notes %}<div class="text-xs text-crab-sand-dim mt-1 line-clamp-2">{{ t.notes|truncate(100) }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if trips|length > 6 %}
+  <div class="text-xs text-crab-sand-dim mt-3">
+    <a href="/timeshare/g/{{ group_uuid }}/trips" class="text-crab-coral hover:underline">+ {{ trips|length - 6 }} more trips in Trips →</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- EXPLORE STRIPE -->
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 mb-6">
+  <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim mb-3">More about {{ country }}</h2>
+  {% set q = country|urlencode %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <a href="https://www.google.com/search?q={{ q }}+vacation+tips" target="_blank" class="px-3 py-2.5 bg-crab-navy/40 border border-white/10 rounded-lg hover:border-crab-coral/40 transition-colors">Vacation tips ↗</a>
+    <a href="https://www.google.com/search?q=best+time+to+visit+{{ q }}" target="_blank" class="px-3 py-2.5 bg-crab-navy/40 border border-white/10 rounded-lg hover:border-crab-coral/40 transition-colors">Best time to visit ↗</a>
+    <a href="https://www.google.com/search?q=things+to+do+in+{{ q }}" target="_blank" class="px-3 py-2.5 bg-crab-navy/40 border border-white/10 rounded-lg hover:border-crab-coral/40 transition-colors">Things to do ↗</a>
+    <a href="https://www.google.com/maps/search/{{ q }}" target="_blank" class="px-3 py-2.5 bg-crab-navy/40 border border-white/10 rounded-lg hover:border-crab-coral/40 transition-colors">On Google Maps ↗</a>
+  </div>
+  {% if airports %}
+  <div class="text-xs text-crab-sand-dim mt-3">
+    <strong class="text-crab-sand">Fly into:</strong>
+    {% for a in airports[:5] %}
+      {% if a.iata %}<code class="text-crab-coral">{{ a.iata }}</code>{% if not loop.last %}, {% endif %}{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- RESORT GRID -->
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+  <div class="px-5 py-3 bg-crab-navy/40 flex items-center justify-between">
+    <h2 class="text-xs uppercase tracking-wide text-crab-sand-dim">
+      {{ resorts|length }} resort{{ 's' if resorts|length != 1 else '' }} · sorted by Google rating
+    </h2>
+    <a href="/timeshare/g/{{ group_uuid }}/" class="text-xs text-crab-coral hover:underline">← back to search</a>
+  </div>
+  <div class="divide-y divide-white/5">
+    {% for r in resorts %}
+    <a href="/timeshare/catalog/resort/{{ r.ii_code }}" class="flex gap-4 p-4 hover:bg-crab-navy/20 transition-colors">
+      {% if r.photo_urls %}
+      <img src="{{ r.photo_urls[0] }}" loading="lazy" alt="" class="w-24 h-20 object-cover rounded-lg bg-crab-navy/40 flex-shrink-0">
+      {% else %}
+      <div class="w-24 h-20 rounded-lg bg-crab-navy/40 flex-shrink-0"></div>
+      {% endif %}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 justify-between">
+          <div class="font-semibold truncate">{{ r.name }}</div>
+          {% if r.tier %}
+            <span class="text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap
+              {% if r.tier == 'Premier_Boutique' %}text-amber-300
+              {% elif r.tier == 'Premier' %}text-amber-400
+              {% else %}text-emerald-300{% endif %}">★ {{ r.tier|replace('_',' ') }}</span>
+          {% endif %}
+        </div>
+        <div class="text-xs text-crab-sand-dim mt-0.5 truncate">
+          {{ r.area_name or '' }}{% if r.area_name and r.country %} · {% endif %}{{ r.country or '' }}
+        </div>
+        <div class="flex items-center gap-3 text-xs mt-1.5">
+          {% if r.google_rating %}
+          <span class="text-amber-300">★ {{ '%.1f'|format(r.google_rating) }} <span class="text-crab-sand-dim">({{ '{:,}'.format(r.google_user_ratings_total or 0) }})</span></span>
+          {% endif %}
+          {% if r.sleeping_capacity and r.sleeping_capacity.total %}
+          <span class="text-crab-sand-dim">sleeps {{ r.sleeping_capacity.total }}</span>
+          {% endif %}
+          {% if r.nearest_airport %}<span class="text-crab-sand-dim">{{ r.nearest_airport|truncate(30) }}</span>{% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
