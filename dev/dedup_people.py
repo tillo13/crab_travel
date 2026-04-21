@@ -54,6 +54,30 @@ TABLES = {
             ('crab.timeshare_timeline_events', 'related_contact_id'),
         ],
     },
+    'trips': {
+        'table': 'crab.timeshare_trips',
+        'group_scope_col': 'group_id',
+        # Trip dedup key: date range + trip type + normalized resort/location.
+        # Catches "Royal Sands" vs "The Royal Sands" vs "Royal Sands Cancún"
+        # with the same start date — they're the same trip mentioned across
+        # multiple dossier docs.
+        'dedup_key_sql': """
+            COALESCE(trip_date_start::text, '') || '_' ||
+            COALESCE(trip_date_end::text, '') || '_' ||
+            COALESCE(trip_type, '') || '_' ||
+            REGEXP_REPLACE(LOWER(TRIM(COALESCE(resort_name, location, ''))), '^the |\\s+(resort|cancún|cancun)$|[^a-z0-9]+', '', 'g')
+        """,
+        'scalar_cols': ['property_id', 'trip_date_start', 'trip_date_end',
+                        'resort_name', 'resort_ii_code', 'resort_rci_code',
+                        'location', 'trip_type', 'exchange_number',
+                        'cost_usd', 'uncertainty_level',
+                        'ii_member_confirmed', 'rci_member_confirmed'],
+        'mergeable_text_cols': ['notes'],
+        'fk_refs': [
+            ('crab.timeshare_trip_participants', 'trip_id'),
+            ('crab.timeshare_exchanges', 'trip_id'),
+        ],
+    },
     'portals': {
         'table': 'crab.timeshare_portals',
         'group_scope_col': 'group_id',

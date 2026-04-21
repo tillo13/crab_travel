@@ -29,7 +29,12 @@
           <td class="text-right">{% if f.late_fees_usd %}${{ '{:,.2f}'.format(f.late_fees_usd) }}{% endif %}</td>
           <td class="text-right text-crab-sand-dim">{{ f.paid_date or '' }}</td>
           <td class="text-right">
-            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/maintenance_fees/{{ f.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>
+            {% if role in ('owner', 'admin') %}
+            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/maintenance_fees/{{ f.pk_id }}/delete"
+                  onsubmit="return confirm('Delete the {{ f.year }} fee row? This can\'t be undone.')">
+              <button class="text-xs text-red-400 hover:text-red-300">✕</button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -74,7 +79,12 @@
           <td class="text-right">{% if p.balance_after_usd %}${{ '{:,.2f}'.format(p.balance_after_usd) }}{% endif %}</td>
           <td class="text-crab-sand-dim">{{ p.method or '' }}</td>
           <td class="text-right">
-            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/loan_payments/{{ p.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>
+            {% if role in ('owner', 'admin') %}
+            <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/loan_payments/{{ p.pk_id }}/delete"
+                  onsubmit="return confirm('Delete this loan payment row? This can\'t be undone.')">
+              <button class="text-xs text-red-400 hover:text-red-300">✕</button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

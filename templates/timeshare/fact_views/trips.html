@@ -19,7 +19,7 @@
         <td class="px-4 py-3 text-crab-sand-dim">{{ t.location or '' }}</td>
         <td class="px-4 py-3 text-crab-sand-dim">{{ (t.trip_type or '')|replace('_',' ') }}</td>
         <td class="px-4 py-3 text-right">{% if t.cost_usd %}${{ '{:,.2f}'.format(t.cost_usd) }}{% endif %}</td>
-        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/{{ t.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+        <td class="px-4 py-3 text-right">{% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/{{ t.pk_id }}/delete" onsubmit="return confirm('Delete this trip? Participants + exchange links tied to it will lose their trip pointer.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}</td>
       </tr>
       {% if t.notes %}
       <tr class="border-t border-white/5 bg-crab-navy/20">

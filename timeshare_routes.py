@@ -644,8 +644,11 @@ def fact_update(group_uuid, fact_key, pk):
 
 
 @bp.route('/g/<group_uuid>/fact/<fact_key>/<int:pk>/delete', methods=['POST'])
-@group_member_required()
+@group_member_required('admin')
 def fact_delete(group_uuid, fact_key, pk):
+    """Deletion is destructive and hits historical dossier rows (CSF fees,
+    trips, contracts) that are costly to reconstruct. Gated to admin+owner
+    only — family and readonly members can't wipe facts even by accident."""
     if fact_key not in FACT_SCHEMAS:
         abort(404)
     ok, err = delete_fact(group_uuid, fact_key, pk)

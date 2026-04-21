@@ -21,7 +21,7 @@
         <td class="px-4 py-3 text-crab-sand-dim">{{ d.doc_type or '' }}</td>
         <td class="px-4 py-3 text-crab-sand-dim">{{ d.date_on_document or '' }}</td>
         <td class="px-4 py-3 text-crab-sand-dim">{{ (d.external_provider or '')|replace('_',' ') }}</td>
-        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/document_refs/{{ d.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+        <td class="px-4 py-3 text-right">{% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/document_refs/{{ d.pk_id }}/delete" onsubmit="return confirm('Remove this document link? The actual file in Drive/Dropbox is NOT touched — only the crab.travel pointer.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

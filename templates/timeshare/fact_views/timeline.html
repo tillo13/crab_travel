@@ -17,7 +17,7 @@
           </div>
           {% if e.description %}<p class="text-sm text-crab-sand-dim mt-1 whitespace-pre-wrap">{{ e.description }}</p>{% endif %}
         </div>
-        <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/timeline_events/{{ e.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>
+        {% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/timeline_events/{{ e.pk_id }}/delete" onsubmit="return confirm('Delete this timeline event? This can\'t be undone.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}
       </div>
     </li>
     {% endfor %}

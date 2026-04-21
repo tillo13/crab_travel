@@ -15,7 +15,7 @@
         <td class="px-4 py-3 text-crab-sand-dim">{{ p.relationship or '' }}</td>
         <td class="px-4 py-3">{{ p.email or '' }}</td>
         <td class="px-4 py-3">{{ p.phone or '' }}</td>
-        <td class="px-4 py-3 text-right"><form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/people/{{ p.pk_id }}/delete"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form></td>
+        <td class="px-4 py-3 text-right">{% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/people/{{ p.pk_id }}/delete" onsubmit="return confirm('Delete {{ p.full_name }}? This removes them from the people list; their trip participations are reassigned but any timeline mentions will be orphaned.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

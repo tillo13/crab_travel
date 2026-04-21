@@ -6,9 +6,11 @@
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-lg font-semibold">{{ prop.name }}</h2>
-    <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/properties/{{ prop.pk_id }}/delete" onsubmit="return confirm('Delete this property? Linked contracts, fees, exchanges and trips will be preserved or cascade-deleted depending on FK setup.')">
+    {% if role in ('owner', 'admin') %}
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/properties/{{ prop.pk_id }}/delete" onsubmit="return confirm('Delete this property? Linked contracts, fees, exchanges and trips will cascade-delete. This is unrecoverable.')">
       <button type="submit" class="text-xs text-red-400 hover:text-red-300">Delete</button>
     </form>
+    {% endif %}
   </div>
   <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     {% for label, key in [('Developer','developer'),('Unit','unit_number'),('Week','week_number'),('Usage','usage_pattern'),('Network','exchange_network'),('Country','country'),('City','city'),('Trust expiry','trust_expiry_date')] %}
@@ -44,9 +46,11 @@
             {% if c.purchase_date %}<span class="text-crab-sand-dim"> · purchased {{ c.purchase_date }}</span>{% endif %}
             {% if c.purchase_price_usd %}<span class="text-crab-sand-dim"> · ${{ '{:,.2f}'.format(c.purchase_price_usd) }}</span>{% endif %}
           </div>
-          <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/contracts/{{ c.pk_id }}/delete">
+          {% if role in ('owner', 'admin') %}
+          <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/contracts/{{ c.pk_id }}/delete" onsubmit="return confirm('Delete contract #{{ c.contract_number or c.pk_id }}? Linked loan payments will cascade-delete.')">
             <button class="text-xs text-red-400 hover:text-red-300">Delete</button>
           </form>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>
