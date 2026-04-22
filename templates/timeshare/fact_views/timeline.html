@@ -48,6 +48,8 @@
 <script>
 (function(){
   const modal = document.getElementById('ts-timeline-modal');
+  // Reparent to body — ancestors with transform/backdrop-filter break position:fixed.
+  if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
   const titleEl = document.getElementById('ts-modal-title');
   const kickerEl = document.getElementById('ts-modal-kicker');
   const bodyEl = document.getElementById('ts-modal-body');
