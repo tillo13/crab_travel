@@ -565,7 +565,12 @@ def api_contact():
         message = (data.get('message') or '').strip()
 
         from utilities.spam_guard import check_spam
-        reason = check_spam(data, request.remote_addr, fields=['email', 'message'])
+        reason = check_spam(
+            data, request.remote_addr, fields=['email', 'message'],
+            origin=request.headers.get('Origin') or request.headers.get('Referer'),
+            user_agent=request.headers.get('User-Agent'),
+            expected_hosts=['crab.travel', 'www.crab.travel'],
+        )
         if reason:
             logger.warning(f"Spam blocked: {reason} from {request.remote_addr}")
             return jsonify({'error': 'Invalid submission'}), 400

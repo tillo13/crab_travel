@@ -1,19 +1,24 @@
 """Shared contact form spam guard, used across all kumori-hosted sites.
 
-Layers:
-1. Honeypot check (already on most sites, but centralized here)
-2. Timing check with server-side verification
-3. Content pattern blocklist (catches SEO pitches, marketing spam)
-4. Email domain blocklist (disposable/known-spam domains)
-5. IP rate limiting (in-memory, resets on deploy)
-6. Normalized-email rate limiting — collapses Gmail dot/plus variants so
-   `a.b.c@gmail.com`, `abc@gmail.com`, and `abc+tag@gmail.com` share a bucket
-   (added 2026-04-16 after pilgrims.world waitlist was flooded with dot spam)
+Layers (checked in order; first hit wins):
+1. Honeypot field — hidden input bots fill, humans don't see
+2. Origin/Referer check — blocks direct API POSTs with no source page
+3. User-Agent blocklist — curl / python-requests / wget / generic libs
+4. Timing check — client sends time_open, reject under 3s
+5. IP rate limiting — in-memory, per-site, resets on deploy (2/hr)
+6. Email domain blocklist — disposable / known-spam domains
+7. Normalized-email rate limiting — collapses Gmail dot/plus variants
+   (`a.b.c@gmail.com` == `abc@gmail.com` == `abc+tag@gmail.com`)
+8. StopForumSpam reputation — free shared-intel API lookup of IP + email
+9. Content pattern blocklist — SEO pitches, backlink spam, lead-gen
 """
 
+import json
 import logging
 import re
 import time
+import urllib.parse
+import urllib.request
 from collections import defaultdict
 
 logger = logging.getLogger('spam_guard')
@@ -63,9 +68,25 @@ GMAIL_DOMAINS = {'gmail.com', 'googlemail.com'}
 # Two buckets: one keyed by IP, one by normalized email.
 _ip_submissions: dict[str, list[float]] = defaultdict(list)
 _email_submissions: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT_IP = 3
+RATE_LIMIT_IP = 2          # tightened 2026-04-21 after multi-site spam wave
 RATE_LIMIT_EMAIL = 2
-RATE_WINDOW = 3600      # seconds (1 hour)
+RATE_WINDOW = 3600          # seconds (1 hour)
+
+# ── User-Agent blocklist ─────────────────────────────────────────────────
+# Real browsers never send these. Dumb bots do.
+_UA_BLOCKLIST = re.compile(
+    r'^\s*$|^(python-requests|python-urllib|curl|wget|go-http-client|java|'
+    r'httpx|aiohttp|axios|libwww|HTTPie|Scrapy|node-fetch|okhttp|'
+    r'apache-httpclient|postmanruntime)\b',
+    re.I,
+)
+
+# ── StopForumSpam reputation cache (in-memory, 1-hour TTL) ───────────────
+_sfs_cache: dict[str, tuple[float, bool]] = {}  # key -> (timestamp, is_spam)
+_SFS_CACHE_TTL = 3600
+_SFS_URL = 'https://api.stopforumspam.org/api'
+_SFS_FREQUENCY_THRESHOLD = 1  # seen reported ≥1 times across network = spam
+_SFS_TIMEOUT = 2.0             # seconds — fail open if API slow
 
 
 def normalize_email(email: str) -> str:
@@ -91,7 +112,50 @@ def _clean_old(bucket: dict[str, list[float]], key: str):
     bucket[key] = [t for t in bucket[key] if t > cutoff]
 
 
-def check_spam(data: dict, ip: str, fields: list[str] | None = None) -> str | None:
+def _check_stopforumspam(ip: str, email: str) -> str | None:
+    """Query StopForumSpam for IP + email reputation. Fails open on API error.
+    Results cached in-memory for _SFS_CACHE_TTL seconds to avoid hammering the API."""
+    cache_key = f'{ip}|{email}'
+    now = time.time()
+    cached = _sfs_cache.get(cache_key)
+    if cached and (now - cached[0]) < _SFS_CACHE_TTL:
+        if cached[1]:
+            return 'stopforumspam:cached'
+        return None
+
+    params = {'json': '1'}
+    if ip:
+        params['ip'] = ip
+    if email and '@' in email:
+        params['email'] = email
+    if 'ip' not in params and 'email' not in params:
+        return None
+
+    try:
+        url = f'{_SFS_URL}?{urllib.parse.urlencode(params)}'
+        with urllib.request.urlopen(url, timeout=_SFS_TIMEOUT) as resp:
+            body = json.loads(resp.read().decode('utf-8', 'replace'))
+    except Exception as e:
+        logger.debug(f'StopForumSpam API error (failing open): {e}')
+        return None
+
+    if not body.get('success'):
+        return None
+
+    is_spam = False
+    for field in ('ip', 'email'):
+        block = body.get(field)
+        if isinstance(block, dict) and block.get('frequency', 0) >= _SFS_FREQUENCY_THRESHOLD:
+            is_spam = True
+            _sfs_cache[cache_key] = (now, True)
+            return f'stopforumspam:{field}_freq_{block.get("frequency")}'
+    _sfs_cache[cache_key] = (now, False)
+    return None
+
+
+def check_spam(data: dict, ip: str, fields: list[str] | None = None,
+               origin: str | None = None, user_agent: str | None = None,
+               expected_hosts: list[str] | None = None) -> str | None:
     """Run all spam checks against a contact form submission.
 
     Args:
@@ -99,6 +163,11 @@ def check_spam(data: dict, ip: str, fields: list[str] | None = None) -> str | No
         ip: requester IP address
         fields: which keys to concatenate for content scanning
                 (default: name, company, subject, message)
+        origin: request.headers.get('Origin') or Referer — for header validation
+        user_agent: request.headers.get('User-Agent') — for UA filter
+        expected_hosts: allowed Origin/Referer hosts for this site
+                        (e.g., ['crab.travel', 'www.crab.travel']).
+                        If None, the Origin check is skipped (back-compat).
 
     Returns:
         None if clean, or a short reason string if spam.
@@ -109,7 +178,22 @@ def check_spam(data: dict, ip: str, fields: list[str] | None = None) -> str | No
         if data.get(hp_field, '').strip():
             return f'honeypot:{hp_field}'
 
-    # 2. Timing: client sends time_open in ms; reject if under 3s
+    # 2. Origin / Referer check — blocks direct API POSTs from non-browsers
+    if expected_hosts:
+        host = None
+        if origin:
+            try:
+                host = urllib.parse.urlparse(origin).hostname
+            except Exception:
+                host = None
+        if not host or host not in expected_hosts:
+            return f'bad_origin:{host or "missing"}'
+
+    # 3. User-Agent blocklist — no real browser sends curl/python-requests
+    if user_agent is not None and _UA_BLOCKLIST.match(user_agent):
+        return f'bad_ua:{user_agent[:40]}'
+
+    # 4. Timing: client sends time_open in ms; reject if under 3s
     time_open = data.get('time_open', 0)
     try:
         time_open = int(time_open)
@@ -118,12 +202,12 @@ def check_spam(data: dict, ip: str, fields: list[str] | None = None) -> str | No
     if time_open < 3000:
         return f'too_fast:{time_open}ms'
 
-    # 3. IP rate limit
+    # 5. IP rate limit
     _clean_old(_ip_submissions, ip)
     if len(_ip_submissions[ip]) >= RATE_LIMIT_IP:
         return f'rate_limit_ip:{ip}'
 
-    # 4. Email domain check + normalized-email rate limit
+    # 6. Email domain check + normalized-email rate limit
     email = data.get('email', '')
     normalized = normalize_email(email)
     if '@' in normalized:
@@ -136,7 +220,12 @@ def check_spam(data: dict, ip: str, fields: list[str] | None = None) -> str | No
         if len(_email_submissions[normalized]) >= RATE_LIMIT_EMAIL:
             return f'rate_limit_email:{normalized}'
 
-    # 5. Content pattern scan
+    # 7. StopForumSpam shared-intel reputation — IP + email
+    sfs_reason = _check_stopforumspam(ip, email)
+    if sfs_reason:
+        return sfs_reason
+
+    # 8. Content pattern scan
     if fields is None:
         fields = ['name', 'company', 'subject', 'message']
     blob = ' '.join(str(data.get(f, '')) for f in fields)
