@@ -1,22 +1,39 @@
 {
-    "project_id": "crab-travel",
-    "app_name": "Crab Travel",
-    "github_repo": "https://github.com/tillo13/crab_travel.git",
-    "shared_files": [
-        {"src": "kumori_free_llm/kumori_free_llms.py", "dst": "utilities/kumori_free_llms.py"},
-        {"src": "kumori_free_llm/backend_registry.py", "dst": "utilities/backend_registry.py"}
-    ],
-    "custom_domain": "https://crab.travel",
-    "cron_yaml": true,
-    "pre_deploy_test": "python3 smoke_test.py",
-    "cloud_run_services": [
-        {
-            "name": "crab-scraper",
-            "source": ".",
-            "dockerfile": "worker/Dockerfile",
-            "memory": "512Mi",
-            "timeout": "3600",
-            "exclude_dirs": ["static", "templates", "docs", "dev", "_antiquated", "_private"]
-        }
-    ]
+  "project_id": "crab-travel",
+  "app_name": "Crab Travel",
+  "github_repo": "https://github.com/tillo13/crab_travel.git",
+  "shared_files": [
+    {
+      "src": "kumori_free_llm/kumori_free_llms.py",
+      "dst": "utilities/kumori_free_llms.py"
+    },
+    {
+      "src": "kumori_free_llm/backend_registry.py",
+      "dst": "utilities/backend_registry.py"
+    },
+    {
+      "src": "spam_control/spam_guard.py",
+      "dst": "utilities/spam_guard.py"
+    }
+  ],
+  "custom_domain": "https://crab.travel",
+  "cron_yaml": true,
+  "pre_deploy_test": "python3 smoke_test.py",
+  "cloud_run_services": [
+    {
+      "name": "crab-scraper",
+      "source": ".",
+      "dockerfile": "worker/Dockerfile",
+      "memory": "512Mi",
+      "timeout": "3600",
+      "exclude_dirs": [
+        "static",
+        "templates",
+        "docs",
+        "dev",
+        "_antiquated",
+        "_private"
+      ]
+    }
+  ]
 }

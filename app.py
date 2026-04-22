@@ -564,9 +564,10 @@ def api_contact():
         email = (data.get('email') or '').strip()
         message = (data.get('message') or '').strip()
 
-        # Spam guard — honeypot field + obvious URL spam
-        if data.get('website') or data.get('url') or data.get('honeypot'):
-            logger.warning(f"Spam blocked: honeypot from {request.remote_addr}")
+        from utilities.spam_guard import check_spam
+        reason = check_spam(data, request.remote_addr, fields=['email', 'message'])
+        if reason:
+            logger.warning(f"Spam blocked: {reason} from {request.remote_addr}")
             return jsonify({'error': 'Invalid submission'}), 400
 
         if not email or not message:
