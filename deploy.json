@@ -14,6 +14,10 @@
     {
       "src": "spam_control/spam_guard.py",
       "dst": "utilities/spam_guard.py"
+    },
+    {
+      "src": "anthropic_logger/anthropic_logger.py",
+      "dst": "utilities/anthropic_logger.py"
     }
   ],
   "custom_domain": "https://crab.travel",
