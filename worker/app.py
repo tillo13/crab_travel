@@ -180,64 +180,6 @@ def scrape_one():
                     'pending': _pending_count()})
 
 
-@app.route('/google/batch-enrich', methods=['POST'])
-def google_batch_enrich():
-    """Pre-fill the crab.ii_resort_google cache for every resort that doesn't
-    have a fresh entry yet. Runs up to `max` lookups per call (default 200)
-    so we can stay under Cloud Run's 60-min timeout on big batches."""
-    if not _authed():
-        return _reject()
-    from utilities.postgres_utils import get_db_connection
-    from utilities.timeshare_google import get_or_fetch_google, CACHE_TTL_DAYS
-    from datetime import datetime, timedelta, timezone
-    import time as _time
-
-    max_count = int(request.args.get('max', 200))
-    max_count = max(1, min(max_count, 500))
-
-    fresh_cutoff = datetime.now(timezone.utc) - timedelta(days=CACHE_TTL_DAYS)
-    conn = get_db_connection()
-    try:
-        import psycopg2.extras
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""
-            SELECT rs.ii_code, rs.name,
-                   a.name AS area_name, a.country
-              FROM crab.ii_resorts rs
-              LEFT JOIN crab.ii_areas a ON a.pk_id = rs.area_id
-              LEFT JOIN crab.ii_resort_google g ON g.resort_ii_code = rs.ii_code
-             WHERE rs.status = 'active'
-               AND (g.fetched_at IS NULL OR g.fetched_at < %s)
-             ORDER BY
-               CASE WHEN rs.tier = 'Premier_Boutique' THEN 0
-                    WHEN rs.tier = 'Premier' THEN 1
-                    WHEN rs.tier = 'Select' THEN 2
-                    ELSE 3 END,
-               rs.ii_code ASC
-             LIMIT %s
-        """, (fresh_cutoff, max_count))
-        todo = cur.fetchall()
-    finally:
-        conn.close()
-
-    t0 = _time.time()
-    hits = misses = 0
-    for r in todo:
-        area = ', '.join(filter(None, [r.get('area_name'), r.get('country')]))
-        result = get_or_fetch_google(r['ii_code'], r['name'], area_hint=area)
-        if result and result.get('google_rating') is not None:
-            hits += 1
-        else:
-            misses += 1
-    return jsonify({
-        'ok': True,
-        'attempted': len(todo),
-        'with_google_rating': hits,
-        'no_match_or_error': misses,
-        'elapsed_s': round(_time.time() - t0, 1),
-    })
-
-
 @app.route('/scrape/drain', methods=['POST'])
 def scrape_drain():
     """Drain the whole queue in one call. Cloud Run's 60min ceiling is plenty

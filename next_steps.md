@@ -5,11 +5,17 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-23 04:30*
+*Last refreshed: 2026-04-25 05:40*
 
 ## 🎯 Pending
 
 <!-- pending:start -->
+- [ ] **Google Maps Platform refund — Case #70458922 (status 2026-04-25)**
+  - Eljohn (Google Maps Platform Billing Support) replied 2026-04-25 00:29 GMT: adjustment request received and forwarded to specialized team for review.
+  - Expectation set by Google: **partial adjustment likely, full refund not guaranteed** ("we don't provide a full adjustment amount, all adjustments are subject to approval"). Update promised within 24–48h of specialized-team decision.
+  - Reply drafted in Gmail (threaded on case) confirming technical side is fully closed: all Maps Platform APIs disabled, runaway endpoint removed, no re-enable until ToS-compliant design + daily hard caps in place. Andy to send.
+  - Next action: wait for Eljohn's follow-up; if no word by 2026-04-28, nudge politely on the same thread.
+
 - [ ] **OpenClaw tenant expansion — survey complete, ready to pick next migration**
   - Canonical spec: [`~/Desktop/code/_infrastructure/docs/openclaw/MANIFEST.md`](../_infrastructure/docs/openclaw/MANIFEST.md) (least-privilege rules, layout, reuse checklist)
   - Community consensus (from 336-comment r/LocalLLaMA thread + r/OpenClawCentral scrapes, Apr 2026): scheduled digests, cron-driven deterministic ops, DB-backed monitors, IM bridges
@@ -79,6 +85,7 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `ef49784` · 2026-04-23 19:03 — crab_travel: migrate to canonical anthropic_logger via shared_files
 - `bbf23e9` · 2026-04-21 22:53 — spam_guard: hardened with StopForumSpam + Origin check + UA filter (crab.travel expected_hosts)
 - `98df510` · 2026-04-21 22:16 — crab.travel: use shared spam_guard from _infrastructure/spam_control/ (replaces inline honeypot-o...
 - `97abcc3` · 2026-04-21 17:44 — timeline modal: reparent to <body> so fixed positioning escapes glass-nav backdrop-filter ancestor
@@ -93,14 +100,18 @@
 - `bc3b72e` · 2026-04-21 12:01 — dev/dedup_people.py — one-shot MDM pass for people/contacts/portals (dry-run by default). Applied...
 - `7cf6ae1` · 2026-04-21 11:55 — CRITICAL: disable App Engine scraping (cron entry commented + /tasks/ii-scrape-next returns 410)....
 - `3fb42f3` · 2026-04-21 11:25 — phase 8b-2 fixes: map tiles Stadia→CartoDB Dark Matter (no key needed, was 401-ing). Resort detai...
-- `56fb2e4` · 2026-04-21 11:13 — phase 8b-1: search-first dashboard replaces fact-grid at /timeshare/g/<uuid>/. Hero searchbar + f...
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**2 file(s) with uncommitted changes:**
+**7 file(s) with uncommitted changes:**
+- ` M deploy.json`
 - ` M next_steps.md`
-- `?? docs/20260422_places_api_refund_plan.md`
+- ` M timeshare_routes.py`
+- ` D utilities/timeshare_google.py`
+- ` M worker/app.py`
+- `?? docs/20260424_places_api_refund_update.md`
+- `?? utilities/anthropic_logger.py`
 
 <!-- wip:end -->

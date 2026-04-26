@@ -27,10 +27,20 @@ def _get_twilio_client():
 
 
 def send_sms(to_number, body):
-    """Send an SMS via Twilio. Returns message SID or None."""
+    """Send an SMS via Twilio. Returns message SID or None.
+
+    Routes through the kumori killswitch — if Twilio MTD spend has crossed the
+    cap (kumori_api_killswitch row), this raises before contacting Twilio.
+    Successful sends log spend to kumori_api_usage.
+    """
     client = _get_twilio_client()
     if not client:
         return None
+    try:
+        from utilities.killswitch import check_killswitch
+        check_killswitch('twilio')
+    except ImportError:
+        pass  # killswitch not present — fail open, but log will still happen below
     try:
         messaging_sid = get_secret('CRAB_TWILIO_MESSAGING_SERVICE_SID')
         msg = client.messages.create(
@@ -39,6 +49,11 @@ def send_sms(to_number, body):
             body=body,
         )
         logger.info(f"SMS sent to {to_number}: {msg.sid}")
+        try:
+            from utilities.twilio_logger import log_twilio_async
+            log_twilio_async(kind='sms_outbound', body=body, feature='plan_notify')
+        except ImportError:
+            pass
         return msg.sid
     except Exception as e:
         logger.error(f"SMS send failed to {to_number}: {e}")

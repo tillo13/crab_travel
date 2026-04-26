@@ -1165,13 +1165,10 @@ def catalog_region(ii_code):
 @login_required
 def catalog_resort(ii_code):
     from utilities.timeshare_catalog import get_resort
-    from utilities.timeshare_google import get_or_fetch_google
     resort = get_resort(ii_code)
     if not resort:
         abort(404)
-    # Lazy Google enrichment — cached for 30 days per resort
-    area_hint = ', '.join(filter(None, [resort.get('area_name'), resort.get('country')]))
-    google = get_or_fetch_google(ii_code, resort['name'], area_hint=area_hint)
+    google = None
     user = session.get('user') or {}
 
     # "What we have" — cross-reference this resort against every group the user

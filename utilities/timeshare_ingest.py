@@ -270,6 +270,12 @@ def call_claude_extractor(group_name: str, property_hint: Optional[str],
         ],
     }
 
+    try:
+        from utilities.killswitch import check_killswitch
+        check_killswitch('anthropic')
+    except ImportError:
+        pass
+
     start = time.time()
     r = requests.post(API_URL, headers=headers, json=body, timeout=300)
     elapsed = time.time() - start

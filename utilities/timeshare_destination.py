@@ -1,21 +1,16 @@
 """
-Destination-level narrative: Claude generates a short "why this place is
-interesting" blurb cached per-country. Beats II's generic marketing copy
-because it speaks to what families actually care about — when to go,
-what to eat, what island/region for what vibe, how to spend a week.
+Destination-level narrative: a short "why this place is interesting" blurb
+cached per-country. Beats II's generic marketing copy because it speaks to
+what families actually care about — when to go, what to eat, what
+island/region for what vibe, how to spend a week.
+
+Routed through the kumori free-LLM router (no paid Anthropic).
 """
 import hashlib
 import json
 import logging
-import time
-
-import requests
-
-from utilities.claude_utils import _get_api_key, log_api_usage
 
 logger = logging.getLogger('crab_travel.timeshare_destination')
-MODEL = "claude-sonnet-4-6"
-API_URL = "https://api.anthropic.com/v1/messages"
 
 
 SYSTEM = """You write concise, grounded destination briefings for a timeshare
@@ -32,35 +27,21 @@ Rules:
 
 
 def fetch_blurb(country: str, areas: list[str] = None) -> str:
-    """One Claude call per country. Cached in crab.ii_country_blurb (via the
-    caller). Returns clean text — no formatting."""
+    """One free-LLM call per country. Cached in crab.ii_country_blurb (via the
+    caller). Returns clean text — no formatting. Returns '' on free-pool failure."""
     areas_hint = ''
     if areas:
         areas_hint = f"\n\nResort areas in this destination: {', '.join(areas[:12])}"
-    body = {
-        'model': MODEL,
-        'max_tokens': 400,
-        'system': SYSTEM,
-        'messages': [{'role': 'user', 'content':
-            f"Destination: {country}.{areas_hint}\n\nWrite the briefing."}],
-    }
-    t0 = time.time()
+    full_prompt = (
+        f"{SYSTEM}\n\n"
+        f"Destination: {country}.{areas_hint}\n\nWrite the briefing."
+    )
     try:
-        r = requests.post(
-            API_URL,
-            headers={'x-api-key': _get_api_key(),
-                     'anthropic-version': '2023-06-01',
-                     'content-type': 'application/json'},
-            json=body, timeout=60,
-        )
-        r.raise_for_status()
-        data = r.json()
-        log_api_usage(MODEL, data.get('usage', {}),
-                      feature='timeshare_destination_blurb',
-                      duration_ms=int((time.time() - t0) * 1000))
-        blocks = data.get('content', [])
-        text = '\n\n'.join(b.get('text', '') for b in blocks if b.get('type') == 'text').strip()
-        return text
+        from utilities.kumori_free_llms import generate as _kfl_generate
+        text, _backend = _kfl_generate(full_prompt, max_tokens=400,
+                                        temperature=0.7,
+                                        caller='timeshare_destination_blurb')
+        return (text or '').strip()
     except Exception as e:
         logger.warning(f"destination blurb for {country!r} failed: {e}")
         return ''

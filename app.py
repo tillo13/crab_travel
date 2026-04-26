@@ -800,12 +800,11 @@ def inject_timeshare_groups():
 try:
     from utilities import kumori_free_llms
     from utilities.postgres_utils import db_cursor
-    from utilities.claude_utils import _get_api_key as _anthropic_key_fn, log_api_usage
+    from utilities.claude_utils import log_api_usage
     kumori_free_llms.init(
         app_name='crab_travel',
         get_secret_fn=get_secret,
         db_cursor_fn=db_cursor,
-        anthropic_key_fn=_anthropic_key_fn,
         log_api_usage_fn=log_api_usage,
     )
     logger.info('kumori_free_llms initialized on startup')

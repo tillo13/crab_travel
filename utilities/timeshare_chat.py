@@ -511,6 +511,12 @@ def _anthropic_call(messages, system, user_id=None):
         'tools': TOOLS,
         'messages': messages,
     }
+    try:
+        from utilities.killswitch import check_killswitch
+        check_killswitch('anthropic')
+    except ImportError:
+        pass
+
     start = time.time()
     r = requests.post(API_URL, headers=headers, json=body, timeout=120)
     elapsed = time.time() - start

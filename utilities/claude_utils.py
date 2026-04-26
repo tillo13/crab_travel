@@ -91,29 +91,15 @@ def _get_api_key():
 
 
 def generate_text(prompt, system=None, max_tokens=4096, temperature=0.7, user_id=None):
-    api_key = _get_api_key()
-    start = time.time()
-    body = {
-        'model': MODEL,
-        'max_tokens': max_tokens,
-        'temperature': temperature,
-        'messages': [{'role': 'user', 'content': prompt}],
-    }
-    if system:
-        body['system'] = system
-    headers = {
-        'x-api-key': api_key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-    }
-    r = requests.post(API_URL, headers=headers, json=body, timeout=60)
-    r.raise_for_status()
-    data = r.json()
-    text = data['content'][0]['text']
-    elapsed = time.time() - start
-    tokens_in = data['usage']['input_tokens']
-    tokens_out = data['usage']['output_tokens']
-    logger.info(f"Claude: {tokens_in}->{tokens_out} tokens, {elapsed:.1f}s")
-    log_api_usage(MODEL, data['usage'], feature='generate_text',
-                  duration_ms=int(elapsed * 1000), user_id=user_id)
-    return text, tokens_in, tokens_out
+    """Generate text via the kumori free-LLM router (no paid Anthropic).
+    Returns (text, tokens_in, tokens_out) — token counts are best-effort 0 from the
+    free pool which doesn't always surface usage. Returns ('', 0, 0) on total
+    free-pool failure so callers can fall back gracefully."""
+    from utilities.kumori_free_llms import generate as _kfl_generate
+    full_prompt = f"{system}\n\n{prompt}" if system else prompt
+    text, _backend = _kfl_generate(full_prompt, max_tokens=max_tokens,
+                                    temperature=temperature, caller='generate_text')
+    if not text:
+        logger.warning("generate_text: free LLM pool returned no text")
+        return '', 0, 0
+    return text, 0, 0
