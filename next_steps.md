@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-25 05:40*
+*Last refreshed: 2026-04-27 04:38*
 
 ## 🎯 Pending
 
@@ -85,6 +85,9 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `d26ceed` · 2026-04-26 01:52 — pick up canonical anthropic_logger killswitch + kumori_free_llms haiku rip
+- `13ceaac` · 2026-04-26 01:02 — spam_guard: block excessive-dot gmail addresses + log gibberish submissions
+- `8b26889` · 2026-04-25 19:00 — wire Anthropic killswitch (timeshare) + Twilio plumbing + free-LLM rip
 - `ef49784` · 2026-04-23 19:03 — crab_travel: migrate to canonical anthropic_logger via shared_files
 - `bbf23e9` · 2026-04-21 22:53 — spam_guard: hardened with StopForumSpam + Origin check + UA filter (crab.travel expected_hosts)
 - `98df510` · 2026-04-21 22:16 — crab.travel: use shared spam_guard from _infrastructure/spam_control/ (replaces inline honeypot-o...
@@ -97,21 +100,15 @@
 - `5c56788` · 2026-04-21 13:13 — phase 8b polish: /google/batch-enrich Cloud Run endpoint (pre-fills Google cache in batches of ≤5...
 - `66a0c20` · 2026-04-21 12:56 — phase 8b Google Places enrichment. utilities/timeshare_google.py — lazy-fetch on resort-open, 30-...
 - `41e20a2` · 2026-04-21 12:16 — add Cloud Run scraper service (copying kindness_social pattern). worker/Dockerfile + worker/app.p...
-- `bc3b72e` · 2026-04-21 12:01 — dev/dedup_people.py — one-shot MDM pass for people/contacts/portals (dry-run by default). Applied...
-- `7cf6ae1` · 2026-04-21 11:55 — CRITICAL: disable App Engine scraping (cron entry commented + /tasks/ii-scrape-next returns 410)....
-- `3fb42f3` · 2026-04-21 11:25 — phase 8b-2 fixes: map tiles Stadia→CartoDB Dark Matter (no key needed, was 401-ing). Resort detai...
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**7 file(s) with uncommitted changes:**
-- ` M deploy.json`
+**4 file(s) with uncommitted changes:**
 - ` M next_steps.md`
-- ` M timeshare_routes.py`
-- ` D utilities/timeshare_google.py`
-- ` M worker/app.py`
-- `?? docs/20260424_places_api_refund_update.md`
-- `?? utilities/anthropic_logger.py`
+- ` M utilities/anthropic_logger.py`
+- ` M utilities/backend_registry.py`
+- ` M utilities/kumori_free_llms.py`
 
 <!-- wip:end -->

@@ -113,7 +113,6 @@ The retiree and group travel use cases share the same core infrastructure:
 - Kayak API
 - Viator API (tours and experiences — key for retirees and group trips)
 - GetYourGuide API
-- Amadeus Travel API (flights)
 - Skyscanner API (price monitoring)
 - Airbnb Affiliate Program
 

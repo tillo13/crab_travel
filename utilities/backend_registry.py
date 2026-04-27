@@ -116,7 +116,7 @@ PROVIDERS = {
 #   gemini_model  — model name for Gemini SDK (gemini only)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-MODELS = [
+_FALLBACK_MODELS = [
     # ── Groq (fast, generous free tier — all share one API key / 30 RPM pool) ──
     {'name': 'groq',              'provider': 'groq', 'model_id': 'llama-3.3-70b-versatile',                    'display': 'Llama 3.3 70B (Groq)',       'gateway_model': 'groq-llama-70b',       'naming': ('groq', 'llama70b'),       'assign': True},
     {'name': 'groq-kimi',         'provider': 'groq', 'model_id': 'moonshotai/kimi-k2-instruct',               'display': 'Kimi K2 (Groq)',             'gateway_model': 'groq-kimi',            'naming': ('groq', 'kimi-k2'),        'assign': True},
@@ -207,7 +207,109 @@ MODELS = [
     {'name': 'deepseek',  'provider': 'worker', 'model_id': 'deepseek-chat', 'display': 'DeepSeek Chat V3', 'gateway_model': None, 'naming': ('deepseek', 'chat-v3'), 'worker_type': 'deepseek'},
 ]
 
-# Count for display/marketing
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# DB-backed MODELS loader. The catalog audit cron is the source of truth —
+# this file's _FALLBACK_MODELS is only used when the DB is unreachable
+# (cold-start, network blip). When the DB is reachable, MODELS is whatever
+# kumori_llm_provider_limits says is currently active or probationary.
+#
+# Why import-time and not lazy: each app instance lives long enough that one
+# fetch on boot is fine, and apps already snapshot derived constants
+# (BACKEND_NAMING, AVAILABLE_BACKENDS) at import. Auto-retired backends
+# disappear from the registry the next time an instance starts — App Engine
+# cycles instances often enough for this to be effectively-realtime.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _load_models_from_db():
+    """Pull the live registry from kumori_llm_provider_limits. Returns a list
+    shaped like _FALLBACK_MODELS, or None if the DB is unreachable."""
+    import os
+    import subprocess
+    import logging
+    logger = logging.getLogger(__name__)
+
+    def _gcloud_secret(name):
+        try:
+            return subprocess.check_output(
+                ['gcloud', 'secrets', 'versions', 'access', 'latest',
+                 '--secret', name, '--project', 'kumori-404602'],
+                text=True, stderr=subprocess.DEVNULL, timeout=8,
+            ).strip()
+        except Exception:
+            return None
+
+    try:
+        import psycopg2
+    except ImportError:
+        return None
+
+    # Prefer Cloud SQL unix socket if available (App Engine), else TCP via secret IP
+    socket_path = '/cloudsql/' + (os.environ.get('CLOUD_SQL_CONNECTION_NAME', '')
+                                   or _gcloud_secret('KUMORI_POSTGRES_CONNECTION_NAME') or '')
+    conn_args = {
+        'dbname':   _gcloud_secret('KUMORI_POSTGRES_DB_NAME'),
+        'user':     _gcloud_secret('KUMORI_POSTGRES_USERNAME'),
+        'password': _gcloud_secret('KUMORI_POSTGRES_PASSWORD'),
+    }
+    if not all(conn_args.values()):
+        return None
+    if os.path.exists(socket_path):
+        conn_args['host'] = socket_path
+    else:
+        conn_args['host'] = _gcloud_secret('KUMORI_POSTGRES_IP')
+        conn_args['port'] = 5432
+
+    try:
+        conn = psycopg2.connect(connect_timeout=8, **conn_args)
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT backend, provider, model_id, display_name, gateway_model,
+                       naming_provider, naming_model, assign_new_agents,
+                       gemini_model, worker_type, cf_path, overrides
+                  FROM kumori_llm_provider_limits
+                 WHERE status IN ('active', 'probationary')
+                   AND model_id IS NOT NULL
+                   AND provider IS NOT NULL
+            """)
+            rows = []
+            for r in cur.fetchall():
+                (backend, provider, model_id, display, gateway_model,
+                 np_, nm_, assign, gemini_model, worker_type, cf_path, overrides) = r
+                d = {
+                    'name':          backend,
+                    'provider':      provider,
+                    'model_id':      model_id,
+                    'display':       display,
+                    'gateway_model': gateway_model,
+                }
+                if np_:
+                    d['naming'] = (np_, nm_)
+                if assign:
+                    d['assign'] = True
+                if gemini_model:
+                    d['gemini_model'] = gemini_model
+                if worker_type:
+                    d['worker_type'] = worker_type
+                if cf_path:
+                    d['cf_path'] = cf_path
+                if overrides:
+                    d['overrides'] = overrides
+                rows.append(d)
+            return rows or None
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"backend_registry: DB load failed, using static fallback: {e}")
+        return None
+
+
+_db_models = _load_models_from_db()
+MODELS = _db_models if _db_models else _FALLBACK_MODELS
+MODELS_SOURCE = 'database' if _db_models else 'static_fallback'
+
+# Count for display/marketing — live count, reflects current registry state
 FREE_MODEL_COUNT = len(MODELS)
 
 
@@ -219,19 +321,11 @@ LITELLM_BACKENDS = [
     {'name': 'litellm-gateway', 'type': 'litellm', 'litellm_model': 'groq-llama-70b'},
 ]
 
-PAID_BACKENDS = [
-    {'name': 'gpt4o-mini', 'url': 'https://api.openai.com/v1/chat/completions', 'model': 'gpt-4o-mini', 'secret': 'KINDNESS_OPENAI_API_KEY'},
-    {'name': 'gpt4o',      'url': 'https://api.openai.com/v1/chat/completions', 'model': 'gpt-4o',      'secret': 'KINDNESS_OPENAI_API_KEY'},
-]
-
-# Non-router entries for kindness_social model_registry (paid/local, not in free pool)
+# Non-router entries (local-only). Paid backends (Anthropic / OpenAI) intentionally
+# absent from the canonical — paid Anthropic surface is wrapped at the call site
+# via utilities/killswitch.py + check_killswitch('anthropic') in each project.
 KINDNESS_ONLY_MODELS = {
-    'haiku':  {'model_id': 'claude-haiku-4-5-20251001',  'provider': 'Anthropic',        'display': 'Claude Haiku 4.5'},
-    'sonnet': {'model_id': 'claude-sonnet-4-5-20250929', 'provider': 'Anthropic',        'display': 'Claude Sonnet 4.5'},
-    'opus':   {'model_id': 'claude-opus-4-5-20251101',   'provider': 'Anthropic',        'display': 'Claude Opus 4.5'},
     'local':  {'model_id': 'lmstudio/auto',              'provider': 'LM Studio (local)', 'display': 'Local LLM (LM Studio)'},
-    'gpt4o_mini': {'model_id': 'gpt-4o-mini',            'provider': 'OpenAI',           'display': 'GPT-4o Mini'},
-    'gpt4o':      {'model_id': 'gpt-4o',                 'provider': 'OpenAI',           'display': 'GPT-4o'},
 }
 
 
@@ -288,11 +382,8 @@ def build_fallback_limits():
             base.update(m['overrides'])
         limits[m['name']] = base
 
-    # Non-model backends
+    # Non-model backends (free only)
     limits['litellm-gateway'] = {'daily_limit': 500, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True}
-    limits['gpt4o-mini'] = {'daily_limit': 50, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True}
-    limits['gpt4o'] = {'daily_limit': 20, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True}
-    limits['haiku'] = {'daily_limit': 10, 'rpm_spacing_sec': 2.0, 'backoff_sec': 120, 'enabled': True}
     return limits
 
 
@@ -322,13 +413,7 @@ def build_available_backends():
 def build_backend_naming():
     """Build BACKEND_NAMING dict: backend_name -> (provider_slug, model_short)."""
     naming = {m['name']: m['naming'] for m in MODELS if m.get('naming')}
-    # Add non-free backends for completeness
     naming.update({
-        'gpt4o_mini': ('openai', 'gpt4o-mini'),
-        'gpt4o': ('openai', 'gpt4o'),
-        'haiku': ('anthropic', 'haiku'),
-        'sonnet': ('anthropic', 'sonnet'),
-        'opus': ('anthropic', 'opus'),
         'local': ('local', 'lmstudio'),
     })
     return naming

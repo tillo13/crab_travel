@@ -87,7 +87,6 @@ The retiree life concierge is a validated use case sharing the same infrastructu
 - Expedia Partner Solutions API
 - Booking.com Affiliate API
 - Viator API (tours and experiences)
-- Amadeus Travel API (flights)
 - Skyscanner API (price monitoring)
 
 ### Data & Intelligence

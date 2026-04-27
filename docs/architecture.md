@@ -468,15 +468,14 @@ This is how Kayak, Google Flights, and Skyscanner work internally. We do the sam
 | API | Inventory | Pricing | Signup | Adapter Key |
 |---|---|---|---|---|
 | **Duffel** | 300+ airlines incl. AA/Delta/BA via NDC | Pay-per-booking, no minimums | Self-serve, instant sandbox | `duffel` |
-| **Amadeus Self-Service** | 400+ airlines (missing AA/Delta/BA) | 2K free searches/month then pay | Self-serve, instant | `amadeus` |
 | **Skyscanner Partners** | All airlines (meta-search) | Free for approved partners | Apply, takes weeks | `skyscanner` |
 | **Kiwi/Tequila** | 800+ airlines + trains/buses + virtual interlining | Free, 3% commission | Invitation only — get on radar now | `kiwi` |
 
 **Notes:**
-- Amadeus Self-Service dies July 2026 — use while available, migrate to Duffel before then
-- Duffel + Amadeus together cover effectively all major global carriers
-- Skyscanner fills regional/budget gaps neither has
+- Duffel covers effectively all major global carriers via NDC
+- Skyscanner fills regional/budget gaps
 - Southwest Airlines has no GDS/API presence — Travelpayouts affiliate redirect only
+- Amadeus Self-Service portal was sunset Feb 2026 — removed from stack
 
 #### Hotels
 
@@ -539,7 +538,7 @@ All cruise lines are redirect/affiliate only — no booking API. Deep link from 
 ### Layer 3: Direct Supplier Programs (What Aggregators Miss)
 
 #### Airlines with No API/GDS Presence
-- **Southwest Airlines** — affiliate redirect via Travelpayouts only. Cannot be booked via Duffel or Amadeus.
+- **Southwest Airlines** — affiliate redirect via Travelpayouts only. Cannot be booked via Duffel.
 - **Frontier, Spirit, Allegiant** — budget carriers with limited API presence; Skyscanner meta-search catches them.
 
 #### Hotel Chain Direct Affiliate Programs
@@ -665,7 +664,7 @@ class DuffelAdapter(TravelAdapter):
 ```python
 # utilities/travel_query.py
 
-FLIGHT_ADAPTERS = [DuffelAdapter(), AmadeusAdapter(), SkyscannerAdapter(), TravelpayoutsAdapter()]
+FLIGHT_ADAPTERS = [DuffelAdapter(), SkyscannerAdapter(), TravelpayoutsAdapter()]
 HOTEL_ADAPTERS = [LiteAPIAdapter(), RateHawkAdapter(), HotelbedsAdapter(), ExpediaAdapter()]
 ACTIVITY_ADAPTERS = [ViatorAdapter(), GetYourGuideAdapter(), KlookAdapter(), TiqetsAdapter()]
 

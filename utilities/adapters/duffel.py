@@ -1,6 +1,6 @@
 """
 Duffel adapter — real bookable flights via NDC.
-Covers 300+ airlines including AA, Delta, United, BA — the carriers Amadeus misses.
+Covers 300+ airlines including AA, Delta, United, BA via NDC.
 
 In test mode: returns realistic synthetic flight data.
 Go live: flip CRAB_DUFFEL_API_KEY to a live key in Secret Manager.

@@ -43,7 +43,9 @@ GDS systems are the backbone of airline distribution. They connect airlines, hot
 - **Pros:** Most comprehensive content. Only way to get certain airlines. NDC access.
 - **Cons:** Expensive. Complex integration. Requires IATA license for ticketing. Not startup-friendly.
 
-### Amadeus Self-Service APIs
+### Amadeus Self-Service APIs ⚠️ SUNSET FEB 2026 — DEAD
+> Amadeus announced shutdown of the self-service developer portal in Feb 2026. API keys are being disabled, new-user registration paused, portal becoming inaccessible. The Enterprise tier still exists but is not viable for crab.travel. Section preserved below for historical reference only — do not build against this.
+
 - **URL:** https://developers.amadeus.com/self-service
 - **What it provides:** Subset of Amadeus content. Flight search, pricing, booking. BUT: missing American Airlines, Delta, British Airways, and most LCCs. Only published GDS rates (no negotiated/private fares). No NDC content.
 - **Pricing:** Free test environment. Production free quotas per month:
