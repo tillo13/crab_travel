@@ -43,6 +43,9 @@ def _ensure_groups(cur):
         )
     """)
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_timeshare_groups_created_by ON crab.timeshare_groups(created_by)")
+    # Public-share read-only token. NULL = sharing disabled. Owner can rotate.
+    _run(cur, "ALTER TABLE crab.timeshare_groups ADD COLUMN IF NOT EXISTS share_view_token VARCHAR(64)")
+    _run(cur, "CREATE UNIQUE INDEX IF NOT EXISTS idx_timeshare_groups_share_token ON crab.timeshare_groups(share_view_token) WHERE share_view_token IS NOT NULL")
 
 
 def _ensure_group_members(cur):

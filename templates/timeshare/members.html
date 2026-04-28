@@ -5,6 +5,38 @@
 {% block group_content %}
 {% if role in ('owner', 'admin') %}
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-2">Quick share — read-only link</h2>
+  <p class="text-xs text-crab-sand-dim mb-3 leading-relaxed">
+    For close family who shouldn't have to deal with sign-in. Anyone with this link can browse the group as a viewer — no Google account needed. Forwardable, so don't paste it anywhere public. Rotate or disable any time.
+  </p>
+  {% if share_url %}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <input id="share-url-input" type="text" readonly value="{{ share_url }}"
+      class="flex-1 min-w-0 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-crab-sand"
+      onclick="this.select()">
+    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy',1500);})"
+      class="bg-crab-coral text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-crab-coral-light transition-colors whitespace-nowrap">Copy</button>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/share/regenerate"
+      onsubmit="return confirm('Rotate the link? Anyone using the old URL will lose access.')">
+      <button type="submit" class="text-xs text-crab-sand-dim hover:text-crab-coral border border-white/10 hover:border-crab-coral/40 rounded-lg px-3 py-1.5 transition-colors">↻ Rotate</button>
+    </form>
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/share/disable"
+      onsubmit="return confirm('Disable sharing entirely? The link stops working immediately.')">
+      <button type="submit" class="text-xs text-red-400 hover:text-red-300 border border-red-400/20 hover:border-red-400/50 rounded-lg px-3 py-1.5 transition-colors">Disable sharing</button>
+    </form>
+  </div>
+  {% else %}
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/share/regenerate">
+    <button type="submit" class="bg-crab-coral text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+      Generate share link
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
   <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Invite a member</h2>
   <form method="POST" action="/timeshare/g/{{ group_uuid }}/members/invite" class="grid md:grid-cols-[1fr_auto_auto] gap-3 items-end">
     <div>

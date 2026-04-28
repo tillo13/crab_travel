@@ -309,7 +309,7 @@ def members_list(group_uuid):
         """, (group_uuid,))
         members = cur.fetchall()
         cur.execute("""
-            SELECT name FROM crab.timeshare_groups WHERE group_id = %s::uuid
+            SELECT name, share_view_token FROM crab.timeshare_groups WHERE group_id = %s::uuid
         """, (group_uuid,))
         group = cur.fetchone()
     finally:
@@ -323,6 +323,15 @@ def members_list(group_uuid):
             status = 'expired'
         decorated.append({**m, 'status': status})
 
+    share_url = None
+    if group and group.get('share_view_token'):
+        share_url = url_for(
+            'timeshare.share_view',
+            group_uuid=group_uuid,
+            token=group['share_view_token'],
+            _external=True,
+        )
+
     return render_template(
         'timeshare/members.html',
         active_page='timeshare',
@@ -331,6 +340,7 @@ def members_list(group_uuid):
         members=decorated,
         role=request.timeshare_role,
         invite_roles=INVITE_ROLES,
+        share_url=share_url,
     )
 
 
@@ -468,6 +478,90 @@ def invite_accept(group_uuid, token):
 
     # ?welcome=1 triggers the first-visit orientation banner on the dashboard.
     return redirect(url_for('timeshare.dashboard', group_uuid=group_uuid) + '?welcome=1')
+
+
+# ── Share-by-link (public read-only) ────────────────────────
+#
+# A separate, lower-friction sharing path for cases where the OAuth-locked
+# invite is overkill (spouse, immediate family). Anyone with the link gets a
+# session-only readonly view of the group — no Google account, no email check.
+# Token is unguessable (32 url-safe bytes) and rotatable/disable-able by admin.
+
+SHARE_TOKEN_BYTES = 32  # → ~43 char base64url string
+
+@bp.route('/g/<group_uuid>/share/<token>')
+def share_view(group_uuid, token):
+    """Public entry point. Validates the token, sessions a synthetic readonly
+    viewer, redirects to dashboard with welcome banner."""
+    if not token or len(token) > 64:
+        abort(404)
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT group_id, name FROM crab.timeshare_groups
+             WHERE group_id = %s::uuid AND share_view_token = %s AND status = 'active'
+        """, (group_uuid, token))
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    finally:
+        conn.close()
+    if not row:
+        abort(404)
+
+    # Synthetic session-only viewer. login_required only checks 'user' is set;
+    # _get_membership honors session['shared_view_for'] for this group.
+    session.permanent = True
+    session['user'] = {
+        'id': None,
+        'email': None,
+        'name': 'Family viewer',
+        'picture': None,
+    }
+    session['shared_view_for'] = group_uuid  # match the URL param shape used in _get_membership
+    session.modified = True
+    return redirect(url_for('timeshare.dashboard', group_uuid=group_uuid) + '?welcome=1')
+
+
+@bp.route('/g/<group_uuid>/share/regenerate', methods=['POST'])
+@group_member_required('admin')
+def share_regenerate(group_uuid):
+    """Owner/admin: rotate the share token (kills any old link in the wild)."""
+    import secrets
+    new_token = secrets.token_urlsafe(SHARE_TOKEN_BYTES)
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_groups
+               SET share_view_token = %s
+             WHERE group_id = %s::uuid
+        """, (new_token, group_uuid))
+        conn.commit()
+    finally:
+        conn.close()
+    flash('Share link rotated. Old link no longer works.', 'success')
+    return redirect(url_for('timeshare.members_list', group_uuid=group_uuid))
+
+
+@bp.route('/g/<group_uuid>/share/disable', methods=['POST'])
+@group_member_required('admin')
+def share_disable(group_uuid):
+    """Owner/admin: nuke the share link entirely. Sharing turns off."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.timeshare_groups
+               SET share_view_token = NULL
+             WHERE group_id = %s::uuid
+        """, (group_uuid,))
+        conn.commit()
+    finally:
+        conn.close()
+    flash('Sharing disabled. The link no longer works.', 'success')
+    return redirect(url_for('timeshare.members_list', group_uuid=group_uuid))
 
 
 # ── Helpers ─────────────────────────────────────────────────

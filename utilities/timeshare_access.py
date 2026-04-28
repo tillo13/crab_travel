@@ -21,7 +21,30 @@ _ROLE_RANK = {'readonly': 1, 'family': 2, 'admin': 3, 'owner': 4}
 
 
 def _get_membership(group_uuid, user_id):
-    """Returns (group_id, role) tuple or None if user is not a member."""
+    """Returns (group_id, role) tuple or None if user is not a member.
+
+    Honors a session-only shared-link viewer: when session['shared_view_for']
+    matches the requested group, the viewer gets read-only access without a
+    real DB membership row. Set by the /share/<token> route.
+    """
+    from flask import session
+    if session.get('shared_view_for') == group_uuid:
+        # Still verify the group exists + is active before granting access,
+        # in case the group was suspended after the link was issued.
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT group_id FROM crab.timeshare_groups
+                 WHERE group_id = %s::uuid AND status = 'active'
+            """, (group_uuid,))
+            row = cur.fetchone()
+            return (row[0], 'readonly') if row else None
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     if not user_id:
         return None
     conn = get_db_connection()
