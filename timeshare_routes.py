@@ -44,6 +44,69 @@ INVITE_EXPIRY_DAYS = 14
 INVITE_ROLES = ('admin', 'family', 'readonly')
 
 
+# ── Test seed (apikey-gated) — lets the Playwright walker bootstrap a
+#    readonly viewer of any group without going through OAuth + email-locked
+#    invite. Idempotent: same fake user every time. ─────────────────────────
+
+TEST_READONLY_EMAIL = 'crab-test-readonly@example.com'
+TEST_READONLY_NAME = 'Test Readonly Viewer'
+
+
+@bp.route('/test/seed-readonly')
+def test_seed_readonly():
+    from utilities.google_auth_utils import get_secret
+    apikey = request.args.get('apikey', '')
+    expected = ''
+    try:
+        expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel') or ''
+    except Exception:
+        pass
+    if not expected or apikey != expected:
+        abort(404)
+
+    group_uuid = (request.args.get('group') or '').strip()
+    if not group_uuid:
+        return jsonify({'error': 'group query param required'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Idempotent user upsert. Uses google_id='test-readonly' as a stable key.
+        cur.execute("""
+            INSERT INTO crab.users (email, full_name, google_id)
+                 VALUES (%s, %s, 'test-readonly')
+            ON CONFLICT (google_id) DO UPDATE
+                 SET email = EXCLUDED.email,
+                     full_name = EXCLUDED.full_name
+              RETURNING pk_id, email, full_name
+        """, (TEST_READONLY_EMAIL, TEST_READONLY_NAME))
+        u = cur.fetchone()
+        # Idempotent membership upsert
+        cur.execute("""
+            INSERT INTO crab.timeshare_group_members
+                (group_id, user_id, email, role, accepted_at, invited_by)
+            VALUES (%s::uuid, %s, %s, 'readonly', NOW(), %s)
+            ON CONFLICT (group_id, email) DO UPDATE
+                SET user_id = EXCLUDED.user_id,
+                    role = 'readonly',
+                    accepted_at = COALESCE(crab.timeshare_group_members.accepted_at, NOW())
+            RETURNING pk_id, role, accepted_at
+        """, (group_uuid, u['pk_id'], TEST_READONLY_EMAIL, u['pk_id']))
+        m = cur.fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        'ok': True,
+        'user_id': u['pk_id'],
+        'email': u['email'],
+        'group_uuid': group_uuid,
+        'role': m['role'],
+        'next': f"/?apikey=APIKEY&user_id={u['pk_id']}",
+    })
+
+
 # ── Landing ─────────────────────────────────────────────────
 
 @bp.route('/')
