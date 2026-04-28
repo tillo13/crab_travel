@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Something pinched — crab.travel{% endblock %}
+{% block content %}
+<div class="text-center py-20">
+  <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-24 h-24 rounded-2xl mx-auto mb-6 hidden dark:block" alt="" style="animation: crabTipsy 4s ease-in-out infinite;">
+  <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-24 h-24 rounded-2xl mx-auto mb-6 block dark:hidden" alt="" style="animation: crabTipsy 4s ease-in-out infinite;">
+  <h1 class="text-5xl font-display mb-3">Pinch.</h1>
+  <p class="text-lg text-crab-sand-dim mb-2">Something snapped on our end.</p>
+  <p class="text-sm text-crab-sand-dim opacity-50 mb-8">It's been logged. Try refreshing — or head back home.</p>
+  <a href="/" class="inline-block bg-crab-coral text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">Back to shore</a>
+</div>
+{% endblock %}

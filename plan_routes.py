@@ -489,40 +489,44 @@ def api_plan_calendar(plan_id):
 @bp.route('/plan/<plan_id>')
 @login_required
 def view_plan(plan_id):
-    plan = get_plan_by_id(plan_id)
-    if not plan:
-        return redirect('/dashboard')
+    try:
+        plan = get_plan_by_id(plan_id)
+        if not plan:
+            return redirect('/dashboard')
 
-    user = session['user']
-    is_organizer = user['id'] == plan['organizer_id']
+        user = session['user']
+        is_organizer = user['id'] == plan['organizer_id']
 
-    # Access check: must be organizer or authed member
-    has_access = is_organizer
-    if not has_access:
-        member = get_member_for_plan(plan_id, user['id'])
-        has_access = member is not None
-    if not has_access:
-        return redirect(f"/join/{plan['invite_token']}")
+        # Access check: must be organizer or authed member
+        has_access = is_organizer
+        if not has_access:
+            member = get_member_for_plan(plan_id, user['id'])
+            has_access = member is not None
+        if not has_access:
+            return redirect(f"/join/{plan['invite_token']}")
 
-    members = get_plan_members(plan_id)
-    all_prefs = get_all_plan_preferences(plan_id)
-    recs = get_recommendations(plan_id)
-    destinations = get_destination_suggestions(plan_id)
-    view_stats = get_invite_view_stats(plan_id) if is_organizer else None
-    member_votes = {}
-    vote_tallies = None
-    if is_organizer:
-        raw_votes = get_all_member_votes(plan_id)
-        # Build a set of user_ids who have voted
-        voted_user_ids = set()
-        for uid, mv in raw_votes.items():
-            if mv.get('votes'):
-                voted_user_ids.add(uid)
-        member_votes = {'voted_user_ids': voted_user_ids, 'raw': raw_votes}
-        vote_tallies = get_vote_tallies(plan_id, 'destination')
-    return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
-                           recs=recs, destinations=destinations, is_organizer=is_organizer, user=user,
-                           view_stats=view_stats, member_votes=member_votes, vote_tallies=vote_tallies)
+        members = get_plan_members(plan_id)
+        all_prefs = get_all_plan_preferences(plan_id)
+        recs = get_recommendations(plan_id)
+        destinations = get_destination_suggestions(plan_id)
+        view_stats = get_invite_view_stats(plan_id) if is_organizer else None
+        member_votes = {}
+        vote_tallies = None
+        if is_organizer:
+            raw_votes = get_all_member_votes(plan_id)
+            # Build a set of user_ids who have voted
+            voted_user_ids = set()
+            for uid, mv in raw_votes.items():
+                if mv.get('votes'):
+                    voted_user_ids.add(uid)
+            member_votes = {'voted_user_ids': voted_user_ids, 'raw': raw_votes}
+            vote_tallies = get_vote_tallies(plan_id, 'destination')
+        return render_template('plan.html', plan=plan, members=members, all_prefs=all_prefs,
+                               recs=recs, destinations=destinations, is_organizer=is_organizer, user=user,
+                               view_stats=view_stats, member_votes=member_votes, vote_tallies=vote_tallies)
+    except Exception:
+        logger.exception(f"view_plan failed for plan_id={plan_id}")
+        raise  # Let the registered 500 handler render templates/500.html with logged trace
 
 
 def _resolve_member(plan_id):

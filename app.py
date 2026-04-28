@@ -76,6 +76,14 @@ AUTH_ENABLED = google_auth is not None
 from route_helpers import set_auth_enabled, login_required, api_auth_required
 set_auth_enabled(AUTH_ENABLED)
 
+# Cache the test apikey at module scope — fetching from Secret Manager on every
+# request adds ~200–500ms. Falls back to a per-request fetch if module-load missed it.
+try:
+    _CACHED_TEST_APIKEY = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
+except Exception as e:
+    logger.warning(f"⚠️ CRAB_TEST_APIKEY module-load fetch failed: {e}")
+    _CACHED_TEST_APIKEY = None
+
 
 @app.before_request
 def force_canonical_host():
@@ -95,11 +103,13 @@ def check_apikey_auth():
     if session.get('user'):
         return  # Already authed
     apikey = request.args.get('apikey')
-    try:
-        expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
-    except Exception as e:
-        logger.warning(f"apikey auth: secret lookup failed: {e}")
-        return
+    expected = _CACHED_TEST_APIKEY
+    if not expected:
+        try:
+            expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
+        except Exception as e:
+            logger.warning(f"apikey auth: secret lookup failed: {e}")
+            return
     if not expected or apikey != expected:
         logger.warning(f"apikey auth: key mismatch (expected={expected is not None})")
         return
@@ -229,83 +239,10 @@ def page_not_found(e):
     return render_template('404.html', active_page=None), 404
 
 
-@app.before_request
-def force_canonical_host():
-    """301 www.crab.travel → crab.travel so Google sees one canonical host.
-    Without this, both hostnames serve 200 and pages get marked 'Duplicate without user-selected canonical'."""
-    host = request.host.split(':')[0]
-    if host == 'www.crab.travel':
-        return redirect(f'https://crab.travel{request.full_path}', code=301)
-
-
-@app.before_request
-def check_apikey_auth():
-    """Allow ?apikey=SECRET&user_id=X to bypass OAuth (Playwright/admin testing).
-    Sets session inline — no redirect needed, the request proceeds with auth."""
-    if 'apikey' not in request.args:
-        return
-    if session.get('user'):
-        return  # Already authed
-    apikey = request.args.get('apikey')
-    try:
-        expected = get_secret('CRAB_TEST_APIKEY', project_id='crab-travel')
-    except Exception as e:
-        logger.warning(f"apikey auth: secret lookup failed: {e}")
-        return
-    if not expected or apikey != expected:
-        logger.warning(f"apikey auth: key mismatch (expected={expected is not None})")
-        return
-    user_id = request.args.get('user_id', type=int)
-    if not user_id:
-        return
-    try:
-        from utilities.admin_utils import _get_user_session_data
-        user_data = _get_user_session_data(user_id)
-    except Exception as e:
-        logger.warning(f"apikey auth: user lookup failed: {e}")
-        return
-    if not user_data:
-        logger.warning(f"apikey auth: user {user_id} not found")
-        return
-    session.permanent = True
-    session['user'] = user_data
-    session.modified = True
-    logger.info(f"apikey auth: logged in as user {user_id}")
-
-
-@app.before_request
-def check_demo_exit():
-    """When a demo viewer navigates to a non-demo page, restore their real session."""
-    if '_demo_stashed_user' not in session:
-        return
-    # Stay in demo mode for bot trips, invite pages, summary pages, static, and API calls
-    path = request.path
-    if (path.startswith('/to/') or path.startswith('/plan/') or
-        path.startswith('/api/') or path.startswith('/static/') or
-        path.startswith('/demo') or path.startswith('/_ah/')):
-        return
-    # Leaving demo — restore real user
-    real_user = session.pop('_demo_stashed_user', None)
-    session.pop('_demo_viewer', None)
-    if real_user:
-        session['user'] = real_user
-    else:
-        session.pop('user', None)
-    session.modified = True
-    logger.info(f"Demo exit: restored real user on {path}")
-
-
-@app.before_request
-def refresh_admin_flag():
-    user = session.get('user')
-    if user and 'id' in user and 'user_is_admin' not in session:
-        from utilities.admin_utils import is_admin as check_admin
-        session['user_is_admin'] = check_admin(user['id'])
-
-
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('404.html', active_page=None), 404
+@app.errorhandler(500)
+def server_error(e):
+    logger.exception(f"500 on {request.method} {request.path}: {e}")
+    return render_template('500.html', active_page=None), 500
 
 
 @app.route('/sitemap.xml')

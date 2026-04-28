@@ -223,41 +223,61 @@ _FALLBACK_MODELS = [
 
 def _load_models_from_db():
     """Pull the live registry from kumori_llm_provider_limits. Returns a list
-    shaped like _FALLBACK_MODELS, or None if the DB is unreachable."""
+    shaped like _FALLBACK_MODELS, or None if the DB is unreachable.
+
+    Uses Secret Manager via the Python SDK — works on App Engine (metadata
+    server auth) AND locally (gcloud-resolved ADC). Never shells out to the
+    gcloud CLI at import time (it blocks for 8s+ when missing on App Engine
+    and bricks instance startup)."""
     import os
-    import subprocess
     import logging
     logger = logging.getLogger(__name__)
 
-    def _gcloud_secret(name):
-        try:
-            return subprocess.check_output(
-                ['gcloud', 'secrets', 'versions', 'access', 'latest',
-                 '--secret', name, '--project', 'kumori-404602'],
-                text=True, stderr=subprocess.DEVNULL, timeout=8,
-            ).strip()
-        except Exception:
-            return None
-
     try:
         import psycopg2
-    except ImportError:
+        from google.cloud import secretmanager
+    except ImportError as e:
+        logger.warning(f"backend_registry: missing dep, using static fallback: {e}")
         return None
 
+    _client = None
+    _secret_cache = {}
+
+    def _secret(name):
+        nonlocal _client
+        # Env var wins (local dev convenience)
+        env_val = os.environ.get(name)
+        if env_val:
+            return env_val
+        if name in _secret_cache:
+            return _secret_cache[name]
+        try:
+            if _client is None:
+                _client = secretmanager.SecretManagerServiceClient()
+            resp = _client.access_secret_version(
+                request={"name": f"projects/kumori-404602/secrets/{name}/versions/latest"}
+            )
+            val = resp.payload.data.decode('UTF-8')
+            _secret_cache[name] = val
+            return val
+        except Exception:
+            _secret_cache[name] = None
+            return None
+
     # Prefer Cloud SQL unix socket if available (App Engine), else TCP via secret IP
-    socket_path = '/cloudsql/' + (os.environ.get('CLOUD_SQL_CONNECTION_NAME', '')
-                                   or _gcloud_secret('KUMORI_POSTGRES_CONNECTION_NAME') or '')
+    cloudsql_conn = os.environ.get('CLOUD_SQL_CONNECTION_NAME', '') or _secret('KUMORI_POSTGRES_CONNECTION_NAME') or ''
+    socket_path = '/cloudsql/' + cloudsql_conn if cloudsql_conn else ''
     conn_args = {
-        'dbname':   _gcloud_secret('KUMORI_POSTGRES_DB_NAME'),
-        'user':     _gcloud_secret('KUMORI_POSTGRES_USERNAME'),
-        'password': _gcloud_secret('KUMORI_POSTGRES_PASSWORD'),
+        'dbname':   _secret('KUMORI_POSTGRES_DB_NAME'),
+        'user':     _secret('KUMORI_POSTGRES_USERNAME'),
+        'password': _secret('KUMORI_POSTGRES_PASSWORD'),
     }
     if not all(conn_args.values()):
         return None
-    if os.path.exists(socket_path):
+    if socket_path and os.path.exists(socket_path):
         conn_args['host'] = socket_path
     else:
-        conn_args['host'] = _gcloud_secret('KUMORI_POSTGRES_IP')
+        conn_args['host'] = _secret('KUMORI_POSTGRES_IP')
         conn_args['port'] = 5432
 
     try:
@@ -277,6 +297,13 @@ def _load_models_from_db():
             for r in cur.fetchall():
                 (backend, provider, model_id, display, gateway_model,
                  np_, nm_, assign, gemini_model, worker_type, cf_path, overrides) = r
+                # Defensive: skip any row whose provider isn't in our static
+                # PROVIDERS dict. Prevents DB drift (legacy rows, audit
+                # discoveries from a brand-new provider) from KeyError-crashing
+                # build_backends() at import time. The audit cron is the place
+                # to resolve provider mismatches; this is the safety net.
+                if provider not in PROVIDERS:
+                    continue
                 d = {
                     'name':          backend,
                     'provider':      provider,
