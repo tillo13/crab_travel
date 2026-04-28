@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Link expired — crab.travel{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto text-center py-16 animate-in">
+  <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-20 h-20 rounded-2xl mx-auto mb-6 hidden dark:block" alt="" style="animation: crabTipsy 4s ease-in-out infinite;">
+  <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-20 h-20 rounded-2xl mx-auto mb-6 block dark:hidden" alt="" style="animation: crabTipsy 4s ease-in-out infinite;">
+  <h1 class="text-3xl font-display mb-3">This share link has expired.</h1>
+  <p class="text-sm text-crab-sand-dim mb-2">
+    {% if group_name %}The link to <span class="text-crab-sand">{{ group_name }}</span> isn't valid anymore.{% else %}This link isn't valid anymore.{% endif %}
+  </p>
+  <p class="text-sm text-crab-sand-dim mb-8 opacity-70">
+    Share links last 7 days. Ask whoever sent it for a new one — or sign in with the email they invited.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <a href="/login" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
+      Sign in with Google
+    </a>
+    <a href="/" class="inline-block px-5 py-2.5 rounded-xl text-sm bg-crab-card/40 border border-white/10 text-crab-sand hover:border-white/20 transition-all">
+      Back to crab.travel
+    </a>
+  </div>
+</div>
+{% endblock %}

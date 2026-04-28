@@ -309,7 +309,8 @@ def members_list(group_uuid):
         """, (group_uuid,))
         members = cur.fetchall()
         cur.execute("""
-            SELECT name, share_view_token FROM crab.timeshare_groups WHERE group_id = %s::uuid
+            SELECT name, share_view_token, share_view_token_expires_at
+              FROM crab.timeshare_groups WHERE group_id = %s::uuid
         """, (group_uuid,))
         group = cur.fetchone()
     finally:
@@ -324,6 +325,9 @@ def members_list(group_uuid):
         decorated.append({**m, 'status': status})
 
     share_url = None
+    share_expires_at = None
+    share_expired = False
+    share_days_left = None
     if group and group.get('share_view_token'):
         share_url = url_for(
             'timeshare.share_view',
@@ -331,6 +335,13 @@ def members_list(group_uuid):
             token=group['share_view_token'],
             _external=True,
         )
+        share_expires_at = group.get('share_view_token_expires_at')
+        if share_expires_at:
+            now = datetime.now(timezone.utc)
+            if share_expires_at < now:
+                share_expired = True
+            else:
+                share_days_left = max(0, (share_expires_at - now).days)
 
     return render_template(
         'timeshare/members.html',
@@ -341,6 +352,9 @@ def members_list(group_uuid):
         role=request.timeshare_role,
         invite_roles=INVITE_ROLES,
         share_url=share_url,
+        share_expires_at=share_expires_at,
+        share_expired=share_expired,
+        share_days_left=share_days_left,
     )
 
 
@@ -488,18 +502,22 @@ def invite_accept(group_uuid, token):
 # Token is unguessable (32 url-safe bytes) and rotatable/disable-able by admin.
 
 SHARE_TOKEN_BYTES = 32  # → ~43 char base64url string
+SHARE_TOKEN_TTL_DAYS = 7  # default expiry; owner can rotate to refresh
 
 @bp.route('/g/<group_uuid>/share/<token>')
 def share_view(group_uuid, token):
-    """Public entry point. Validates the token, sessions a synthetic readonly
-    viewer, redirects to dashboard with welcome banner."""
+    """Public entry point. Validates the token (incl. expiry), sessions a
+    synthetic readonly viewer, redirects to dashboard with welcome banner.
+    Expired tokens render a friendly "ask for a new link" page instead of 404
+    so the visitor knows what to do."""
     if not token or len(token) > 64:
         abort(404)
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT group_id, name FROM crab.timeshare_groups
+            SELECT group_id, name, share_view_token_expires_at
+              FROM crab.timeshare_groups
              WHERE group_id = %s::uuid AND share_view_token = %s AND status = 'active'
         """, (group_uuid, token))
         row = cur.fetchone()
@@ -509,6 +527,14 @@ def share_view(group_uuid, token):
         conn.close()
     if not row:
         abort(404)
+
+    expires_at = row[2]
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        return render_template(
+            'timeshare/share_expired.html',
+            active_page=None,
+            group_name=row[1],
+        ), 410
 
     # Synthetic session-only viewer. login_required only checks 'user' is set;
     # _get_membership honors session['shared_view_for'] for this group.
@@ -520,6 +546,7 @@ def share_view(group_uuid, token):
         'picture': None,
     }
     session['shared_view_for'] = group_uuid  # match the URL param shape used in _get_membership
+    session['shared_view_via_link'] = True   # flag so the welcome banner can show "sign in for full experience"
     session.modified = True
     return redirect(url_for('timeshare.dashboard', group_uuid=group_uuid) + '?welcome=1')
 
@@ -527,21 +554,24 @@ def share_view(group_uuid, token):
 @bp.route('/g/<group_uuid>/share/regenerate', methods=['POST'])
 @group_member_required('admin')
 def share_regenerate(group_uuid):
-    """Owner/admin: rotate the share token (kills any old link in the wild)."""
+    """Owner/admin: rotate the share token (kills any old link in the wild).
+    New token expires in SHARE_TOKEN_TTL_DAYS days."""
     import secrets
     new_token = secrets.token_urlsafe(SHARE_TOKEN_BYTES)
+    new_expiry = datetime.now(timezone.utc) + timedelta(days=SHARE_TOKEN_TTL_DAYS)
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         cur.execute("""
             UPDATE crab.timeshare_groups
-               SET share_view_token = %s
+               SET share_view_token = %s,
+                   share_view_token_expires_at = %s
              WHERE group_id = %s::uuid
-        """, (new_token, group_uuid))
+        """, (new_token, new_expiry, group_uuid))
         conn.commit()
     finally:
         conn.close()
-    flash('Share link rotated. Old link no longer works.', 'success')
+    flash(f'Share link rotated. Expires in {SHARE_TOKEN_TTL_DAYS} days.', 'success')
     return redirect(url_for('timeshare.members_list', group_uuid=group_uuid))
 
 
@@ -554,7 +584,8 @@ def share_disable(group_uuid):
         cur = conn.cursor()
         cur.execute("""
             UPDATE crab.timeshare_groups
-               SET share_view_token = NULL
+               SET share_view_token = NULL,
+                   share_view_token_expires_at = NULL
              WHERE group_id = %s::uuid
         """, (group_uuid,))
         conn.commit()

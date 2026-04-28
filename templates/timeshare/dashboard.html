@@ -79,6 +79,11 @@
       Ask the assistant anything →
     </a>
   </div>
+  {% if session.get('shared_view_via_link') %}
+  <div class="text-xs text-crab-sand-dim mt-3 pt-3 border-t border-white/5">
+    Already have a Google account? <a href="/login" class="text-crab-coral hover:underline">Sign in for the full experience →</a>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 <div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 min-h-[78vh]">

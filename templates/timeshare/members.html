@@ -10,12 +10,24 @@
     For close family who shouldn't have to deal with sign-in. Anyone with this link can browse the group as a viewer — no Google account needed. Forwardable, so don't paste it anywhere public. Rotate or disable any time.
   </p>
   {% if share_url %}
-  <div class="flex flex-wrap items-center gap-2 mb-3">
+  <div class="flex flex-wrap items-center gap-2 mb-2">
     <input id="share-url-input" type="text" readonly value="{{ share_url }}"
       class="flex-1 min-w-0 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-crab-sand"
       onclick="this.select()">
     <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy',1500);})"
       class="bg-crab-coral text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-crab-coral-light transition-colors whitespace-nowrap">Copy</button>
+  </div>
+  <div class="text-xs mb-3
+    {% if share_expired %}text-red-400
+    {% elif share_days_left is not none and share_days_left <= 1 %}text-amber-300
+    {% else %}text-crab-sand-dim{% endif %}">
+    {% if share_expired %}
+      ⚠ Expired. Rotate to issue a new 7-day link.
+    {% elif share_days_left is not none %}
+      Expires in {{ share_days_left }} day{{ 's' if share_days_left != 1 else '' }} ({{ share_expires_at.strftime('%b %d') }}). Rotate any time to refresh.
+    {% else %}
+      No expiry set. Rotate to issue a 7-day link.
+    {% endif %}
   </div>
   <div class="flex flex-wrap gap-2">
     <form method="POST" action="/timeshare/g/{{ group_uuid }}/share/regenerate"
