@@ -15,22 +15,30 @@
       </div>
     </div>
     <nav class="flex gap-4 text-sm mt-4 overflow-x-auto pb-1 border-b border-white/5">
-      {{ nav_link('dashboard', 'Overview', group_uuid) }}
-      {{ nav_link('property', 'Property', group_uuid) }}
-      {{ nav_link('finances', 'Finances', group_uuid) }}
-      {{ nav_link('trips', 'Trips', group_uuid) }}
-      {{ nav_link('people', 'People', group_uuid) }}
-      {{ nav_link('portals', 'Portals', group_uuid) }}
-      {{ nav_link('contacts', 'Contacts', group_uuid) }}
-      {{ nav_link('documents', 'Documents', group_uuid) }}
-      {{ nav_link('timeline', 'Timeline', group_uuid) }}
-      {{ nav_link('catalog', 'Catalog', group_uuid) }}
-      {{ nav_link('cycles', 'Cycles', group_uuid) }}
-      {% if role != 'readonly' %}
-      {{ nav_link('ingest', 'Ingest', group_uuid) }}
+      {# Readonly viewers (incl. share-link guests) see a curated 5-tab nav.
+         Family/admin/owner see the full admin surface. #}
+      {% if role == 'readonly' %}
+        {{ nav_link('dashboard', 'Overview', group_uuid) }}
+        {{ nav_link('catalog', 'Catalog', group_uuid) }}
+        {{ nav_link('trips', 'Trips', group_uuid) }}
+        {{ nav_link('finances', 'Finances', group_uuid) }}
+        {{ nav_link('ask', 'Ask', group_uuid) }}
+      {% else %}
+        {{ nav_link('dashboard', 'Overview', group_uuid) }}
+        {{ nav_link('property', 'Property', group_uuid) }}
+        {{ nav_link('finances', 'Finances', group_uuid) }}
+        {{ nav_link('trips', 'Trips', group_uuid) }}
+        {{ nav_link('people', 'People', group_uuid) }}
+        {{ nav_link('portals', 'Portals', group_uuid) }}
+        {{ nav_link('contacts', 'Contacts', group_uuid) }}
+        {{ nav_link('documents', 'Documents', group_uuid) }}
+        {{ nav_link('timeline', 'Timeline', group_uuid) }}
+        {{ nav_link('catalog', 'Catalog', group_uuid) }}
+        {{ nav_link('cycles', 'Cycles', group_uuid) }}
+        {{ nav_link('ingest', 'Ingest', group_uuid) }}
+        {{ nav_link('ask', 'Ask', group_uuid) }}
+        {{ nav_link('members', 'Members', group_uuid) }}
       {% endif %}
-      {{ nav_link('ask', 'Ask', group_uuid) }}
-      {{ nav_link('members', 'Members', group_uuid) }}
     </nav>
   </div>
 

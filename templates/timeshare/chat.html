@@ -3,11 +3,11 @@
 
 {% block group_content %}
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
-  <div class="flex items-center justify-between mb-4">
-    <div>
-      <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide">Ask the dossier</h2>
-      <p class="text-xs text-crab-sand-dim mt-0.5">Claude reads only your group's rows. Citations like <code class="text-crab-sand">[ref:maintenance_fees:42]</code> link to the fact rows.</p>
-    </div>
+  <div class="mb-4">
+    <h2 class="text-lg font-display">Ask anything about our timeshare</h2>
+    <p class="text-sm text-crab-sand-dim mt-1 leading-relaxed">
+      Fees, where we've been, contracts, who to call, what's coming up — the assistant reads our family's records and answers in plain language.
+    </p>
   </div>
 
   <div id="messages" class="space-y-3 mb-4 max-h-[55vh] overflow-y-auto">
@@ -17,23 +17,34 @@
       </div>
     {% endfor %}
     {% if not messages %}
-      <div class="text-center text-sm text-crab-sand-dim py-8">
-        Try asking: <em>what did we pay in 2022?</em> · <em>who do we know at Royal Resorts?</em> · <em>show me the II portal login</em>
+      <div class="py-4">
+        <div class="text-xs uppercase tracking-wide text-crab-sand-dim mb-2">Try asking</div>
+        <div class="flex flex-wrap gap-2">
+          {% for prompt in [
+            'What did we pay in 2024?',
+            'Where have we been before?',
+            'When is our next maintenance fee due?',
+            'Who do we know at Royal Resorts?',
+            'What weeks are open in September?',
+          ] %}
+          <button type="button" data-prompt="{{ prompt }}"
+            class="ts-prompt-chip text-xs text-left bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 hover:bg-crab-coral/5 rounded-full px-3 py-1.5 text-crab-sand-dim hover:text-crab-sand transition-colors">
+            {{ prompt }}
+          </button>
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
   </div>
 
   <form id="chat-form" class="flex gap-2">
     <input id="chat-input" type="text" required maxlength="4000" autocomplete="off"
-      placeholder="Ask something about the dossier…"
+      placeholder="Ask anything…"
       class="flex-1 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:border-crab-coral focus:outline-none">
     <button id="chat-send" type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors disabled:opacity-50 disabled:cursor-wait whitespace-nowrap">
       Ask
     </button>
   </form>
-  <p class="text-xs text-crab-sand-dim mt-3">
-    Cap: 100 messages/day/user. Sonnet 4.6, ~$0.02 per turn. Admin can disable with <code class="text-crab-sand">settings.chat_enabled=false</code>.
-  </p>
 </div>
 
 <script>
@@ -130,6 +141,14 @@
 
   // Scroll to bottom on load
   messages.scrollTop = messages.scrollHeight;
+
+  // Prompt chips — tap to fill the input and submit
+  document.querySelectorAll('.ts-prompt-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      input.value = chip.dataset.prompt || chip.textContent.trim();
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+    });
+  });
 })();
 </script>
 {% endblock %}

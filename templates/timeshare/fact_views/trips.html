@@ -2,7 +2,43 @@
 {% block title %}Trips — {{ group.name }}{% endblock %}
 
 {% block group_content %}
-<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6">
+{# Mobile: stacked cards (each trip = its own card with notes inline) #}
+<ul class="space-y-3 mb-6 sm:hidden">
+  {% if trips %}
+    {% for t in trips %}
+    <li class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="flex items-baseline justify-between gap-3 mb-1">
+        <div class="font-semibold">{{ t.resort_name or 'Unnamed trip' }}</div>
+        {% if t.cost_usd %}<div class="text-sm font-display text-crab-coral">${{ '{:,.0f}'.format(t.cost_usd) }}</div>{% endif %}
+      </div>
+      {% if t.location %}<div class="text-xs text-crab-sand-dim mb-2">{{ t.location }}</div>{% endif %}
+      <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-crab-sand-dim">
+        {% if t.trip_date_start or t.trip_date_end %}
+        <span>
+          {% if t.trip_date_start %}{{ t.trip_date_start }}{% endif %}
+          {% if t.trip_date_end %} → {{ t.trip_date_end }}{% endif %}
+        </span>
+        {% endif %}
+        {% if t.trip_type %}<span class="capitalize">{{ t.trip_type|replace('_',' ') }}</span>{% endif %}
+      </div>
+      {% if t.notes %}
+      <div class="mt-2 pt-2 border-t border-white/5 text-xs text-crab-sand-dim whitespace-pre-wrap">{{ t.notes }}</div>
+      {% endif %}
+      {% if role in ('owner', 'admin') %}
+      <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/{{ t.pk_id }}/delete" class="mt-2"
+            onsubmit="return confirm('Delete this trip? Participants + exchange links tied to it will lose their trip pointer.')">
+        <button class="text-xs text-red-400 hover:text-red-300">Delete trip ✕</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  {% else %}
+    <li class="bg-crab-card/40 border border-white/6 rounded-xl p-8 text-center text-sm text-crab-sand-dim">No trips recorded yet.</li>
+  {% endif %}
+</ul>
+
+{# Desktop: original table #}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6 hidden sm:block">
   {% if trips %}
   <table class="w-full text-sm">
     <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">

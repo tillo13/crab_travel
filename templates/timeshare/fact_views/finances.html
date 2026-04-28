@@ -16,11 +16,37 @@
 {% endif %}
 
 {% for prop in properties %}
-<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 sm:p-6 mb-6">
   <h2 class="text-lg font-semibold mb-4">{{ prop.name }} — maintenance fees</h2>
   {% set fees = fees_by_property[prop.pk_id] %}
   {% if fees %}
-    <table class="w-full text-sm mb-4">
+    {# Mobile: stacked cards (legible on phones) #}
+    <ul class="space-y-2 mb-4 sm:hidden">
+      {% for f in fees %}
+      <li class="bg-crab-navy/40 border border-white/5 rounded-lg p-3">
+        <div class="flex items-baseline justify-between mb-1">
+          <span class="text-base font-semibold">{{ f.year }}</span>
+          {% if f.billed_amount_usd %}
+            <span class="text-base font-display text-crab-coral">${{ '{:,.2f}'.format(f.billed_amount_usd) }}</span>
+          {% endif %}
+        </div>
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-crab-sand-dim">
+          {% if f.paid_amount_usd %}<span><span class="text-emerald-400">✓</span> Paid ${{ '{:,.2f}'.format(f.paid_amount_usd) }}</span>{% endif %}
+          {% if f.paid_date %}<span>on {{ f.paid_date }}</span>{% endif %}
+          {% if f.late_fees_usd %}<span class="text-amber-300">+ ${{ '{:,.2f}'.format(f.late_fees_usd) }} late</span>{% endif %}
+          {% if not f.paid_amount_usd and not f.late_fees_usd %}<span>—</span>{% endif %}
+        </div>
+        {% if role in ('owner', 'admin') %}
+        <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/maintenance_fees/{{ f.pk_id }}/delete" class="mt-2"
+              onsubmit="return confirm('Delete the {{ f.year }} fee row? This can\'t be undone.')">
+          <button class="text-xs text-red-400 hover:text-red-300">Delete row ✕</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {# Desktop: full table #}
+    <table class="w-full text-sm mb-4 hidden sm:table">
       <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
         <tr><th class="text-left py-2">Year</th><th class="text-right">Billed</th><th class="text-right">Paid</th><th class="text-right">Late</th><th class="text-right">Paid date</th><th></th></tr>
       </thead>
@@ -67,11 +93,37 @@
 {% endfor %}
 
 {% for contract in contracts %}
-<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5 sm:p-6 mb-6">
   <h2 class="text-lg font-semibold mb-4">Contract #{{ contract.contract_number or contract.pk_id }} — loan payments</h2>
   {% set payments = loan_payments_by_contract[contract.pk_id] %}
   {% if payments %}
-    <table class="w-full text-sm mb-4">
+    {# Mobile: stacked cards #}
+    <ul class="space-y-2 mb-4 sm:hidden">
+      {% for p in payments %}
+      <li class="bg-crab-navy/40 border border-white/5 rounded-lg p-3">
+        <div class="flex items-baseline justify-between mb-1">
+          <span class="text-sm font-medium">{{ p.payment_date or 'No date' }}</span>
+          {% if p.amount_usd %}
+            <span class="text-base font-display text-crab-coral">${{ '{:,.2f}'.format(p.amount_usd) }}</span>
+          {% endif %}
+        </div>
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-crab-sand-dim">
+          {% if p.principal_usd %}<span>Principal ${{ '{:,.2f}'.format(p.principal_usd) }}</span>{% endif %}
+          {% if p.interest_usd %}<span>Interest ${{ '{:,.2f}'.format(p.interest_usd) }}</span>{% endif %}
+          {% if p.balance_after_usd %}<span>Balance ${{ '{:,.2f}'.format(p.balance_after_usd) }}</span>{% endif %}
+          {% if p.method %}<span>via {{ p.method }}</span>{% endif %}
+        </div>
+        {% if role in ('owner', 'admin') %}
+        <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/loan_payments/{{ p.pk_id }}/delete" class="mt-2"
+              onsubmit="return confirm('Delete this loan payment row? This can\'t be undone.')">
+          <button class="text-xs text-red-400 hover:text-red-300">Delete row ✕</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {# Desktop: full table #}
+    <table class="w-full text-sm mb-4 hidden sm:table">
       <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
         <tr><th class="text-left py-2">Date</th><th class="text-right">Amount</th><th class="text-right">Principal</th><th class="text-right">Interest</th><th class="text-right">Balance</th><th class="text-left">Method</th><th></th></tr>
       </thead>
