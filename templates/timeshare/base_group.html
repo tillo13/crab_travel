@@ -14,32 +14,53 @@
         <h1 class="text-2xl font-display mt-0.5">{{ group.name if group else 'Group' }}</h1>
       </div>
     </div>
-    <nav class="flex gap-4 text-sm mt-4 overflow-x-auto pb-1 border-b border-white/5">
-      {# Readonly viewers (incl. share-link guests) see a curated 5-tab nav.
-         Family/admin/owner see the full admin surface. #}
-      {% if role == 'readonly' %}
-        {{ nav_link('dashboard', 'Overview', group_uuid) }}
-        {{ nav_link('catalog', 'Catalog', group_uuid) }}
-        {{ nav_link('trips', 'Trips', group_uuid) }}
-        {{ nav_link('finances', 'Finances', group_uuid) }}
-        {{ nav_link('ask', 'Ask', group_uuid) }}
-      {% else %}
-        {{ nav_link('dashboard', 'Overview', group_uuid) }}
-        {{ nav_link('property', 'Property', group_uuid) }}
-        {{ nav_link('finances', 'Finances', group_uuid) }}
-        {{ nav_link('trips', 'Trips', group_uuid) }}
-        {{ nav_link('people', 'People', group_uuid) }}
-        {{ nav_link('portals', 'Portals', group_uuid) }}
-        {{ nav_link('contacts', 'Contacts', group_uuid) }}
-        {{ nav_link('documents', 'Documents', group_uuid) }}
-        {{ nav_link('timeline', 'Timeline', group_uuid) }}
-        {{ nav_link('catalog', 'Catalog', group_uuid) }}
-        {{ nav_link('cycles', 'Cycles', group_uuid) }}
-        {{ nav_link('ingest', 'Ingest', group_uuid) }}
-        {{ nav_link('ask', 'Ask', group_uuid) }}
-        {{ nav_link('members', 'Members', group_uuid) }}
-      {% endif %}
+    {# Unified nav for all roles: 5 decision-helpful tabs always visible,
+       everything else folded into "More ▾". Readonly users still get hidden
+       admin-only items (Ingest, Members) since those routes 404 for them. #}
+    <nav class="flex items-center gap-4 text-sm mt-4 pb-1 border-b border-white/5 relative">
+      {{ nav_link('dashboard', 'Overview', group_uuid) }}
+      {{ nav_link('catalog', 'Catalog', group_uuid) }}
+      {{ nav_link('trips', 'Trips', group_uuid) }}
+      {{ nav_link('finances', 'Finances', group_uuid) }}
+      {{ nav_link('ask', 'Ask', group_uuid) }}
+
+      <details class="ts-more relative ml-auto">
+        <summary class="cursor-pointer text-crab-sand-dim hover:text-crab-sand transition-colors list-none whitespace-nowrap select-none">More <span class="inline-block transition-transform">▾</span></summary>
+        <div class="absolute right-0 top-full mt-2 z-50 min-w-[180px] bg-crab-navy border border-white/10 rounded-xl shadow-2xl py-1 animate-in">
+          {% set more_links = [
+            ('property', 'Property'),
+            ('people', 'People'),
+            ('portals', 'Portals'),
+            ('contacts', 'Contacts'),
+            ('documents', 'Documents'),
+            ('timeline', 'Timeline'),
+            ('cycles', 'Cycles'),
+          ] %}
+          {% for key, label in more_links %}
+          <a href="/timeshare/g/{{ group_uuid }}/{{ key }}" class="block px-4 py-2 text-sm {% if nav_active == key %}text-crab-coral{% else %}text-crab-sand hover:text-crab-coral hover:bg-crab-card/40{% endif %} transition-colors">{{ label }}</a>
+          {% endfor %}
+          {% if role != 'readonly' %}
+          <div class="border-t border-white/5 my-1"></div>
+          <a href="/timeshare/g/{{ group_uuid }}/members" class="block px-4 py-2 text-sm {% if nav_active == 'members' %}text-crab-coral{% else %}text-crab-sand hover:text-crab-coral hover:bg-crab-card/40{% endif %} transition-colors">Members</a>
+          <a href="/timeshare/g/{{ group_uuid }}/ingest" class="block px-4 py-2 text-sm {% if nav_active == 'ingest' %}text-crab-coral{% else %}text-crab-sand hover:text-crab-coral hover:bg-crab-card/40{% endif %} transition-colors">Ingest</a>
+          {% endif %}
+        </div>
+      </details>
     </nav>
+    <style>
+      details.ts-more > summary::-webkit-details-marker { display: none; }
+      details.ts-more[open] > summary span { transform: rotate(180deg); }
+    </style>
+    <script>
+      // Close the More dropdown on outside click
+      (function () {
+        document.addEventListener('click', (e) => {
+          document.querySelectorAll('details.ts-more[open]').forEach(d => {
+            if (!d.contains(e.target)) d.removeAttribute('open');
+          });
+        });
+      })();
+    </script>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
