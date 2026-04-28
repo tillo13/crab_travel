@@ -10,12 +10,17 @@
     For close family who shouldn't have to deal with sign-in. Anyone with this link can browse the group as a viewer — no Google account needed. Forwardable, so don't paste it anywhere public. Rotate or disable any time.
   </p>
   {% if share_url %}
+  {% set display_url = share_short_url or share_url %}
   <div class="flex flex-wrap items-center gap-2 mb-2">
-    <input id="share-url-input" type="text" readonly value="{{ share_url }}"
-      class="flex-1 min-w-0 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-crab-sand"
+    <input id="share-url-input" type="text" readonly value="{{ display_url }}"
+      class="flex-1 min-w-0 bg-crab-navy/60 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-crab-sand"
       onclick="this.select()">
     <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy',1500);})"
       class="bg-crab-coral text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-crab-coral-light transition-colors whitespace-nowrap">Copy</button>
+    <a href="sms:?body={{ ('Hey — pulled together our family timeshare stuff in one place. Browse + ask questions, no sign-in needed: ' + display_url)|urlencode }}"
+      class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-emerald-500/30 transition-colors whitespace-nowrap">
+      Text it
+    </a>
   </div>
   <div class="text-xs mb-3
     {% if share_expired %}text-red-400

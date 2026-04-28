@@ -325,6 +325,7 @@ def members_list(group_uuid):
         decorated.append({**m, 'status': status})
 
     share_url = None
+    share_short_url = None
     share_expires_at = None
     share_expired = False
     share_days_left = None
@@ -335,6 +336,11 @@ def members_list(group_uuid):
             token=group['share_view_token'],
             _external=True,
         )
+        # Idempotent — same long URL gets the same short code, so rotation
+        # naturally produces a new short code (because the long URL changed).
+        short_code = create_short_url(share_url)
+        if short_code:
+            share_short_url = f"https://crab.travel/s/{short_code}"
         share_expires_at = group.get('share_view_token_expires_at')
         if share_expires_at:
             now = datetime.now(timezone.utc)
@@ -352,6 +358,7 @@ def members_list(group_uuid):
         role=request.timeshare_role,
         invite_roles=INVITE_ROLES,
         share_url=share_url,
+        share_short_url=share_short_url,
         share_expires_at=share_expires_at,
         share_expired=share_expired,
         share_days_left=share_days_left,
