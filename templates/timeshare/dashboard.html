@@ -61,6 +61,26 @@
 {% endblock %}
 
 {% block group_content %}
+{% if request.args.get('welcome') %}
+<div id="ts-welcome" class="bg-emerald-500/8 border border-emerald-500/30 rounded-xl p-5 mb-6 relative">
+  <button type="button" onclick="document.getElementById('ts-welcome').remove();
+    history.replaceState(null,'',window.location.pathname);"
+    class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl leading-none px-2"
+    aria-label="Dismiss">×</button>
+  <div class="text-emerald-300 text-sm font-semibold mb-2">Welcome to {{ group.name }}.</div>
+  <div class="text-sm text-crab-sand leading-relaxed mb-3">
+    This is the family timeshare workspace — what you own, where you've been, fees, contacts, portals, and a searchable resort catalog. <span class="text-crab-sand-dim">You're here as a viewer, so nothing you click can break anything.</span>
+  </div>
+  <div class="flex flex-wrap gap-2 text-xs">
+    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-crab-navy/40 border border-white/10 text-crab-sand-dim">
+      <span class="text-crab-coral">★</span> Browse the world catalog and tag resorts you'd like to consider
+    </span>
+    <a href="/timeshare/g/{{ group.group_id }}/ask" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-crab-coral/15 border border-crab-coral/30 text-crab-coral hover:bg-crab-coral/25 transition-colors">
+      Ask the assistant anything →
+    </a>
+  </div>
+</div>
+{% endif %}
 <div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 min-h-[78vh]">
 
   <!-- Left: search + map -->
@@ -530,7 +550,7 @@
           <input type="hidden" name="resort_code" value="${r.ii_code}">
           <input type="hidden" name="network" value="interval_international">
           <button class="w-full bg-crab-coral text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
-            ★ Shortlist for {{ group.name }}
+            ★ Add to {{ group.name }}'s Considering
           </button>
         </form>
         <a href="/timeshare/catalog/resort/${r.ii_code}" target="_blank"

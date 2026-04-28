@@ -85,7 +85,7 @@
 
   {% if my_timeshare_groups %}
   <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
-    <div class="text-sm text-crab-sand-dim">Shortlist this resort for one of your groups:</div>
+    <div class="text-sm text-crab-sand-dim">Add to a group's Considering list:</div>
     <div class="flex flex-wrap gap-2">
       {% for g in my_timeshare_groups %}
       <form method="POST" action="/timeshare/g/{{ g.group_id }}/shortlist/toggle">
@@ -173,7 +173,7 @@
 
   {% if shortlisted_in %}
   <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mt-6 text-sm text-amber-200">
-    ★ On your shortlist in:
+    ★ Being considered in:
     {% for s in shortlisted_in %}<a href="/timeshare/g/{{ s.group_id }}/catalog" class="underline hover:no-underline">{{ s.group_name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
   </div>
   {% endif %}

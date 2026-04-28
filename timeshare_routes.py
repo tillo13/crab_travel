@@ -403,22 +403,53 @@ def invite_accept(group_uuid, token):
     finally:
         conn.close()
 
-    return redirect(url_for('timeshare.dashboard', group_uuid=group_uuid))
+    # ?welcome=1 triggers the first-visit orientation banner on the dashboard.
+    return redirect(url_for('timeshare.dashboard', group_uuid=group_uuid) + '?welcome=1')
 
 
 # ── Helpers ─────────────────────────────────────────────────
 
 def _send_invite_email(to_email, inviter_name, group_name, short_url):
-    from utilities.gmail_utils import send_simple_email
-    subject = f"{inviter_name} invited you to {group_name} on crab.travel"
-    body = (
-        f"{inviter_name} invited you to join the timeshare group \"{group_name}\" on crab.travel.\n\n"
-        f"Accept the invite here:\n{short_url}\n\n"
-        f"This link expires in {INVITE_EXPIRY_DAYS} days and only works when you sign in as {to_email}.\n\n"
-        f"— crab.travel"
+    """Send the invite as light HTML so Gmail doesn't flag it 'Be careful with
+    this message.' Pattern matches global gmail-deliverability rule:
+    capital headers, HTML subtype, display-name From."""
+    import base64
+    from email.mime.text import MIMEText
+    from utilities.gmail_utils import _get_gmail_service  # type: ignore[attr-defined]
+
+    plain_paragraphs = [
+        f"Hi — {inviter_name} just added you to the family timeshare workspace on crab.travel.",
+        f"It's a private place where {inviter_name} keeps everything in one spot — "
+        "what you own, when fees were paid, where you've been, and contacts/portals nobody can ever find. "
+        "You can browse it all, ask the built-in assistant questions, and flag resorts you'd like to consider for a future trip. "
+        "You can't accidentally change or delete anything — it's read-only for you by default.",
+        f'Click below to take a look. The link works for {INVITE_EXPIRY_DAYS} days and only opens when you sign in with {to_email}.',
+    ]
+    html_body = (
+        '<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;'
+        'font-size:14px;line-height:1.6;color:#0f172a;max-width:560px">'
+        + ''.join(f'<p>{p}</p>' for p in plain_paragraphs)
+        + f'<p style="margin:28px 0">'
+          f'<a href="{short_url}" '
+          f'style="display:inline-block;background:#E8593A;color:#ffffff;'
+          f'padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">'
+          f'Open {group_name} →</a></p>'
+        + f'<p style="color:#64748b;font-size:12px;margin-top:32px">'
+          f'If the button doesn\'t work, copy this link into your browser:<br>'
+          f'<span style="word-break:break-all">{short_url}</span></p>'
+        + '<p style="color:#64748b;font-size:12px">— crab.travel</p>'
+        + '</div>'
     )
+
+    msg = MIMEText(html_body, 'html', 'utf-8')
+    msg['To'] = to_email
+    msg['From'] = f'{inviter_name} via crab.travel <kumoridotai@gmail.com>'
+    msg['Subject'] = f"{inviter_name} added you to {group_name} on crab.travel"
+
     try:
-        send_simple_email(subject, body, to_email, from_name="crab.travel")
+        gmail = _get_gmail_service()
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
     except Exception as e:
         logger.error(f"Failed to send timeshare invite email to {to_email}: {e}")
 
@@ -708,7 +739,7 @@ def _redirect_back(group_uuid, fact_key):
 
 
 @bp.route('/g/<group_uuid>/fact/<fact_key>/new', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def fact_new(group_uuid, fact_key):
     if fact_key not in FACT_SCHEMAS:
         abort(404)
@@ -722,7 +753,7 @@ def fact_new(group_uuid, fact_key):
 
 
 @bp.route('/g/<group_uuid>/fact/<fact_key>/<int:pk>', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def fact_update(group_uuid, fact_key, pk):
     if fact_key not in FACT_SCHEMAS:
         abort(404)
@@ -757,7 +788,7 @@ MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB — per-request App Engine limit is 32
 
 
 @bp.route('/g/<group_uuid>/ingest')
-@group_member_required()
+@group_member_required('family')
 def ingest_wizard(group_uuid):
     group_name = _get_group_name(group_uuid)
     return render_template(
@@ -771,7 +802,7 @@ def ingest_wizard(group_uuid):
 
 
 @bp.route('/g/<group_uuid>/ingest/paste', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def ingest_paste(group_uuid):
     from utilities.timeshare_ingest import run_extraction_and_persist
     user = session['user']
@@ -794,7 +825,7 @@ def ingest_paste(group_uuid):
 
 
 @bp.route('/g/<group_uuid>/ingest/upload', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def ingest_upload(group_uuid):
     from utilities.timeshare_ingest import run_extraction_and_persist, extract_pdf_text
     user = session['user']
@@ -833,7 +864,7 @@ def ingest_upload(group_uuid):
 
 
 @bp.route('/g/<group_uuid>/ingest/jobs')
-@group_member_required()
+@group_member_required('family')
 def ingest_jobs(group_uuid):
     from utilities.timeshare_ingest import list_jobs
     jobs = list_jobs(group_uuid)
@@ -850,7 +881,7 @@ def ingest_jobs(group_uuid):
 
 
 @bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>')
-@group_member_required()
+@group_member_required('family')
 def ingest_job_review(group_uuid, job_id):
     from utilities.timeshare_ingest import get_job
     job = get_job(group_uuid, job_id)
@@ -883,7 +914,7 @@ def ingest_job_review(group_uuid, job_id):
 
 
 @bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>/commit', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def ingest_job_commit(group_uuid, job_id):
     from utilities.timeshare_ingest import get_job, commit_job
     job = get_job(group_uuid, job_id)
@@ -915,7 +946,7 @@ def ingest_job_commit(group_uuid, job_id):
 
 
 @bp.route('/g/<group_uuid>/ingest/jobs/<int:job_id>/reject', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def ingest_job_reject(group_uuid, job_id):
     from utilities.timeshare_ingest import reject_job
     ok = reject_job(group_uuid, job_id, review_notes=request.form.get('notes'))
@@ -935,7 +966,7 @@ MAX_DRIVE_ITEMS_PER_SCAN = 75
 
 
 @bp.route('/g/<group_uuid>/ingest/drive', methods=['POST'])
-@group_member_required()
+@group_member_required('family')
 def ingest_drive(group_uuid):
     """Resolve the pasted Drive URL to one or more public Docs/Sheets/PDFs,
     create one ingest_job per item, run Claude on each, stamp a document_refs

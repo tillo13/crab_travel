@@ -26,6 +26,7 @@
   {% endif %}
 </div>
 
+{% if role != 'readonly' %}
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
   <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a contact</h2>
   <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/contacts/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -39,4 +40,5 @@
     <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save contact</button>
   </form>
 </div>
+{% endif %}
 {% endblock %}

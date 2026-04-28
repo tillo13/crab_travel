@@ -43,7 +43,7 @@ def _get_membership(group_uuid, user_id):
         conn.close()
 
 
-def group_member_required(min_role='family'):
+def group_member_required(min_role='readonly'):
     required = _ROLE_RANK[min_role]
 
     def decorator(f):

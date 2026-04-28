@@ -5,7 +5,7 @@
 {% if shortlist %}
 <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
   <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">
-    Your shortlist — {{ shortlist|length }} resort{{ 's' if shortlist|length != 1 else '' }}
+    Considering — {{ shortlist|length }} resort{{ 's' if shortlist|length != 1 else '' }}
   </h2>
   <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
     {% for s in shortlist %}
