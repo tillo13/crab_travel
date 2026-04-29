@@ -1368,3 +1368,84 @@ Phase 1 demo isn't empty:
 
 Rest flows in via Phase 3 ingestion of the Apr 10 statements + Phase 4
 Drive ingestion of the existing 9-doc dossier.
+
+---
+
+## 16. Phase 7 — II live availability + session keep-alive (added 2026-04-28)
+
+### Why this is a separate phase
+
+II's only AI-friendly surface is HTML behind cookie auth. The login boundary
+is protected by Akamai bot manager — headless login is unviable (proven via
+Patchright with valid creds, see `docs/ii_scraper_playbook.md` §12). The only
+working pattern is **cookie replay from a real Chrome session that already
+passed Akamai's challenge**. Once authed, every II member-area endpoint is
+just plain HTTP; no further bot-detection on logged-in traffic.
+
+This phase ships the keep-alive layer: a cron that pings `/web/my/home`
+every 18–29 min so JSESSIONID's idle timeout never fires, plus an endpoint
+the user's local Mac (or a Chrome extension) can POST fresh cookies to
+whenever they actually log in.
+
+### Cost approval (2026-04-28)
+
+Andy approved up to **$1.00/month** for this feature, with the explicit
+ceiling enforced via a GCP budget alert on the `crab-travel` project.
+
+**Cost math (worst case, no free-tier headroom):**
+
+| Component | Math | $/month |
+|---|---|---|
+| App Engine cron schedule | $0/job, unlimited | $0.00 |
+| F1 instance time | 80 invocations/day × 2.5s (cold start + GET + DB write) = 1.67 hr/mo × $0.05/hr | $0.083 |
+| Egress to intervalworld.com | 65 real pings × 170KB = 0.33 GB/mo × $0.12/GB | $0.040 |
+| Cloud SQL writes | shared kumori instance, marginal ≈ 0 | $0.00 |
+| Email alert when session dies | existing `gmail_utils.py`, no incremental fee | $0.00 |
+| **Worst-case TOTAL** | | **$0.123** |
+
+Realistic actual cost: **$0.00–$0.06/month** because crab's F1 with
+`min_instances=0` has plenty of free-tier headroom (28 instance-hours/day
+free; this addition uses ~0.05 hr/day).
+
+**Hard ceiling: $1.00/month** via GCP budget alert (instructions in
+`scripts/setup_budget_alert.sh`). If costs ever exceed $1, Andy gets an
+email and we kill the cron.
+
+**No paid third-party APIs in the loop** — the keep-alive is a `requests.get`
+to intervalworld.com (a site Andy already has free member access to).
+There is no per-call cost on the upstream side. Worst case if II
+rate-limits us, they slow us down or temp-block — no money at risk.
+
+### Schema (in `utilities/timeshare_schema.py::_ensure_ii_session`)
+
+```sql
+CREATE TABLE crab.timeshare_ii_session (
+    pk_id SERIAL PRIMARY KEY,
+    member_login VARCHAR(50) UNIQUE NOT NULL,
+    cookies JSONB NOT NULL,
+    last_keepalive_at TIMESTAMPTZ,
+    last_keepalive_status VARCHAR(20),     -- 'healthy' | 'unhealthy' | 'never'
+    last_error TEXT,
+    last_pushed_from VARCHAR(30),          -- 'manual' | 'mac_launchagent' | 'keepalive_refresh'
+    consecutive_failures INTEGER DEFAULT 0,
+    keepalive_count INTEGER DEFAULT 0,
+    ...
+);
+```
+
+Cookies stored as JSONB plaintext. They rotate every ~30 min idle anyway —
+same security profile as JSESSIONID in any web app's memory. The DB itself
+is the access boundary (Cloud SQL auth, no public exposure).
+
+### Routes
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET/POST | `/tasks/timeshare-ii-keepalive` | `X-Appengine-Cron` or `?secret=` | Cron pings II, updates health |
+| POST | `/api/timeshare/ii-cookies/refresh` | `Authorization: Bearer <CRAB_TASK_SECRET>` | Push fresh cookies (Mac LaunchAgent or manual) |
+
+### Kill switch
+
+Comment out the `cron.yaml` entry under "Timeshare — II keep-alive" and
+redeploy. Zero pings fire, zero cost. The endpoint stays callable for
+manual pings.

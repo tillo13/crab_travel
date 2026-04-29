@@ -535,6 +535,33 @@ def _ensure_audit_log(cur):
     _run(cur, "CREATE INDEX IF NOT EXISTS idx_timeshare_audit_action ON crab.timeshare_audit_log(action)")
 
 
+# ── Phase 7: II live availability — keep-alive session ──────────────
+
+def _ensure_ii_session(cur):
+    """Single-row table for Andy's logged-in II session cookies + health.
+    Cookies are session credentials that rotate every ~30 min idle, so they
+    aren't long-lived secrets — stored as JSONB plaintext, same risk profile
+    as JSESSIONID in any web app's memory. The DB itself is the access
+    boundary.
+    """
+    _run(cur, """
+        CREATE TABLE IF NOT EXISTS crab.timeshare_ii_session (
+            pk_id SERIAL PRIMARY KEY,
+            member_login VARCHAR(50) UNIQUE NOT NULL,
+            cookies JSONB NOT NULL,
+            last_keepalive_at TIMESTAMPTZ DEFAULT NOW(),
+            last_keepalive_status VARCHAR(20) DEFAULT 'never',
+            last_error TEXT,
+            last_pushed_from VARCHAR(30) DEFAULT 'manual',
+            consecutive_failures INTEGER DEFAULT 0,
+            keepalive_count INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    _run(cur, "CREATE INDEX IF NOT EXISTS idx_ii_session_login ON crab.timeshare_ii_session(member_login)")
+
+
 # ── Phase 2: bridge FK on crab.plans ─────────────────────────────────
 
 def _ensure_plans_bridge(cur):
@@ -601,6 +628,8 @@ def init_timeshare_schema():
         _ensure_ingest_jobs(cur)
         _ensure_chat(cur)
         _ensure_audit_log(cur)
+        # Phase 7
+        _ensure_ii_session(cur)
         _ensure_plans_bridge(cur)
         conn.commit()
         logger.info("crab.timeshare_* (Phase 1+2) + crab.ii_* tables ready")

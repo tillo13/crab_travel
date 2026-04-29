@@ -14,6 +14,16 @@ cron:
   schedule: every 8 hours
   timezone: America/Los_Angeles
 
+# Timeshare — keep Andy's Interval International member session warm.
+# Cron fires every 18 min; handler self-defers using a randomized 18–29 min
+# target so JSESSIONID's idle timeout never fires but we don't hit a fixed
+# cadence. ~$0.06/mo worst-case marginal cost (math in
+# docs/timeshare_buildout.md, $1/mo budget alert active on crab-travel).
+- description: "Timeshare — II keep-alive (cookies stay hot, never re-login)"
+  url: /tasks/timeshare-ii-keepalive
+  schedule: every 18 minutes
+  timezone: America/Los_Angeles
+
 # Disabled until crab.travel is in prod — burst sends (3 emails in 6s to the
 # same inbox across plans) got flagged by Gmail's spam filter. Re-enable after
 # reworking to batch per-user across plans.

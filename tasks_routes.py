@@ -205,6 +205,49 @@ def task_check_watches():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@bp.route('/tasks/timeshare-ii-keepalive', methods=['GET', 'POST'])
+def task_timeshare_ii_keepalive():
+    """Cron — keep Andy's II member session warm. See
+    utilities/timeshare_ii_session.py for the full rationale.
+
+    Cron runs every 18 min; handler self-defers based on a 18–29 min jitter
+    target so we don't fire at exact cadence."""
+    task_secret = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    if not request.headers.get('X-Appengine-Cron') and request.args.get('secret') != task_secret:
+        return 'Forbidden', 403
+    try:
+        from utilities.timeshare_ii_session import keepalive_ping
+        result = keepalive_ping()
+        logger.info(f"✅ /tasks/timeshare-ii-keepalive: {result}")
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        logger.error(f"❌ ii-keepalive failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@bp.route('/api/timeshare/ii-cookies/refresh', methods=['POST'])
+def api_timeshare_ii_cookies_refresh():
+    """Bearer-authed endpoint for the Mac LaunchAgent (or manual seed) to push
+    a fresh II cookie blob. Body: {"cookies": {...}, "source": "..."}."""
+    expected = os.environ.get('CRAB_TASK_SECRET', 'dev')
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer ') or auth[7:] != expected:
+        return jsonify({'success': False, 'error': 'unauthorized'}), 401
+    body = request.get_json(silent=True) or {}
+    cookies = body.get('cookies') or {}
+    source = body.get('source') or 'manual'
+    if not isinstance(cookies, dict) or not cookies.get('JSESSIONID'):
+        return jsonify({'success': False, 'error': 'missing JSESSIONID'}), 400
+    try:
+        from utilities.timeshare_ii_session import upsert_cookies
+        upsert_cookies(cookies, source=source)
+        logger.info(f"✅ ii-cookies refreshed from {source}: {len(cookies)} keys")
+        return jsonify({'success': True, 'keys': len(cookies), 'source': source})
+    except Exception as e:
+        logger.error(f"❌ ii-cookies refresh failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @bp.route('/tasks/seed-demo-viewer')
 def task_seed_demo_viewer():
     """One-time task: create demo viewer 'Judy Tunaboat' and add her to ALL trips with availability."""
