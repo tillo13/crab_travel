@@ -85,21 +85,51 @@ def _load_provider_limits():
         return
     try:
         with _db_cursor_fn(dict_cursor=False) as cur:
-            cur.execute("""
-                SELECT backend, daily_limit, rpm_spacing_sec, lifetime_limit, lifetime_used,
-                       backoff_sec, enabled, conservation
-                FROM kumori_llm_provider_limits
-            """)
-            for row in cur.fetchall():
-                _provider_limits[row[0]] = {
-                    'daily_limit': row[1],
-                    'rpm_spacing_sec': float(row[2]) if row[2] else 1.0,
-                    'lifetime_limit': row[3],
-                    'lifetime_used': row[4] or 0,
-                    'backoff_sec': row[5] or 120,
-                    'enabled': row[6] if row[6] is not None else True,
-                    'conservation': row[7] if row[7] is not None else False,
-                }
+            # NEW columns (cooldown_until, consecutive_failures, failure_threshold,
+            # cooldown_seconds) are optional — gracefully handle pre-migration DBs.
+            try:
+                cur.execute("""
+                    SELECT backend, daily_limit, rpm_spacing_sec, lifetime_limit, lifetime_used,
+                           backoff_sec, enabled, conservation,
+                           cooldown_until, consecutive_failures, failure_threshold, cooldown_seconds
+                    FROM kumori_llm_provider_limits
+                """)
+                rows = cur.fetchall()
+                for row in rows:
+                    _provider_limits[row[0]] = {
+                        'daily_limit': row[1],
+                        'rpm_spacing_sec': float(row[2]) if row[2] else 1.0,
+                        'lifetime_limit': row[3],
+                        'lifetime_used': row[4] or 0,
+                        'backoff_sec': row[5] or 120,
+                        'enabled': row[6] if row[6] is not None else True,
+                        'conservation': row[7] if row[7] is not None else False,
+                        'cooldown_until_ts': row[8].timestamp() if row[8] else 0,
+                        'consecutive_failures': row[9] or 0,
+                        'failure_threshold': row[10] or 3,
+                        'cooldown_seconds': row[11] or 60,
+                    }
+            except Exception:
+                # Fallback for pre-migration schema — circuit breaker degrades to no-op
+                cur.execute("""
+                    SELECT backend, daily_limit, rpm_spacing_sec, lifetime_limit, lifetime_used,
+                           backoff_sec, enabled, conservation
+                    FROM kumori_llm_provider_limits
+                """)
+                for row in cur.fetchall():
+                    _provider_limits[row[0]] = {
+                        'daily_limit': row[1],
+                        'rpm_spacing_sec': float(row[2]) if row[2] else 1.0,
+                        'lifetime_limit': row[3],
+                        'lifetime_used': row[4] or 0,
+                        'backoff_sec': row[5] or 120,
+                        'enabled': row[6] if row[6] is not None else True,
+                        'conservation': row[7] if row[7] is not None else False,
+                        'cooldown_until_ts': 0,
+                        'consecutive_failures': 0,
+                        'failure_threshold': 3,
+                        'cooldown_seconds': 60,
+                    }
         logger.info(f"Loaded {len(_provider_limits)} provider limits from DB")
     except Exception as e:
         logger.warning(f"Could not load provider limits from DB (using fallbacks): {e}")
@@ -153,6 +183,92 @@ def _maybe_sync():
 def _is_enabled(backend_name):
     """Check if a backend is enabled in provider limits."""
     return _get_limit(backend_name, 'enabled', True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Circuit breaker — generic, provider-agnostic, applied to ALL backends.
+# Pattern matches LiteLLM/Portkey/OpenRouter community consensus:
+#   closed    consecutive_failures < threshold AND cooldown_until is past
+#   open      cooldown_until > NOW() — _try_backend skips silently
+#   half-open cooldown just expired — next real call IS the test
+# Self-healing: free-tier flicker auto-recovers without operator action.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_breaker_lock = threading.Lock()
+
+
+def _is_in_cooldown(backend_name):
+    """True if the breaker is currently OPEN for this backend."""
+    until = _get_limit(backend_name, 'cooldown_until_ts', 0)
+    if not until:
+        return False
+    if time.time() < until:
+        return True
+    # Expired — clear in-memory so next call is the half-open probe
+    with _breaker_lock:
+        if backend_name in _provider_limits:
+            _provider_limits[backend_name]['cooldown_until_ts'] = 0
+            _provider_limits[backend_name]['consecutive_failures'] = 0
+    # Best-effort persist to DB
+    if _db_cursor_fn:
+        try:
+            with _db_cursor_fn(dict_cursor=False, commit=True) as cur:
+                cur.execute("""
+                    UPDATE kumori_llm_provider_limits
+                    SET cooldown_until = NULL, consecutive_failures = 0
+                    WHERE backend = %s
+                """, (backend_name,))
+        except Exception:
+            pass
+    return False
+
+
+def _record_breaker_success(backend_name):
+    """Reset failure counter on a successful call (closed state)."""
+    with _breaker_lock:
+        s = _provider_limits.get(backend_name)
+        if s and (s.get('consecutive_failures') or s.get('cooldown_until_ts')):
+            s['consecutive_failures'] = 0
+            s['cooldown_until_ts'] = 0
+            if _db_cursor_fn:
+                try:
+                    with _db_cursor_fn(dict_cursor=False, commit=True) as cur:
+                        cur.execute("""
+                            UPDATE kumori_llm_provider_limits
+                            SET consecutive_failures = 0, cooldown_until = NULL
+                            WHERE backend = %s
+                        """, (backend_name,))
+                except Exception:
+                    pass
+
+
+def _record_breaker_failure(backend_name):
+    """Increment failure counter; trip breaker if threshold hit."""
+    with _breaker_lock:
+        s = _provider_limits.setdefault(backend_name, {
+            'consecutive_failures': 0, 'cooldown_until_ts': 0,
+            'failure_threshold': 3, 'cooldown_seconds': 60,
+        })
+        s['consecutive_failures'] = (s.get('consecutive_failures') or 0) + 1
+        threshold = s.get('failure_threshold') or 3
+        cooldown_secs = s.get('cooldown_seconds') or 60
+        if s['consecutive_failures'] >= threshold:
+            s['cooldown_until_ts'] = time.time() + cooldown_secs
+            logger.info(
+                f"circuit breaker → OPEN: {backend_name} after "
+                f"{s['consecutive_failures']} fails, cooldown {cooldown_secs}s"
+            )
+            if _db_cursor_fn:
+                try:
+                    with _db_cursor_fn(dict_cursor=False, commit=True) as cur:
+                        cur.execute("""
+                            UPDATE kumori_llm_provider_limits
+                            SET cooldown_until = NOW() + (%s || ' seconds')::interval,
+                                consecutive_failures = %s
+                            WHERE backend = %s
+                        """, (cooldown_secs, s['consecutive_failures'], backend_name))
+                except Exception:
+                    pass
 
 
 def _check_daily_cap(backend_name):
@@ -402,6 +518,8 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
 
     if not _is_enabled(name):
         return None
+    if _is_in_cooldown(name):
+        return None  # circuit breaker is open — fall through to next backend
     if _is_backed_off(name):
         return None
     if not _rpm_ok(name):
@@ -433,6 +551,7 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
 
         if text:
             _record_call(name)
+            _record_breaker_success(name)
             logger.info(f"{'🌐' if btype == 'litellm' else '🆓'} {name} responded ({len(text)} chars, {ms}ms) caller={caller}")
             return text
         direct_failed = True
@@ -473,6 +592,7 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
             gw_ms = int((time.time() - gw_start) * 1000)
             if text:
                 _record_call(name)
+                _record_breaker_success(name)
                 logger.info(f"🌐 {name} responded VIA GATEWAY ({len(text)} chars, {gw_ms}ms) caller={caller}")
                 return text
         except urllib.error.HTTPError as e:
@@ -485,6 +605,11 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
             gw_ms = int((time.time() - gw_start) * 1000)
             logger.warning(f"LLM {name} gateway fallback failed ({gw_ms}ms): {e}")
 
+    # If we got here, the call failed (and gateway fallback also failed if attempted).
+    # Note: 429s already returned None above without recording breaker failure —
+    # rate-limits are handled by the daily cap / RPM systems, not the breaker.
+    if direct_failed:
+        _record_breaker_failure(name)
     return None
 
 
@@ -551,6 +676,19 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
         _caps_db_read_fn = _db_read
         _sync_from_db()
         logger.info(f"kumori_free_llms: caps DB sync enabled for {app_name}")
+
+        # Register this app as a consumer of the gateway. Lets the kumori
+        # admin/llm-health page show "groq-kimi failing → blast radius:
+        # inroads, scatterbrain, dandy" before pruning.
+        try:
+            with db_cursor_fn(dict_cursor=False, commit=True) as cur:
+                cur.execute("""
+                    INSERT INTO kumori_llm_consumer_apps (app_name, last_seen)
+                    VALUES (%s, NOW())
+                    ON CONFLICT (app_name) DO UPDATE SET last_seen = NOW()
+                """, (app_name,))
+        except Exception as e:
+            logger.info(f"kumori_free_llms: consumer-app register failed (non-fatal): {e}")
 
     # Resolve LiteLLM gateway URL + key
     _litellm_url = litellm_url
