@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-04-28 04:38*
+*Last refreshed: 2026-05-03 04:55*
 
 ## 🎯 Pending
 
@@ -85,27 +85,27 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `f4942cd` · 2026-05-01 13:50 — sync kumori_free_llms.py from canonical infra — picks up circuit breaker (cooldown_until / consec...
+- `e5c5c88` · 2026-04-28 21:13 — timeshare: enable II keep-alive cron (every 18 min, jittered 18-29) + cookie refresh API
+- `446c247` · 2026-04-28 13:53 — timeshare: unified nav — 5 decision tabs primary + 'More ▾' dropdown for the other 9
+- `4e144ac` · 2026-04-28 13:27 — timeshare: mobile polish — readonly nav trim + Ask copy rewrite + Finances/Trips card layout unde...
+- `7379e6c` · 2026-04-28 13:14 — timeshare: shorten share URL via /s/<code> + add 'Text it' SMS launcher on Members panel
+- `c9a8b2d` · 2026-04-28 13:00 — timeshare: 7-day expiry on share links + expired-link page + soft sign-in hint
+- `8226c87` · 2026-04-28 12:48 — timeshare: public read-only share link (Google-Docs style) — generate/rotate/disable from Members...
+- `f263ae9` · 2026-04-28 12:20 — timeshare: add /test/seed-readonly endpoint for Playwright readonly walkthrough (apikey-gated)
+- `01c4470` · 2026-04-28 12:10 — timeshare: readonly role works + Considering rebrand + welcome banner + HTML invite email
+- `bf798fc` · 2026-04-28 11:07 — fix: dedup before_request hooks + cache CRAB_TEST_APIKEY + 500 handler + view_plan logging
 - `602403d` · 2026-04-27 10:06 — rip dead Amadeus self-service API + ScrapingBee/Xotelo/git_push.sh/_antiquated cleanup
-- `d26ceed` · 2026-04-26 01:52 — pick up canonical anthropic_logger killswitch + kumori_free_llms haiku rip
-- `13ceaac` · 2026-04-26 01:02 — spam_guard: block excessive-dot gmail addresses + log gibberish submissions
-- `8b26889` · 2026-04-25 19:00 — wire Anthropic killswitch (timeshare) + Twilio plumbing + free-LLM rip
-- `ef49784` · 2026-04-23 19:03 — crab_travel: migrate to canonical anthropic_logger via shared_files
-- `bbf23e9` · 2026-04-21 22:53 — spam_guard: hardened with StopForumSpam + Origin check + UA filter (crab.travel expected_hosts)
-- `98df510` · 2026-04-21 22:16 — crab.travel: use shared spam_guard from _infrastructure/spam_control/ (replaces inline honeypot-o...
-- `97abcc3` · 2026-04-21 17:44 — timeline modal: reparent to <body> so fixed positioning escapes glass-nav backdrop-filter ancestor
-- `022dc45` · 2026-04-21 16:44 — timeline: click event → modal with linked trip (cost/dates/participants), person, property, contact
-- `0db0c0d` · 2026-04-21 16:31 — fact-view delete hardening: ✕ buttons now only render for owner/admin roles; each delete form get...
-- `1834dd9` · 2026-04-21 15:56 — search UX: typing 'hawaii' (or any country name) now auto-promotes to the country filter — 89 res...
-- `e531bd4` · 2026-04-21 15:46 — dashboard map: auto-fit bounds to visible pins whenever search/filter active — typing 'hawaii' no...
-- `a0ab843` · 2026-04-21 13:31 — phase 8b destination-first UX: /g/<uuid>/destinations/<country> page. Claude-generated 'why this ...
-- `5c56788` · 2026-04-21 13:13 — phase 8b polish: /google/batch-enrich Cloud Run endpoint (pre-fills Google cache in batches of ≤5...
-- `66a0c20` · 2026-04-21 12:56 — phase 8b Google Places enrichment. utilities/timeshare_google.py — lazy-fetch on resort-open, 30-...
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**1 file(s) with uncommitted changes:**
-- ` M utilities/backend_registry.py`
+**5 file(s) with uncommitted changes:**
+- ` M docs/2026apr28_855pm.md`
+- ` M next_steps.md`
+- `?? docs/20260502_redweek_next_steps.md`
+- `?? docs/har/`
+- `?? redweek_photos/`
 
 <!-- wip:end -->
