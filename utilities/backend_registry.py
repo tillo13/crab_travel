@@ -41,7 +41,19 @@ PROVIDERS = {
     'openrouter': {
         'url': 'https://openrouter.ai/api/v1/chat/completions',
         'secret': 'KINDNESS_OPENROUTER_API_KEY',
-        'limits': {'daily_limit': 50, 'rpm_spacing_sec': 10.0, 'backoff_sec': 120},
+        # Free-tier-only. Per openrouter.ai/docs/api/reference/limits:
+        #   :free models = 20 req/min and 50/day TOTAL across the account
+        #   (1000/day if you've ever bought ≥$10 lifetime — we have not).
+        # rpm_spacing_sec=3.0 → 60s/20req exact spacing per model. The
+        # account-wide 50/day is APPROXIMATED here as 50/model — the
+        # router doesn't yet enforce shared_pool for LLMs (it does for
+        # imggen). With ~30 :free models in rotation, even uneven
+        # distribution stays well under the per-model cap; agent_inviter
+        # already favours least-recently-used so spread is reasonable.
+        # If we ever need exact pool enforcement, add shared_pool support
+        # to kumori_free_llms._check_daily_cap (mirror imggen's pattern).
+        'limits': {'daily_limit': 50, 'rpm_spacing_sec': 3.0, 'backoff_sec': 120,
+                   'shared_pool': 'openrouter'},
         'display': 'OpenRouter',
     },
     'cloudflare': {
@@ -54,7 +66,19 @@ PROVIDERS = {
     'cohere': {
         'url': 'https://api.cohere.com/v2/chat',
         'secret': 'KINDNESS_COHERE_API_KEY',
-        'limits': {'daily_limit': 30, 'rpm_spacing_sec': 3.0, 'backoff_sec': 120},
+        # Cohere trial keys = 1,000 API calls / MONTH total (account-wide,
+        # all chat models combined), per docs.cohere.com/docs/rate-limits.
+        # Resets monthly. Free perpetually, no card required.
+        # rpm_spacing_sec=3.0 matches the 20 req/min trial rate limit
+        # (60s ÷ 20 = 3s).
+        # daily_limit=15 per backend × 2 cohere backends × 30 days = 900
+        # calls/month — 100-call safety margin under the 1,000 cap.
+        # If you ADD a 3rd cohere backend, drop daily_limit to 10.
+        # (kumori_free_llms doesn't yet support shared_pool monthly enforcement
+        # for LLMs, so the math is per-backend × backend-count × 30. Re-do it
+        # whenever the cohere backend count changes.)
+        'limits': {'daily_limit': 15, 'rpm_spacing_sec': 3.0, 'backoff_sec': 120,
+                   'shared_pool': 'cohere'},
         'display': 'Cohere',
         'type': 'cohere',
     },
@@ -73,7 +97,17 @@ PROVIDERS = {
     'mistral': {
         'url': 'https://api.mistral.ai/v1/chat/completions',
         'secret': 'KINDNESS_MISTRAL_API_KEY',
-        'limits': {'daily_limit': 100, 'rpm_spacing_sec': 60.0, 'backoff_sec': 120},
+        # Mistral free "Experiment" plan = 1B tokens/month + 500K tokens/min
+        # + 2 req/min ALL ORG-WIDE, perpetually free, phone verify only.
+        # docs.mistral.ai/deployment/ai-studio/tier
+        # Binding constraint: 2 req/min sustained = 86,400 calls/month max.
+        # daily_limit=30/backend × 59 backends × 30 days = 53,100/month
+        # (~61% of the sustained ceiling). 30s spacing per backend matches
+        # the 2 req/min cap when only one model is being called.
+        # ⚠️ PRIVACY: free-tier requests may be used to train Mistral models.
+        # See docs/20260504_mistral_throttle.md for full math + sources.
+        'limits': {'daily_limit': 30, 'rpm_spacing_sec': 30.0, 'backoff_sec': 120,
+                   'shared_pool': 'mistral'},
         'display': 'Mistral',
     },
     'llm7': {
