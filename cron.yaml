@@ -17,7 +17,6 @@ cron:
   url: /cron/daily-heartbeat
   schedule: every day 08:00
   timezone: America/Los_Angeles
-  timezone: America/Los_Angeles
 
 # II keep-alive removed 2026-05-03 — II membership lapsed 2019, RedWeek is
 # the rental path now (see docs/20260502_redweek_next_steps.md). Handler code
