@@ -72,7 +72,23 @@ _caps_db_read_fn = None
 _last_call_time = {}    # backend_name -> timestamp
 _call_counter = 0       # round-robin rotation
 _backoff_until = {}     # backend_name -> timestamp when it becomes available again
-DB_SYNC_INTERVAL = 300
+# Cluster-wide cap accounting requires fresh DB reads. 30s = at most 30s of
+# cap slop across the cluster. Pre-2026-05-04 this was 300s, which let
+# multi-worker / multi-instance traffic exceed configured caps by 4-6x
+# (proven: mistral daily_limit=30 backends running 78-85 calls/day cluster-wide).
+DB_SYNC_INTERVAL = 30
+
+# Shared-pool caps: org-wide / account-wide caps that apply across all
+# backends sharing the same `shared_pool` value. Keys are pool names from
+# kumori_llm_provider_limits.shared_pool. Caps are calls/day. None = no enforcement.
+# IMPORTANT: this complements per-backend daily_limit. _check_daily_cap rejects
+# a call if EITHER its own daily_limit is exhausted OR its shared_pool is exhausted.
+_SHARED_POOL_DAILY_CAPS = {
+    'openrouter': 50,     # 50/day account-wide :free pool ($0 lifetime credits)
+    'cloudflare': 10000,  # 10K Neurons/day account-wide Workers AI Free
+    # 'cohere':   33,     # 1000/month / 30d ≈ 33/day pacing — cap exhausted, route paused
+    # 'mistral': 2880,    # 86,400/month / 30d ≈ 2880/day pacing
+}
 
 
 def _get_limit(backend_name, field, default=None):
@@ -94,7 +110,8 @@ def _load_provider_limits():
                 cur.execute("""
                     SELECT backend, daily_limit, rpm_spacing_sec, lifetime_limit, lifetime_used,
                            backoff_sec, enabled, conservation,
-                           cooldown_until, consecutive_failures, failure_threshold, cooldown_seconds
+                           cooldown_until, consecutive_failures, failure_threshold, cooldown_seconds,
+                           shared_pool, provider
                     FROM kumori_llm_provider_limits
                 """)
                 rows = cur.fetchall()
@@ -111,6 +128,8 @@ def _load_provider_limits():
                         'consecutive_failures': row[9] or 0,
                         'failure_threshold': row[10] or 3,
                         'cooldown_seconds': row[11] or 60,
+                        'shared_pool': row[12],
+                        'provider': row[13],
                     }
             except Exception:
                 # Fallback for pre-migration schema — circuit breaker degrades to no-op
@@ -295,14 +314,70 @@ def _record_breaker_failure(backend_name):
                     pass
 
 
-def _check_daily_cap(backend_name):
-    _reset_if_new_day()
-    _maybe_sync()
-    cap = _get_limit(backend_name, 'daily_limit', 50)
+def _check_shared_pool(backend_name):
+    """If this backend has a shared_pool with a configured cap, return False
+    when the pool's total cluster-wide usage today is already at/over the cap.
+
+    Pool totals are read from kumori_llm_daily_caps (cluster-wide source of
+    truth). Uses the same _maybe_sync cache window as _check_daily_cap so we
+    don't hit the DB twice per call.
+
+    Returns True (allow) when no pool is configured or the DB read fails —
+    fail-open is correct here because the per-backend daily_limit + breaker
+    are independent safety nets.
+    """
+    pool = _get_limit(backend_name, 'shared_pool')
+    if not pool:
+        return True
+    cap = _SHARED_POOL_DAILY_CAPS.get(pool)
     if cap is None:
-        return True  # No daily limit
-    used = _daily_counts.get(backend_name, 0)
-    return used < cap
+        return True
+    if not _db_cursor_fn:
+        return True
+    try:
+        with _db_cursor_fn(dict_cursor=False, commit=False) as cur:
+            cur.execute("""
+                SELECT COALESCE(SUM(d.call_count), 0)
+                FROM kumori_llm_daily_caps d
+                JOIN kumori_llm_provider_limits pl ON pl.backend = d.backend
+                WHERE pl.shared_pool = %s AND d.usage_date = CURRENT_DATE
+            """, (pool,))
+            pool_used = cur.fetchone()[0] or 0
+        if pool_used >= cap:
+            logger.debug(f"shared_pool '{pool}' EXHAUSTED: {pool_used}/{cap} — blocking {backend_name}")
+            return False
+        return True
+    except Exception:
+        return True  # Fail-open on DB hiccup; per-backend cap + breaker still apply
+
+
+def _check_daily_cap(backend_name):
+    """Cluster-wide daily cap check. Reads from kumori_llm_daily_caps (the
+    single source of truth across all consumer apps + workers + instances)
+    via the _sync_from_db cache (DB_SYNC_INTERVAL = 30s).
+
+    Pre-2026-05-04 this read from in-memory _daily_counts which was per-worker
+    per-instance, so the per-cluster effective cap was N_workers × N_instances ×
+    daily_limit (proven: mistral daily_limit=30 backends running 78-85/day).
+
+    Now also enforces shared_pool caps (openrouter 50/day account-wide, etc.)
+    so org-wide caps actually hold.
+    """
+    _reset_if_new_day()
+    _maybe_sync()  # refreshes _daily_counts from DB if stale (>30s old)
+
+    # Per-backend daily limit
+    cap = _get_limit(backend_name, 'daily_limit', 50)
+    if cap is not None:
+        used = _daily_counts.get(backend_name, 0)
+        if used >= cap:
+            return False
+
+    # Shared-pool cap (org-wide, e.g., openrouter 50/day across all :free)
+    if not _check_shared_pool(backend_name):
+        return False
+
+    return True
 
 
 def _check_lifetime(backend_name):
@@ -709,6 +784,10 @@ def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
         else:
             text = _try_openai_compatible(backend, prompt, max_tokens, temperature)
         _rpm_record(name)
+        # Probes consume upstream provider quota whether or not we got bytes
+        # back, so they MUST count toward cluster-wide accounting (else we
+        # silently burn caps — Cohere 1000/month was exhausted this way 2026-05-04).
+        _record_call(name)
         if text and text.strip():
             _record_breaker_success(name)
             return _result(True, 'ok', response=text.strip()[:120])
@@ -719,6 +798,8 @@ def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
                        error='adapter returned None (missing API key or safety filter)')
     except urllib.error.HTTPError as e:
         _rpm_record(name)
+        # The HTTP request reached upstream; quota was consumed even on 4xx.
+        _record_call(name)
         body = ''
         try:
             body = e.read().decode('utf-8', 'replace')[:200]
@@ -729,6 +810,10 @@ def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
                        error=f'HTTP {e.code} {e.reason}: {body}'[:200])
     except Exception as e:
         _rpm_record(name)
+        # Conservative: if the call attempted (we made it past skip-conditions),
+        # count it. Network errors might NOT have consumed upstream quota but
+        # over-counting is safer than under-counting.
+        _record_call(name)
         _record_breaker_failure(name)
         msg = str(e)[:200]
         # Try to pull HTTP status out of the exception text (Gemini SDK etc.)
