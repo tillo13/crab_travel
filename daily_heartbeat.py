@@ -89,7 +89,7 @@ def _check_crons(cur):
     # /tasks/check-watches every 8h → use member_watches.last_checked_at
     cur.execute("""
         SELECT MAX(last_checked_at) AS last_check, COUNT(*) AS active
-        FROM crab.member_watches WHERE active = TRUE
+        FROM crab.member_watches WHERE status = 'active'
     """)
     r = cur.fetchone()
     last = r['last_check']
@@ -155,20 +155,22 @@ def _check_llm_routing(cur):
 def _waiting_watches(cur):
     cur.execute("""
         SELECT COUNT(*) AS active,
-               MIN(created_at) AS oldest_created,
-               COUNT(*) FILTER (WHERE last_match_at IS NULL) AS never_matched
+               COUNT(*) FILTER (WHERE last_checked_at IS NULL) AS never_checked,
+               COUNT(*) FILTER (WHERE best_price_usd IS NULL) AS never_priced,
+               MIN(last_checked_at) AS oldest_check
         FROM crab.member_watches
-        WHERE active = TRUE
+        WHERE status = 'active'
     """)
     r = cur.fetchone()
     active = int(r['active'] or 0)
     if active == 0:
         return None
-    oldest = r['oldest_created']
+    oldest = r['oldest_check']
     days = int((datetime.now(timezone.utc) - oldest).total_seconds() / 86400) if oldest else 0
+    age_str = f"oldest checked {days}d ago" if oldest else "never checked yet"
     return (f"<b>{active}</b> active price watches · "
-            f"<b>{r['never_matched']}</b> have never matched · "
-            f"oldest is {days}d old")
+            f"<b>{r['never_priced']}</b> have never matched a price · "
+            f"{age_str}")
 
 
 def _waiting_ii_scrape(cur):
