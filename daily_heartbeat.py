@@ -29,13 +29,22 @@ ADMIN = 'andy.tillo@gmail.com'
 PT = timezone(timedelta(hours=-7))
 
 
-def _safe(label, fn):
+def _safe(label, fn, conn=None):
     """Run a query callable; return its result or an error sentinel for the
-    digest to render as ⚠️  rather than crashing the whole report."""
+    digest to render as ⚠️  rather than crashing the whole report.
+
+    On failure, rolls back the connection so a subsequent query doesn't
+    inherit "current transaction is aborted" state from the abort cascade.
+    """
     try:
         return fn()
     except Exception as e:
         logger.warning(f"heartbeat[{label}]: {e}")
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return {'_error': str(e)[:200]}
 
 
@@ -217,12 +226,14 @@ def cron_daily_heartbeat():
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     health = []
-    health.extend(_safe('crons', lambda: _check_crons(cur)) or [])
-    opencrab = _safe('opencrab', lambda: _check_opencrab(cur))
+    crons = _safe('crons', lambda: _check_crons(cur), conn=conn)
+    if isinstance(crons, list):
+        health.extend(crons)
+    opencrab = _safe('opencrab', lambda: _check_opencrab(cur), conn=conn)
     if isinstance(opencrab, tuple):
         health.append(opencrab)
-    health.append(_safe('db_pool', lambda: _check_db_pool(cur)))
-    health.append(_safe('llm', lambda: _check_llm_routing(cur)))
+    health.append(_safe('db_pool', lambda: _check_db_pool(cur), conn=conn))
+    health.append(_safe('llm', lambda: _check_llm_routing(cur), conn=conn))
 
     waiting = []
     for label, fn in [
@@ -231,7 +242,7 @@ def cron_daily_heartbeat():
         ('plans', _waiting_plans),
         ('leg_hunts', _waiting_leg_hunts),
     ]:
-        v = _safe(label, lambda f=fn: f(cur))
+        v = _safe(label, lambda f=fn: f(cur), conn=conn)
         if isinstance(v, str):
             waiting.append(v)
         elif isinstance(v, dict) and '_error' in v:
