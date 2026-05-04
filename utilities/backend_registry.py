@@ -341,16 +341,18 @@ FREE_MODEL_COUNT = len(MODELS)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# LiteLLM gateway + paid backends (not in MODELS — separate tier)
+# LiteLLM gateway only. NO PAID BACKENDS. The gateway itself is configured
+# to only route to free providers — see config.yaml. Anthropic/OpenAI paid
+# surface is intentionally and aggressively absent from this entire module.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 LITELLM_BACKENDS = [
     {'name': 'litellm-gateway', 'type': 'litellm', 'litellm_model': 'groq-llama-70b'},
 ]
 
-# Non-router entries (local-only). Paid backends (Anthropic / OpenAI) intentionally
-# absent from the canonical — paid Anthropic surface is wrapped at the call site
-# via utilities/killswitch.py + check_killswitch('anthropic') in each project.
+# Non-router entries (local-only). Paid backends are NOT in this module at all
+# (canonical or otherwise). If you ever find yourself adding one here, stop —
+# kumori_free_llms is free-only by hard rule.
 KINDNESS_ONLY_MODELS = {
     'local':  {'model_id': 'lmstudio/auto',              'provider': 'LM Studio (local)', 'display': 'Local LLM (LM Studio)'},
 }

@@ -707,6 +707,7 @@ from tasks_routes import bp as tasks_bp
 from opencrab_routes import bp as opencrab_bp
 from shorturl_routes import bp as shorturl_bp
 from timeshare_routes import bp as timeshare_bp
+from daily_heartbeat import bp as heartbeat_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
@@ -717,6 +718,7 @@ app.register_blueprint(tasks_bp)
 app.register_blueprint(opencrab_bp)
 app.register_blueprint(shorturl_bp)
 app.register_blueprint(timeshare_bp)
+app.register_blueprint(heartbeat_bp)
 
 
 @app.context_processor

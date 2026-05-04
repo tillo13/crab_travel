@@ -32,7 +32,7 @@ import psycopg2.extras
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from utilities.postgres_utils import get_db_connection
-from utilities.claude_utils import _get_api_key
+from utilities.claude_utils import _get_api_key, log_api_usage
 
 
 MODEL = "claude-sonnet-4-6"
@@ -130,6 +130,12 @@ def call_claude_cluster(rows, entity_kind):
         json=body, timeout=120)
     r.raise_for_status()
     data = r.json()
+    # Land usage in kumori_api_usage so admin reconciliation matches.
+    try:
+        log_api_usage(model=MODEL, usage=data.get('usage', {}),
+                      feature='dedup_fuzzy_cluster', streaming=False)
+    except Exception:
+        pass
     text = ''
     for b in data.get('content', []):
         if b.get('type') == 'text':

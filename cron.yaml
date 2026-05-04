@@ -12,6 +12,11 @@ cron:
 - description: "Check member price watches — prioritized by departure date"
   url: /tasks/check-watches
   schedule: every 8 hours
+
+- description: "Daily crab heartbeat — health check + waiting queue (one email/day to admin)"
+  url: /cron/daily-heartbeat
+  schedule: every day 08:00
+  timezone: America/Los_Angeles
   timezone: America/Los_Angeles
 
 # II keep-alive removed 2026-05-03 — II membership lapsed 2019, RedWeek is

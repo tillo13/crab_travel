@@ -172,6 +172,13 @@ The current posting is "full-service managed" — RedWeek wrote/structured the l
 1. ⏳ **RedWeek verification team review** of the dossier email sent to `R1468084@verify.redweek.com`. Expected: 1–10 business days. Outcome: status flips to Active OR they reply with what's missing.
 2. ⏳ **Jorge Aguayo reply** to the `Re: Finally time to use this!` thread. Expected: 1–3 business days. Becomes relevant only if RedWeek wants more after the dossier.
 
+### Status check — 2026-05-03 (Sunday, +1 day)
+
+- Posting page (`/account/postings/R1468084`) still shows **"Status: Awaiting your documents"** with empty upload box. This is expected — verification team hasn't reviewed yet (sent Sat May 2; first business day is Mon May 4).
+- Confirmed the dossier email was sent: Gmail shows `Sat, 2 May 2026 09:04:01 -0700` from `andy.tillo@gmail.com` → `R1468084@verify.redweek.com`, subject *"Verification documents — Posting R1468084 (The Royal Sands, K5133, Sep 19-26 2026)"*. Forwarded copy to Celeste at 9:20 AM same day.
+- **Expected status flip window:** May 13 – May 18, 2026 (7–10 business days from Mon May 4). If still "Awaiting your documents" past May 18, follow up with RedWeek support via Contact Us link on posting page.
+- No Jorge reply yet (expected — sent Sat morning, his typical 1–3 business day turnaround starts Mon May 4).
+
 ### Small administrivia (whenever Andy gets to it)
 
 3. ⏸ **Save RedWeek credentials** (`andyt122` / `14iattsvi`) to Drive `Portal Logins` doc

@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-05-03 04:55*
+*Last refreshed: 2026-05-04 04:07*
 
 ## 🎯 Pending
 
@@ -85,6 +85,7 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `267c546` · 2026-05-03 10:16 — kill all II infra — RedWeek is the rental path now (removed keep-alive cron, Cloud Run scraper, s...
 - `f4942cd` · 2026-05-01 13:50 — sync kumori_free_llms.py from canonical infra — picks up circuit breaker (cooldown_until / consec...
 - `e5c5c88` · 2026-04-28 21:13 — timeshare: enable II keep-alive cron (every 18 min, jittered 18-29) + cookie refresh API
 - `446c247` · 2026-04-28 13:53 — timeshare: unified nav — 5 decision tabs primary + 'More ▾' dropdown for the other 9
@@ -101,11 +102,10 @@
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**5 file(s) with uncommitted changes:**
-- ` M docs/2026apr28_855pm.md`
-- ` M next_steps.md`
-- `?? docs/20260502_redweek_next_steps.md`
-- `?? docs/har/`
-- `?? redweek_photos/`
+**4 file(s) with uncommitted changes:**
+- ` M dev/dedup_fuzzy.py`
+- ` M docs/20260502_redweek_next_steps.md`
+- ` M utilities/backend_registry.py`
+- ` M utilities/kumori_free_llms.py`
 
 <!-- wip:end -->

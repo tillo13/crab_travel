@@ -54,17 +54,29 @@ def _get_gmail_service():
     return _cached_service
 
 
-def send_simple_email(subject, body, to_email, from_name="crab.travel"):
-    """Send a simple email via Gmail API as kumoridotai."""
+def send_simple_email(subject, body, to_email, from_name="crab.travel", html=None):
+    """Send a simple email via Gmail API as kumoridotai.
+
+    body — plain-text fallback (or the only body if html is None)
+    html — optional HTML body. When provided, sends a multipart/alternative
+           with both parts so HTML-aware clients render the rich version
+           and plain-text-only clients still get readable content.
+
+    HTML is preferred for cleaner Gmail deliverability (see global CLAUDE.md
+    'Email sending — Gmail API pattern'): plain-text-only to corporate domains
+    can trigger 'sender can't be verified' warnings.
+    """
     if to_email and to_email.startswith('bot.'):
         logger.info(f"Email skipped for bot address: {to_email}")
         return False
     try:
-        message = MIMEMultipart()
+        message = MIMEMultipart('alternative' if html else 'mixed')
         message['From'] = f'{from_name} <kumoridotai@gmail.com>'
         message['To'] = to_email
         message['Subject'] = subject
-        message.attach(MIMEText(body, 'plain'))
+        message.attach(MIMEText(body, 'plain', 'utf-8'))
+        if html:
+            message.attach(MIMEText(html, 'html', 'utf-8'))
 
         svc = _get_gmail_service()
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()

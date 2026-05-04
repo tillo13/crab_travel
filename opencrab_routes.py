@@ -190,13 +190,28 @@ def _get_admin_recipient():
 
 
 def _test_mode_enabled():
-    """Default ON until an explicit override secret is set to 'off'."""
+    """Default ON until an explicit override secret is set to 'off'.
+    Values: 'on' (default — reroute member emails to admin),
+            'off' (real members get real emails),
+            'digest_only' (record to notifications_sent for the daily
+             heartbeat to roll up, but skip the actual email send).
+    """
     try:
         from utilities.google_auth_utils import get_secret
         v = (get_secret('CRAB_OPENCRAB_TEST_MODE') or 'on').strip().lower()
         return v != 'off'
     except Exception:
         return True
+
+
+def _digest_only_mode():
+    """True when CRAB_OPENCRAB_TEST_MODE='digest_only' — record the
+    notification but suppress the email. Daily heartbeat picks it up."""
+    try:
+        from utilities.google_auth_utils import get_secret
+        return (get_secret('CRAB_OPENCRAB_TEST_MODE') or '').strip().lower() == 'digest_only'
+    except Exception:
+        return False
 
 
 def _resolve_member(plan_id, member_id):
@@ -336,6 +351,22 @@ def opencrab_notify():
         return jsonify({'error': f'template render missing field: {e}'}), 400
 
     ok = False
+    digest_only = _digest_only_mode()
+    if digest_only:
+        # Suppress email but record the notification so the daily heartbeat
+        # can roll it up as one line ("OpenCrab: N notifications recorded
+        # across M plans"). Replaces the old per-plan test-email noise.
+        logger.info(f"opencrab/notify[digest_only]: would have emailed {delivered_to} "
+                    f"with subject {subject!r}")
+        _record_sent(plan_id, real_user_id, 'email_suppressed')
+        return jsonify({
+            'ok': True,
+            'mode': 'digest_only',
+            'would_have_delivered_to': delivered_to,
+            'intended_recipient': real_email if r_type == 'member' else 'admin',
+            'template': template,
+        }), 200
+
     try:
         ok = bool(send_simple_email(subject, mail_body, delivered_to))
     except Exception as e:

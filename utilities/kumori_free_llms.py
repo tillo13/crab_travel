@@ -1,9 +1,13 @@
 """
 kumori_free_llms.py — Combined super router for all kumori apps.
 
-Round-robin free backends, RPM throttle, cross-app daily caps,
-grok/deepseek via kindness-worker, LiteLLM gateway fallback,
-paid fallbacks, and haiku last resort.
+Round-robin FREE backends only. RPM throttle, cross-app daily caps,
+grok/deepseek via kindness-worker, LiteLLM gateway fallback for free models.
+
+HARD RULE: NO PAID ANTHROPIC FALLBACK. Ever. The LiteLLM gateway response is
+guarded — any reply resolved to claude/haiku/sonnet/opus is rejected and the
+backend is treated as failed. Drift incident 2026-05-03: gateway was silently
+routing ~1.5M input tokens/day to Haiku. Never again.
 
 Lives in _infrastructure/kumori_free_llm/. Any kumori app can import and use it.
 Self-contained — NO imports from utilities.* — all deps injected via init().
@@ -13,10 +17,9 @@ Usage:
 
     init(
         app_name='scatterbrain',
-        get_secret_fn=get_secret,           # (secret_name) -> str
-        db_cursor_fn=db_cursor,             # context manager yielding cursor (optional)
-        anthropic_key_fn=get_anthropic_key,  # () -> str (optional, for haiku)
-        log_api_usage_fn=log_api_usage,     # (model, usage, feature) (optional)
+        get_secret_fn=get_secret,        # (secret_name) -> str
+        db_cursor_fn=db_cursor,          # context manager yielding cursor (optional)
+        log_api_usage_fn=log_api_usage,  # (model, usage, feature=) (optional, free-tier only)
     )
 
     text, backend = generate("hello world")
@@ -494,6 +497,18 @@ def _try_litellm_gateway(backend, prompt, max_tokens, temperature):
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = json.loads(resp.read())
+        # HARD GUARD: kumori_free_llms is for FREE backends only. If the LiteLLM
+        # gateway resolved to a paid Anthropic model (gateway-side fallback chain
+        # misconfig), refuse to use the result so we never silently incur cost.
+        # See: 2026-05-03 reconciliation drift incident — gateway was falling
+        # through to claude-haiku for ~1.5M input tokens/day unlogged.
+        actual_model = (data.get('model') or '').lower()
+        if any(p in actual_model for p in ('claude', 'haiku', 'sonnet', 'opus', 'anthropic')):
+            logger.error(
+                f"BLOCKED paid Anthropic response from LiteLLM gateway: model={actual_model!r}. "
+                f"Fix the gateway router to remove Anthropic fallback. Returning None."
+            )
+            return None
         msg = data['choices'][0]['message']
         # Some reasoning models (gptoss, qwen3) put output in 'reasoning' not 'content'
         content = msg.get('content') or msg.get('reasoning') or ''
@@ -632,10 +647,12 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
         log_api_usage_fn: Optional (model, usage_dict, feature=) -> None.
         litellm_url: LiteLLM gateway URL. Auto-fetched from LITELLM_GATEWAY_URL secret if omitted.
         litellm_key: LiteLLM virtual key. Auto-fetched from SCATTERBRAIN_LITELLM_KEY secret if omitted.
-        policy: only 'silent' is honored — paid fallbacks (haiku, gpt4o*) have
-                been ripped from this build. Argument retained for caller compat.
+        policy: only 'silent' is honored — there are no paid fallbacks in this
+                build. If every free backend fails, generate() returns (None, None).
+                Argument retained for caller compat.
 
-    Legacy kwargs (anthropic_key_fn) are accepted and ignored for back-compat.
+    Legacy kwargs (anthropic_key_fn, etc.) are accepted and ignored for
+    back-compat — paid Anthropic surface has been completely removed.
     """
     global _app_name, _get_secret_fn, _db_cursor_fn
     global _log_api_usage_fn, _litellm_url, _litellm_key
@@ -797,7 +814,7 @@ def chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None, c
     This is the interface kindness_social agents use — each agent is assigned one backend.
 
     Args:
-        backend_name: e.g. 'groq', 'grok_fast', 'gemini', 'haiku'
+        backend_name: e.g. 'groq', 'grok_fast', 'gemini' (free backends only)
         messages: list of {'role': ..., 'content': ...} dicts
         max_tokens: max output tokens
         temperature: sampling temperature
