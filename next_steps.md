@@ -5,7 +5,7 @@
      • Standalone queue (no commit):  `deploy --next "thing to do later"`
      • The nightly cron rewrites the Shipped and Unfinished sections. -->
 
-*Last refreshed: 2026-05-04 04:07*
+*Last refreshed: 2026-05-05 04:10*
 
 ## 🎯 Pending
 
@@ -85,6 +85,13 @@
 ## ✅ Recently shipped
 
 <!-- shipped:start -->
+- `9329bfd` · 2026-05-04 18:05 — sync runtime: bulletproof canary + DB-driven shared_pool caps + probe accounting from kumori today
+- `f28f890` · 2026-05-04 15:58 — sync kumori_free_llms: cluster-wide cap enforcement (DB-backed counter, shared_pool checks, probe...
+- `007f045` · 2026-05-04 14:20 — sync kumori_free_llms + endpoint_parser: dual-write breaker/cooldown state to kumori_llm_endpoint...
+- `eddf5b1` · 2026-05-04 10:41 — heartbeat: fix watches query to match actual member_watches schema (uses status='active' + last_c...
+- `38f2ae6` · 2026-05-04 10:27 — fix daily heartbeat: rollback connection on _safe failure so first bad query doesn't poison rest ...
+- `ea20160` · 2026-05-04 09:46 — fix cron.yaml: drop duplicate timezone key on daily-heartbeat entry
+- `d84a41f` · 2026-05-04 09:44 — daily heartbeat for crab.travel: new /cron/daily-heartbeat (8am PT) emails admin one exception-re...
 - `267c546` · 2026-05-03 10:16 — kill all II infra — RedWeek is the rental path now (removed keep-alive cron, Cloud Run scraper, s...
 - `f4942cd` · 2026-05-01 13:50 — sync kumori_free_llms.py from canonical infra — picks up circuit breaker (cooldown_until / consec...
 - `e5c5c88` · 2026-04-28 21:13 — timeshare: enable II keep-alive cron (every 18 min, jittered 18-29) + cookie refresh API
@@ -93,19 +100,10 @@
 - `7379e6c` · 2026-04-28 13:14 — timeshare: shorten share URL via /s/<code> + add 'Text it' SMS launcher on Members panel
 - `c9a8b2d` · 2026-04-28 13:00 — timeshare: 7-day expiry on share links + expired-link page + soft sign-in hint
 - `8226c87` · 2026-04-28 12:48 — timeshare: public read-only share link (Google-Docs style) — generate/rotate/disable from Members...
-- `f263ae9` · 2026-04-28 12:20 — timeshare: add /test/seed-readonly endpoint for Playwright readonly walkthrough (apikey-gated)
-- `01c4470` · 2026-04-28 12:10 — timeshare: readonly role works + Considering rebrand + welcome banner + HTML invite email
-- `bf798fc` · 2026-04-28 11:07 — fix: dedup before_request hooks + cache CRAB_TEST_APIKEY + 500 handler + view_plan logging
-- `602403d` · 2026-04-27 10:06 — rip dead Amadeus self-service API + ScrapingBee/Xotelo/git_push.sh/_antiquated cleanup
 <!-- shipped:end -->
 
 ## ⚠️ Unfinished / WIP
 
 <!-- wip:start -->
-**4 file(s) with uncommitted changes:**
-- ` M dev/dedup_fuzzy.py`
-- ` M docs/20260502_redweek_next_steps.md`
-- ` M utilities/backend_registry.py`
-- ` M utilities/kumori_free_llms.py`
-
+_(clean working tree, no TODO markers in recent files)_
 <!-- wip:end -->

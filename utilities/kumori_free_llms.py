@@ -27,6 +27,7 @@ Usage:
 
 import json
 import logging
+import os
 import threading
 import time
 import urllib.request
@@ -45,6 +46,21 @@ except ImportError:
         FALLBACK_LIMITS as _FALLBACK_LIMITS,
         EVAL_POOL_FREE,
     )
+
+# Module reference for live-refresh access — backend_registry.BACKENDS is
+# rebound when refresh_models() runs, but `from backend_registry import BACKENDS`
+# captures the old list at import time. Reach back through the module so the
+# router always sees the latest catalog state.
+try:
+    from . import backend_registry as _backend_registry_mod
+except ImportError:
+    import backend_registry as _backend_registry_mod
+
+
+def _live_backends():
+    """Current BACKENDS list — reaches through backend_registry module so
+    refresh_models() updates take effect without restarting the instance."""
+    return _backend_registry_mod.BACKENDS
 
 logger = logging.getLogger(__name__)
 
@@ -955,8 +971,120 @@ def init(app_name, get_secret_fn=None, db_cursor_fn=None,
 
     _initialized = True
     logger.info(f"kumori_free_llms initialized: app={app_name}, policy={policy}, "
-                f"backends={len(BACKENDS)}, gateway={'yes' if _litellm_url else 'no'}, "
+                f"backends={len(_live_backends())}, gateway={'yes' if _litellm_url else 'no'}, "
                 f"db_caps={'yes' if db_cursor_fn else 'no'}")
+
+    # Spin up the background refresh thread so newly discovered probationary
+    # endpoints flow into the runtime BACKENDS list within ~5 min instead of
+    # waiting for an App Engine instance recycle. Disabled if the env var
+    # KUMORI_FREE_LLMS_REFRESH=0 (useful for tests).
+    if os.environ.get('KUMORI_FREE_LLMS_REFRESH', '1') != '0':
+        _start_backend_refresh_thread()
+
+
+_refresh_thread = None
+_refresh_interval_sec = 300  # 5 min
+
+
+def refresh_backends(modality='chat'):
+    """Force a re-fetch of the BACKENDS list from kumori_llm_endpoints.
+    Returns True if the registry membership changed.
+
+    Call this explicitly after admin-API mutations (POST /api/admin/endpoints,
+    enable/disable) so the change takes effect within the same request cycle
+    instead of waiting for the next 5-min refresh tick."""
+    try:
+        changed = _backend_registry_mod.refresh_models(modality=modality)
+        if changed:
+            _BACKEND_BY_NAME.clear()  # force re-index on next chat() call
+            logger.info(f"kumori_free_llms: BACKENDS refreshed, "
+                        f"now {len(_live_backends())} backends "
+                        f"(modality={modality})")
+        return changed
+    except Exception as e:
+        logger.warning(f"kumori_free_llms: refresh_backends failed: {e}")
+        return False
+
+
+def _start_backend_refresh_thread():
+    global _refresh_thread
+    if _refresh_thread and _refresh_thread.is_alive():
+        return
+    def _loop():
+        while True:
+            time.sleep(_refresh_interval_sec)
+            try:
+                refresh_backends()
+            except Exception:
+                pass  # never let the refresh thread die
+    _refresh_thread = threading.Thread(target=_loop, daemon=True,
+                                        name='kumori_free_llms.refresh')
+    _refresh_thread.start()
+    logger.info(f"kumori_free_llms: background refresh thread started "
+                f"(interval={_refresh_interval_sec}s)")
+
+
+# Bandit exploration — what fraction of generate() calls deliberately route
+# to an under-validated probationary/active endpoint that hasn't seen real
+# traffic in 24h+. Without this, the round-robin "first responsive backend
+# wins" pattern starves the long tail of real-workload validation. With this,
+# every endpoint in the active+probationary set sees real calls within 48h.
+EXPLORATION_RATE = float(os.environ.get('KUMORI_FREE_LLMS_EXPLORATION_RATE', '0.10'))
+
+
+def _pick_under_validated_backend(modality='chat'):
+    """Return one backend dict whose endpoint hasn't seen real traffic in 24h+,
+    or None if no candidate available. Picked uniformly at random from the
+    eligible set so every starved endpoint gets fair coverage over many calls.
+
+    Cheap: one indexed query (idx_kumori_llm_endpoints_real_traffic). Skipped
+    entirely when DB cursor not wired (test/local mode)."""
+    if not _db_cursor_fn:
+        return None
+    try:
+        with _db_cursor_fn(dict_cursor=False, commit=False) as cur:
+            cur.execute("""
+                SELECT e.backend
+                  FROM kumori_llm_endpoints e
+                  LEFT JOIN kumori_models m ON m.slug = e.model
+                 WHERE e.enabled = true
+                   AND e.status IN ('active', 'probationary', 'revived')
+                   AND COALESCE(m.modality, 'chat') = %s
+                   AND (e.last_real_traffic_at IS NULL
+                        OR e.last_real_traffic_at < NOW() - INTERVAL '24 hours')
+                 ORDER BY RANDOM()
+                 LIMIT 1
+            """, (modality,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        backend_name = row[0]
+        for b in _live_backends():
+            if b['name'] == backend_name:
+                return b
+        return None  # endpoint exists in DB but not in current BACKENDS list
+    except Exception:
+        return None
+
+
+def _record_real_traffic(backend_name):
+    """Stamp last_real_traffic_at on the endpoint. Fire-and-forget thread so
+    it never blocks the request path. Idempotent UPDATE."""
+    if not _db_cursor_fn or not backend_name:
+        return
+    def _do():
+        try:
+            with _db_cursor_fn(dict_cursor=False, commit=True) as cur:
+                cur.execute("""
+                    UPDATE kumori_llm_endpoints
+                       SET last_real_traffic_at = NOW(),
+                           last_active_at = NOW(),
+                           updated_at = NOW()
+                     WHERE backend = %s
+                """, (backend_name,))
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
 
 
 def generate(prompt, max_tokens=500, temperature=1.0, caller=None):
@@ -965,24 +1093,41 @@ def generate(prompt, max_tokens=500, temperature=1.0, caller=None):
 
     Returns: (text, backend_name) or (None, None) on total failure.
     No paid fallback — silence is honest.
+
+    Bandit exploration: with probability EXPLORATION_RATE, the FIRST attempt
+    is biased to an endpoint that hasn't seen real traffic in 24h+. If the
+    bandit pick fails, falls through to normal round-robin so SLA is preserved.
     """
     global _call_counter
+    import random
 
     if not _initialized:
         logger.error("kumori_free_llms.generate() called before init()")
         return None, None
 
     caller = caller or _app_name or 'unknown'
+    backends = _live_backends()
+    n = len(backends)
+
+    # -- Bandit exploration: try one under-validated endpoint first --
+    if EXPLORATION_RATE > 0 and random.random() < EXPLORATION_RATE:
+        bandit_backend = _pick_under_validated_backend()
+        if bandit_backend:
+            text = _try_backend(bandit_backend, prompt, max_tokens, temperature, caller)
+            if text:
+                _record_real_traffic(bandit_backend['name'])
+                return text, bandit_backend['name']
+            # Bandit miss: fall through to normal round-robin (no SLA penalty)
 
     # -- Tier: Direct free backends (round-robin) --
-    n = len(BACKENDS)
     start_idx = _call_counter % n
     _call_counter += 1
 
     for i in range(n):
-        backend = BACKENDS[(start_idx + i) % n]
+        backend = backends[(start_idx + i) % n]
         text = _try_backend(backend, prompt, max_tokens, temperature, caller)
         if text:
+            _record_real_traffic(backend['name'])
             return text, backend['name']
 
     # -- Tier: LiteLLM gateway --
@@ -1056,6 +1201,7 @@ def chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None, c
     prompt = _messages_to_prompt(messages, system)
     text = _try_backend(backend, prompt, max_tokens, temperature, caller)
     if text:
+        _record_real_traffic(backend_name)
         return text, backend_name
 
     return None, backend_name

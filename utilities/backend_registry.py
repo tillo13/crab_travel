@@ -258,9 +258,21 @@ _FALLBACK_MODELS = [
 # cycles instances often enough for this to be effectively-realtime.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def _load_models_from_db():
-    """Pull the live registry from kumori_llm_provider_limits. Returns a list
-    shaped like _FALLBACK_MODELS, or None if the DB is unreachable.
+def _load_models_from_db(modality='chat'):
+    """Pull the live registry from kumori_llm_endpoints (source of truth post
+    migration 004), joined against providers + provider_limits + models for
+    the runtime fields and modality filter. Returns a list shaped like
+    _FALLBACK_MODELS, or None if the DB is unreachable.
+
+    Source-of-truth ladder (post 2026-05-05 plan):
+      - kumori_llm_endpoints.status drives lifecycle ('active', 'probationary',
+        'revived'). Newly discovered endpoints land here first so they
+        propagate to runtime within one instance restart (Phase 1).
+      - kumori_llm_providers (api_url, secret_name, runtime_type) and
+        kumori_llm_provider_limits (display_name, naming, worker_type, cf_path)
+        supply runtime config.
+      - kumori_models.modality filters the returned set so a chat router
+        doesn't accidentally pick up an embeddings/OCR endpoint.
 
     Uses Secret Manager via the Python SDK — works on App Engine (metadata
     server auth) AND locally (gcloud-resolved ADC). Never shells out to the
@@ -321,17 +333,47 @@ def _load_models_from_db():
         conn = psycopg2.connect(connect_timeout=8, **conn_args)
         try:
             cur = conn.cursor()
+            # Read from kumori_llm_endpoints (source of truth for lifecycle)
+            # JOIN provider_limits (legacy runtime config) + models (modality).
+            # Falls back to provider_limits-only path if endpoints table empty
+            # (e.g., pre-migration-004 environment).
             cur.execute("""
-                SELECT backend, provider, model_id, display_name, gateway_model,
-                       naming_provider, naming_model, assign_new_agents,
-                       gemini_model, worker_type, cf_path, overrides
-                  FROM kumori_llm_provider_limits
-                 WHERE status IN ('active', 'probationary')
-                   AND model_id IS NOT NULL
-                   AND provider IS NOT NULL
-            """)
+                SELECT pl.backend, pl.provider, pl.model_id, pl.display_name,
+                       pl.gateway_model, pl.naming_provider, pl.naming_model,
+                       pl.assign_new_agents, pl.gemini_model, pl.worker_type,
+                       pl.cf_path, pl.overrides
+                  FROM kumori_llm_endpoints e
+                  JOIN kumori_llm_provider_limits pl ON pl.backend = e.backend
+                  LEFT JOIN kumori_models m ON m.slug = e.model
+                 WHERE e.enabled = true
+                   AND e.status IN ('active', 'probationary', 'revived')
+                   AND COALESCE(m.modality, 'chat') = %s
+                   AND pl.model_id IS NOT NULL
+                   AND pl.provider IS NOT NULL
+                 ORDER BY
+                   CASE e.status WHEN 'active' THEN 0
+                                 WHEN 'revived' THEN 1
+                                 WHEN 'probationary' THEN 2
+                                 ELSE 3 END,
+                   pl.backend
+            """, (modality,))
+            rows_raw = cur.fetchall()
+            if not rows_raw:
+                # Fallback: pre-migration-004 schema or empty endpoints table.
+                logger.info("backend_registry: kumori_llm_endpoints empty, "
+                            "falling back to kumori_llm_provider_limits")
+                cur.execute("""
+                    SELECT backend, provider, model_id, display_name, gateway_model,
+                           naming_provider, naming_model, assign_new_agents,
+                           gemini_model, worker_type, cf_path, overrides
+                      FROM kumori_llm_provider_limits
+                     WHERE status IN ('active', 'probationary')
+                       AND model_id IS NOT NULL
+                       AND provider IS NOT NULL
+                """)
+                rows_raw = cur.fetchall()
             rows = []
-            for r in cur.fetchall():
+            for r in rows_raw:
                 (backend, provider, model_id, display, gateway_model,
                  np_, nm_, assign, gemini_model, worker_type, cf_path, overrides) = r
                 # Defensive: skip any row whose provider isn't in our static
@@ -516,3 +558,46 @@ BACKEND_NAMING = build_backend_naming()
 FALLBACK_ORDER = [m['name'] for m in MODELS]
 CLOUD_RUN_ONLY = {m['name'] for m in MODELS if m['provider'] == 'worker'}
 CLOUD_RUN_WORKER_URL = 'https://kindness-worker-243380010344.us-central1.run.app'
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Runtime refresh — re-load MODELS from DB without restarting the instance.
+# Called periodically by kumori_free_llms.py background thread so newly
+# discovered probationary endpoints flow into BACKENDS within ~5 min instead
+# of waiting for an App Engine instance recycle.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def refresh_models(modality='chat'):
+    """Re-fetch MODELS from DB and rebuild all derived constants in place.
+    Returns True if refresh happened (and registry changed), False otherwise.
+
+    Mutates module-level globals so existing imports like
+    `from backend_registry import BACKENDS` see the new list (Python rebinds
+    the name in this module; importers still reference the old object).
+    Apps that need the live list should reach back via
+    `kumori_free_llms.refresh_backends()` which re-derives its in-memory
+    BACKENDS from this module after refresh.
+    """
+    global MODELS, BACKENDS, FALLBACK_LIMITS, EVAL_POOL_FREE
+    global AVAILABLE_BACKENDS, BACKEND_NAMING, FALLBACK_ORDER
+    global CLOUD_RUN_ONLY, FREE_MODEL_COUNT, MODELS_SOURCE
+
+    fresh = _load_models_from_db(modality=modality)
+    if not fresh:
+        return False
+    old_names = {m['name'] for m in MODELS}
+    new_names = {m['name'] for m in fresh}
+    if old_names == new_names:
+        return False  # no membership change → skip rebuild
+
+    MODELS = fresh
+    BACKENDS = build_backends()
+    FALLBACK_LIMITS = build_fallback_limits()
+    EVAL_POOL_FREE = build_eval_pool()
+    AVAILABLE_BACKENDS = build_available_backends()
+    BACKEND_NAMING = build_backend_naming()
+    FALLBACK_ORDER = [m['name'] for m in MODELS]
+    CLOUD_RUN_ONLY = {m['name'] for m in MODELS if m['provider'] == 'worker'}
+    FREE_MODEL_COUNT = len(MODELS)
+    MODELS_SOURCE = 'database (refreshed)'
+    return True
