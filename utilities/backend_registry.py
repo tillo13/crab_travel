@@ -1,21 +1,24 @@
 """
-backend_registry.py — Single source of truth for all kumori LLM backends.
+backend_registry.py — DB-loaded LLM backend catalog with hardcoded boot fallback.
 
-Pure data + derivation. No I/O, no state, no side effects.
-Adding a new backend = adding one row to MODELS.
+Post 2026-05-04 migration:
+  - MODELS list loads from kumori_llm_provider_limits at import time
+    (status IN ('active','probationary'), filtered for runtime use).
+  - PROVIDERS dict here is FALLBACK only — runtime + canary now read
+    api_url/secret_name/runtime_type from kumori_llm_providers DB columns.
+  - Adding a new free-LLM provider = single SQL UPDATE on kumori_llm_providers.
+    No need to edit this file unless changing fallback values.
 
 ⚠️  SOURCE LIVES IN _infrastructure/kumori_free_llm/.
-    After editing, run _infrastructure/kumori_free_llm/sync_downstream.sh
-    to propagate to crab_travel, kindness_social, scatterbrain.
-
-Used by:
-  - kumori_free_llms.py (router) — BACKENDS, FALLBACK_LIMITS, EVAL_POOL
-  - kindness_social model_registry.py — display names, model IDs
-  - kindness_social agent_factory.py — available backends, naming
+    After editing, run sync_downstream.sh to propagate to all consumers.
 """
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Provider definitions — shared config per API provider
+# PROVIDERS — hardcoded fallback only. DB at kumori_llm_providers is the source
+# of truth (api_url, secret_name, runtime_type, shared_pool_daily_cap, etc).
+# This dict still gets read by build_backends() for the import-time runtime
+# BACKENDS list build, with the assumption that DB and dict stay in sync.
+# To change a real value: UPDATE kumori_llm_providers SET ... WHERE name=...
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PROVIDERS = {

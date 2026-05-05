@@ -79,15 +79,15 @@ _backoff_until = {}     # backend_name -> timestamp when it becomes available ag
 DB_SYNC_INTERVAL = 30
 
 # Shared-pool caps: org-wide / account-wide caps that apply across all
-# backends sharing the same `shared_pool` value. Keys are pool names from
-# kumori_llm_provider_limits.shared_pool. Caps are calls/day. None = no enforcement.
-# IMPORTANT: this complements per-backend daily_limit. _check_daily_cap rejects
-# a call if EITHER its own daily_limit is exhausted OR its shared_pool is exhausted.
+# backends sharing the same `shared_pool` value.
+# Loaded from kumori_llm_providers.shared_pool_daily_cap at init (post 2026-05-04
+# migration). Hardcoded fallback retained for resilience if DB is unreachable.
+# _check_daily_cap rejects a call if EITHER its own daily_limit is exhausted
+# OR its shared_pool is exhausted.
 _SHARED_POOL_DAILY_CAPS = {
-    'openrouter': 50,     # 50/day account-wide :free pool ($0 lifetime credits)
-    'cloudflare': 10000,  # 10K Neurons/day account-wide Workers AI Free
-    # 'cohere':   33,     # 1000/month / 30d ≈ 33/day pacing — cap exhausted, route paused
-    # 'mistral': 2880,    # 86,400/month / 30d ≈ 2880/day pacing
+    'openrouter': 50,
+    'cloudflare': 10000,
+    'mistral':    2880,
 }
 
 
@@ -98,10 +98,23 @@ def _get_limit(backend_name, field, default=None):
 
 
 def _load_provider_limits():
-    """Load all provider limits from kumori_llm_provider_limits table."""
-    global _provider_limits
+    """Load all provider limits from kumori_llm_provider_limits table.
+    Also refreshes _SHARED_POOL_DAILY_CAPS from kumori_llm_providers.shared_pool_daily_cap."""
+    global _provider_limits, _SHARED_POOL_DAILY_CAPS
     if not _db_cursor_fn:
         return
+    # Refresh shared-pool daily caps from DB (was hardcoded pre-migration)
+    try:
+        with _db_cursor_fn(dict_cursor=False) as cur:
+            cur.execute("""
+                SELECT name, shared_pool_daily_cap FROM kumori_llm_providers
+                WHERE shared_pool_daily_cap IS NOT NULL
+            """)
+            db_caps = dict(cur.fetchall())
+            if db_caps:
+                _SHARED_POOL_DAILY_CAPS = db_caps
+    except Exception:
+        pass  # fall back to hardcoded defaults
     try:
         with _db_cursor_fn(dict_cursor=False) as cur:
             # NEW columns (cooldown_until, consecutive_failures, failure_threshold,
@@ -729,7 +742,8 @@ def _try_backend(backend, prompt, max_tokens, temperature, caller):
     return None
 
 
-def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
+def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0,
+                  force=False):
     """Diagnostic probe — like _try_backend but RETURNS a rich result dict
     instead of swallowing every failure as None.
 
@@ -743,10 +757,15 @@ def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
       error        : str|None — full error excerpt if applicable
       response     : str|None — first 120 chars of response if ok
 
-    The probe deliberately does NOT consume rate-limit budget unless the
-    actual upstream call fires. Skip-conditions (cooldown, daily cap, etc.)
-    return immediately with the reason so the digest can show
-    "🟠 in cooldown" instead of "🔴 broken."
+    Skip-conditions (cooldown, daily cap, etc.) return immediately with the
+    reason so /cron/llm-health-probe can show "🟠 in cooldown" instead of
+    "🔴 broken."
+
+    `force=True` BYPASSES all skip-conditions — fires the upstream call no
+    matter what. Used by /cron/llm-canary so the catalog DB has fresh
+    'is upstream alive' signal on EVERY endpoint daily, including
+    disabled / paused / cooldown ones. (Endpoint may be disabled in our
+    runtime but still alive upstream; we want the catalog to know.)
     """
     name = backend['name']
     t0 = time.time()
@@ -756,18 +775,19 @@ def probe_backend(backend, prompt='say hi', max_tokens=20, temperature=0.0):
                 'latency_ms': int((time.time() - t0) * 1000),
                 'error': kw.get('error'), 'response': kw.get('response')}
 
-    if not _is_enabled(name):
-        return _result(False, 'disabled', error='backend disabled in provider_limits')
-    if _is_in_cooldown(name):
-        return _result(False, 'cooldown', error='circuit breaker open — auto-recovers')
-    if _is_backed_off(name):
-        return _result(False, 'backed_off', error='in 429 backoff window')
-    if not _rpm_ok(name):
-        return _result(False, 'rpm', error='rpm spacing not satisfied')
-    if not _check_daily_cap(name):
-        return _result(False, 'daily_cap', error='daily cap reached — quota exhausted today')
-    if not _check_lifetime(name):
-        return _result(False, 'lifetime', error='lifetime credit cap reached')
+    if not force:
+        if not _is_enabled(name):
+            return _result(False, 'disabled', error='backend disabled in provider_limits')
+        if _is_in_cooldown(name):
+            return _result(False, 'cooldown', error='circuit breaker open — auto-recovers')
+        if _is_backed_off(name):
+            return _result(False, 'backed_off', error='in 429 backoff window')
+        if not _rpm_ok(name):
+            return _result(False, 'rpm', error='rpm spacing not satisfied')
+        if not _check_daily_cap(name):
+            return _result(False, 'daily_cap', error='daily cap reached — quota exhausted today')
+        if not _check_lifetime(name):
+            return _result(False, 'lifetime', error='lifetime credit cap reached')
 
     btype = backend.get('type')
     try:
