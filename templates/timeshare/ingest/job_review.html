@@ -1,0 +1,98 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Review — ingest #{{ job.pk_id }}{% endblock %}
+
+{% block group_content %}
+<div class="mb-4 flex items-center justify-between">
+  <div>
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Ingest job #{{ job.pk_id }}</div>
+    <div class="text-sm text-crab-sand-dim mt-0.5">
+      Source: <span class="text-crab-sand">{{ job.source_type|replace('_',' ') }}</span>
+      {% if job.source_ref %} · {{ job.source_ref }}{% endif %}
+      · {{ job.created_at.strftime('%b %d, %Y %H:%M') }}
+      {% if job.claude_cost_usd %} · ${{ '{:.4f}'.format(job.claude_cost_usd) }}{% endif %}
+    </div>
+  </div>
+  <a href="/timeshare/g/{{ group_uuid }}/ingest/jobs" class="text-sm text-crab-sand-dim hover:text-crab-sand">← All jobs</a>
+</div>
+
+{% if job.status == 'error' %}
+<div class="bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-sm text-red-400">
+  Extraction failed: <code>{{ job.error_message }}</code>
+</div>
+{% elif job.status == 'committed' %}
+<div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-4 text-sm text-emerald-400">
+  Committed {{ job.committed_at.strftime('%b %d, %H:%M') }}. Facts are now in the dossier — open the matching fact views to see them.
+</div>
+{% elif job.status == 'rejected' %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-4 mb-4 text-sm text-crab-sand-dim">
+  This job was rejected.
+  {% if no_facts_reason %}<br><span class="text-xs">Reason: {{ no_facts_reason }}</span>{% endif %}
+</div>
+{% elif not proposed_rows %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 text-center text-sm text-crab-sand-dim">
+  No facts proposed.
+  {% if no_facts_reason %}<br><span class="text-xs">Claude says: {{ no_facts_reason }}</span>{% endif %}
+  <div class="mt-3">
+    <form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/jobs/{{ job.pk_id }}/reject" class="inline">
+      <button class="text-xs text-crab-sand-dim hover:text-red-400">Dismiss this job</button>
+    </form>
+  </div>
+</div>
+{% else %}
+
+<form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/jobs/{{ job.pk_id }}/commit">
+  <div class="mb-4 flex items-center justify-between">
+    <div class="text-sm text-crab-sand-dim">
+      Claude proposed <strong class="text-crab-sand">{{ proposed_rows|length }}</strong> row{{ 's' if proposed_rows|length != 1 else '' }}. Uncheck anything that looks wrong.
+    </div>
+    <div class="flex gap-2">
+      <button type="button" onclick="document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)" class="text-xs px-3 py-1 rounded-lg bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 transition-colors">Select all</button>
+      <button type="button" onclick="document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)" class="text-xs px-3 py-1 rounded-lg bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 transition-colors">Select none</button>
+    </div>
+  </div>
+
+  {% set by_key = {} %}
+  {% for r in proposed_rows %}
+    {% set _ = by_key.setdefault(r.fact_key, []).append(r) %}
+  {% endfor %}
+
+  {% for fact_key, rows in by_key.items() %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-4">
+    <div class="px-4 py-3 bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      {{ fact_key|replace('_',' ') }} · {{ rows|length }} row{{ 's' if rows|length != 1 else '' }}
+    </div>
+    <div class="divide-y divide-white/5">
+      {% for r in rows %}
+      <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-crab-navy/20">
+        <input type="checkbox" name="accept_{{ r.fact_key }}_{{ r.index }}" checked class="mt-1 accent-crab-coral">
+        <div class="flex-1 text-sm grid md:grid-cols-2 gap-x-6 gap-y-1">
+          {% for k, v in r.data.items() %}
+          <div>
+            <span class="text-xs text-crab-sand-dim">{{ k }}:</span>
+            <span>{{ v }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="flex items-center justify-between gap-3 mt-4">
+    <button type="submit" class="bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+      Commit selected rows
+    </button>
+  </div>
+</form>
+
+<form method="POST" action="/timeshare/g/{{ group_uuid }}/ingest/jobs/{{ job.pk_id }}/reject" class="mt-2">
+  <button class="text-xs text-crab-sand-dim hover:text-red-400">Reject entire job</button>
+</form>
+{% endif %}
+
+<details class="mt-8">
+  <summary class="text-xs text-crab-sand-dim cursor-pointer">Source content ({{ (job.source_content or '')|length }} chars)</summary>
+  <pre class="mt-2 bg-crab-navy/40 border border-white/6 rounded-lg p-3 text-xs text-crab-sand-dim whitespace-pre-wrap max-h-64 overflow-y-auto">{{ job.source_content }}</pre>
+</details>
+{% endblock %}

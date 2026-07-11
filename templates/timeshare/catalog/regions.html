@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Interval International Catalog — crab.travel{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-5xl mx-auto">
+  <div class="mb-6">
+    <div class="text-xs uppercase tracking-wide text-crab-sand-dim">Timeshare · Shared catalog</div>
+    <h1 class="text-2xl font-display mt-0.5">Interval International regions</h1>
+    <p class="text-sm text-crab-sand-dim mt-1">
+      The II resort catalog is shared across every timeshare group on crab. Scraped monthly.
+    </p>
+  </div>
+
+  {% if regions %}
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+    {% for r in regions %}
+    <a href="/timeshare/catalog/region/{{ r.ii_code }}" class="block bg-crab-card/40 border border-white/6 rounded-xl p-4 hover:border-crab-coral/40 transition-colors">
+      <div class="font-semibold">{{ r.name }}</div>
+      <div class="text-xs text-crab-sand-dim mt-1">{{ r.area_count }} area{{ 's' if r.area_count != 1 else '' }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 text-center text-sm text-crab-sand-dim">
+    Catalog is empty — the VPS scraper hasn't populated it yet.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

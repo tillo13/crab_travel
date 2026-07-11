@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}Profile — crab.travel{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+{% block head %}
+<style>
+  .input-field {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: inherit;
+    font-size: 0.875rem;
+    transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; outline: none; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+</style>
+{% endblock %}
+{% block content %}
+{% set display_user = display_user or session.user %}
+<div class="max-w-2xl mx-auto animate-in">
+
+{% if demo_mode %}
+<div class="mb-6 p-4 rounded-lg border border-crab-coral/40 bg-crab-coral/10">
+  <p class="text-sm font-semibold text-crab-coral mb-1">Public Preview — SMS Opt-In Form</p>
+  <p class="text-xs text-crab-sand-dim leading-relaxed">This is a read-only preview of the crab.travel Profile page, published at <code>/profile/demo</code> so Twilio A2P reviewers can verify the SMS consent Call-to-Action without logging in. The real form lives at <code>/profile</code> (Google sign-in required). The consent checkbox, disclosure wording, and opt-out language below are identical to production.</p>
+</div>
+{% endif %}
+
+<!-- Google account info -->
+<div class="flex items-center gap-4 mb-6">
+  {% if display_user.picture %}
+  <img src="{{ display_user.picture }}" class="w-16 h-16 rounded-full ring-2 ring-white/10" alt="">
+  {% else %}
+  <div class="w-16 h-16 rounded-full bg-crab-coral text-white flex items-center justify-center text-2xl font-bold">{{ display_user.name[0]|upper }}</div>
+  {% endif %}
+  <div>
+    <h1 class="text-2xl font-display">{{ display_user.name }}</h1>
+    <p class="text-sm text-crab-sand-dim">{{ display_user.email }}</p>
+  </div>
+</div>
+
+<p class="text-crab-sand-dim mb-8 text-sm">All fields are optional. The more you fill in, the better CrabAI can match you to plans and pre-fill your info when you join trips.</p>
+
+<form id="profile-form" class="space-y-5" {% if demo_mode %}onsubmit="event.preventDefault();alert('This is a public read-only preview. The live form is at /profile and requires Google sign-in.');return false;"{% endif %}>
+
+  <!-- Home location -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Where are you based?</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">City, neighborhood, zip code, or airport code — we'll find your nearest airport.</p>
+    <input type="text" name="home_airport" id="home-airport" placeholder="e.g. Scottsdale, Brooklyn, 98101, SEA"
+      value="{{ profile.home_location or profile.home_airport or '' }}"
+      class="input-field">
+    <p id="airport-resolved" class="text-xs mt-1.5 text-crab-teal hidden"></p>
+  </div>
+
+  <!-- Interests — free text -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">What lights you up?</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Tell us what you're into — anything goes. CrabAI uses this to find the right stuff for you.</p>
+    <textarea name="interests_text" rows="2" placeholder="e.g. craft beer, baseball, hiking, live music, food tours, spa days, photography..."
+      class="input-field">{{ profile.interests|join(', ') if profile and profile.interests else '' }}</textarea>
+  </div>
+
+  <!-- Travel Style (multi-select) -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Travel style</label>
+    <p class="text-xs text-crab-sand-dim mb-2 opacity-60">Pick all that apply.</p>
+    <div class="flex flex-wrap gap-2 mt-1.5">
+      {% set saved_styles = (profile.travel_style.split(',') if profile and profile.travel_style else []) %}
+      {% for style in ['Adventure', 'Relaxation', 'Cultural', 'Foodie', 'Party', 'Outdoors'] %}
+      <label class="cursor-pointer">
+        <input type="checkbox" name="travel_style" value="{{ style|lower }}" class="peer hidden"
+          {% if style|lower in saved_styles %}checked{% endif %}>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ style }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Accommodation -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Accommodation preference</label>
+    <div class="flex flex-wrap gap-2 mt-1.5">
+      {% for acc in ['Hotel', 'Airbnb', 'Hostel', 'Resort', 'Flexible'] %}
+      <label class="cursor-pointer">
+        <input type="radio" name="accommodation_preference" value="{{ acc|lower }}" class="peer hidden"
+          {% if profile and profile.accommodation_preference == acc|lower %}checked{% endif %}>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ acc }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Budget Comfort -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Budget comfort</label>
+    <div class="flex flex-wrap gap-2 mt-1.5">
+      {% for level in ['Budget', 'Moderate', 'Premium', 'Luxury'] %}
+      <label class="cursor-pointer">
+        <input type="radio" name="budget_comfort" value="{{ level|lower }}" class="peer hidden"
+          {% if profile and profile.budget_comfort == level|lower %}checked{% endif %}>
+        <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">{{ level }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Dietary -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Dietary needs</label>
+    <input type="text" name="dietary_needs" placeholder="e.g. vegetarian, nut allergy, gluten-free"
+      value="{{ profile.dietary_needs or '' }}"
+      class="input-field">
+  </div>
+
+  <!-- Mobility -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Mobility or accessibility notes</label>
+    <input type="text" name="mobility_notes" placeholder="e.g. limited walking, wheelchair access needed"
+      value="{{ profile.mobility_notes or '' }}"
+      class="input-field">
+  </div>
+
+  <!-- Bio -->
+  <div>
+    <label class="block font-semibold font-display mb-1 text-sm">Anything else we should know?</label>
+    <textarea name="bio" rows="2" placeholder="Travel quirks, must-haves, deal-breakers..."
+      class="input-field">{{ profile.bio or '' }}</textarea>
+  </div>
+
+  <!-- Notifications -->
+  <div class="border-t border-white/6 pt-5 mt-2">
+    <label class="block font-semibold font-display mb-2 text-sm">Notifications</label>
+    <p class="text-xs text-crab-sand-dim mb-4 opacity-60">Choose how and when we reach you. Email goes to your Google account. Add a phone number to enable SMS.</p>
+
+    <!-- Phone number (optional, enables SMS) -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-1">Phone number</label>
+      <input type="tel" name="phone_number" id="phone-number" placeholder="+1 (555) 123-4567"
+        value="{{ user_phone or '' }}"
+        class="input-field max-w-xs">
+    </div>
+
+    <!-- SMS consent checkbox — required for Twilio A2P compliance -->
+    <div class="mb-4" id="sms-consent-wrap" style="{% if not user_phone %}display:none{% endif %}">
+      <label class="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" name="sms_consent" id="sms-consent" class="mt-0.5 accent-crab-coral"
+          {% if notify_prefs.notify_channel in ['sms', 'both'] %}checked{% endif %}>
+        <span class="text-xs text-crab-sand leading-relaxed">I agree to receive recurring automated SMS/text messages from crab.travel at the phone number provided above, including trip chat messages, voting reminders, and status updates. Consent is not a condition of any purchase or subscription. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to unsubscribe at any time, HELP for help. <a href="/terms" class="underline text-crab-coral">Terms</a> &amp; <a href="/privacy" class="underline text-crab-coral">Privacy</a>.</span>
+      </label>
+    </div>
+
+    <!-- Channel preference -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Send notifications via</label>
+      <div class="flex flex-wrap gap-2 items-center">
+        {% for ch, label, premium in [('email', 'Email', false), ('sms', 'SMS', true), ('both', 'Both', true)] %}
+        <label class="cursor-pointer relative">
+          <input type="radio" name="notify_channel" value="{{ ch }}" class="peer hidden"
+            {% if notify_prefs.notify_channel == ch %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-coral peer-checked:text-white peer-checked:border-crab-coral transition-colors inline-block">
+            {{ label }}{% if premium and not demo_mode %} <span class="ml-1 text-[9px] uppercase tracking-widest font-semibold text-crab-teal align-middle">Premium</span>{% endif %}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      {% if not demo_mode %}
+      <p class="text-[11px] text-crab-sand-dim mt-2 opacity-70">SMS is a <strong>Premium</strong> feature available to trip organizers on the Premium plan — <a href="/sms" class="text-crab-coral hover:underline">learn more</a>. Free accounts get full email notifications today; SMS turns on automatically when you upgrade.</p>
+      {% endif %}
+    </div>
+
+    <!-- Chat messages frequency -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Chat messages</label>
+      <div class="flex flex-wrap gap-2">
+        {% for freq, label in [('realtime', 'Real-time'), ('daily', 'Daily digest'), ('weekly', 'Weekly digest'), ('off', 'Off')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="notify_chat" value="{{ freq }}" class="peer hidden"
+            {% if notify_prefs.notify_chat == freq %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-teal peer-checked:text-white peer-checked:border-crab-teal transition-colors inline-block">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Trip updates frequency -->
+    <div>
+      <label class="block text-xs font-medium text-crab-sand-dim mb-2">Trip updates <span class="opacity-50">(votes, new members, stage changes)</span></label>
+      <div class="flex flex-wrap gap-2">
+        {% for freq, label in [('realtime', 'Real-time'), ('daily', 'Daily digest'), ('weekly', 'Weekly digest'), ('off', 'Off')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="notify_updates" value="{{ freq }}" class="peer hidden"
+            {% if notify_prefs.notify_updates == freq %}checked{% endif %}>
+          <span class="px-3 py-1.5 rounded-full text-sm border border-white/10 peer-checked:bg-crab-teal peer-checked:text-white peer-checked:border-crab-teal transition-colors inline-block">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="bg-crab-coral text-white px-6 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
+      Save Profile
+    </button>
+    <span id="save-status" class="text-sm text-teal-400 hidden">Saved!</span>
+  </div>
+</form>
+</div>
+
+<script>
+// Airport live-resolve
+var _airportTimer = null;
+var airportInput = document.getElementById('home-airport');
+function resolveAirport(val) {
+  var resolved = document.getElementById('airport-resolved');
+  if (!val || val.length < 2) { resolved.classList.add('hidden'); return; }
+  fetch('/api/airport/resolve?q=' + encodeURIComponent(val))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.result) {
+        resolved.textContent = '✈ ' + data.result.code + ' — ' + data.result.name;
+        resolved.classList.remove('hidden');
+      } else {
+        resolved.classList.add('hidden');
+      }
+    });
+}
+airportInput.addEventListener('input', function() {
+  clearTimeout(_airportTimer);
+  var val = this.value.trim();
+  _airportTimer = setTimeout(function() { resolveAirport(val); }, 400);
+});
+// Resolve on page load if value exists
+if (airportInput.value.trim()) resolveAirport(airportInput.value.trim());
+
+// Show SMS consent checkbox when phone number is entered
+var phoneInput = document.getElementById('phone-number');
+var consentWrap = document.getElementById('sms-consent-wrap');
+var consentBox = document.getElementById('sms-consent');
+phoneInput.addEventListener('input', function() {
+  consentWrap.style.display = this.value.trim() ? '' : 'none';
+});
+
+// Block SMS/Both channel selection without consent
+document.querySelectorAll('input[name="notify_channel"]').forEach(function(radio) {
+  radio.addEventListener('change', function() {
+    if ((this.value === 'sms' || this.value === 'both') && !consentBox.checked) {
+      consentBox.focus();
+      consentWrap.style.display = '';
+      consentWrap.classList.add('ring-1', 'ring-crab-coral', 'rounded-lg', 'p-2');
+      setTimeout(function() { consentWrap.classList.remove('ring-1', 'ring-crab-coral', 'rounded-lg', 'p-2'); }, 2000);
+    }
+  });
+});
+
+document.getElementById('profile-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var form = e.target;
+  // Parse interests from textarea — split on commas
+  var interestsRaw = form.interests_text.value.trim();
+  var interests = interestsRaw ? interestsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var travelStyles = Array.from(form.querySelectorAll('input[name="travel_style"]:checked')).map(function(cb) { return cb.value; });
+  var chosenChannel = form.querySelector('input[name="notify_channel"]:checked')?.value || 'email';
+  var hasConsent = form.sms_consent.checked;
+  // If they chose SMS or Both but didn't check consent, fall back to email
+  if ((chosenChannel === 'sms' || chosenChannel === 'both') && !hasConsent) {
+    chosenChannel = 'email';
+  }
+  var data = {
+    interests: interests,
+    travel_style: travelStyles.length ? travelStyles.join(',') : null,
+    accommodation_preference: form.accommodation_preference?.value || null,
+    budget_comfort: form.budget_comfort?.value || null,
+    dietary_needs: form.dietary_needs.value || null,
+    mobility_notes: form.mobility_notes.value || null,
+    home_airport: form.home_airport.value || null,
+    bio: form.bio.value || null,
+    phone_number: form.phone_number.value.trim() || null,
+    sms_consent: hasConsent,
+    notify_channel: chosenChannel,
+    notify_chat: form.querySelector('input[name="notify_chat"]:checked')?.value || 'off',
+    notify_updates: form.querySelector('input[name="notify_updates"]:checked')?.value || 'off',
+  };
+  var res = await fetch('/api/profile', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  if (res.ok) {
+    var status = document.getElementById('save-status');
+    status.classList.remove('hidden');
+    setTimeout(function() { status.classList.add('hidden'); }, 2000);
+  }
+});
+</script>
+{% endblock %}

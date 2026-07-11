@@ -1,0 +1,34 @@
+{
+  "project_id": "crab-travel",
+  "app_name": "Crab Travel",
+  "github_repo": "https://github.com/tillo13/crab_travel.git",
+  "shared_files": [
+    {
+      "src": "kumori/shared/kumori_api_client/__init__.py",
+      "dst": "utilities/kumori_api_client/__init__.py"
+    },
+    {
+      "src": "kumori/shared/kumori_api_client/client.py",
+      "dst": "utilities/kumori_api_client/client.py"
+    },
+    {
+      "src": "spam_control/spam_guard.py",
+      "dst": "utilities/spam_guard.py"
+    },
+    {
+      "src": "anthropic_logger/anthropic_logger.py",
+      "dst": "utilities/anthropic_logger.py"
+    },
+    {
+      "src": "visitor_logging/visitor_logging.py",
+      "dst": "utilities/visitor_logging.py"
+    },
+    {
+      "src": "gtag/gtag.py",
+      "dst": "utilities/gtag.py"
+    }
+  ],
+  "custom_domain": "https://crab.travel",
+  "cron_yaml": true,
+  "pre_deploy_test": "/Users/at/Desktop/code/_local_infrastructure/anthropic_logger/check_violations.sh ."
+}

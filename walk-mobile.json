@@ -1,0 +1,38 @@
+{
+  "name": "crab_travel",
+  "baseUrl": "https://crab.travel",
+  "routes": [
+    "/",
+    "/about",
+    "/roadmap",
+    "/privacy",
+    "/terms",
+    "/contact",
+    "/crab-animations",
+    "/health",
+    "/sitemap.xml",
+    "/robots.txt",
+    "/timeshare/",
+    {
+      "path": "/timeshare/catalog",
+      "expectText": "Interval International"
+    },
+    {
+      "path": "/timeshare/catalog/resort/AVR",
+      "expectText": "Acadia Village"
+    }
+  ],
+  "checks": {
+    "noBrokenImages": true,
+    "noConsoleErrors": true,
+    "no5xx": true,
+    "no4xx": false
+  },
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "screenshots": true,
+  "outDir": "/tmp/crab_travel_mobile_validation",
+  "_mobile": "Mobile clone of walk.json (iPhone 14 Pro viewport) \u2014 generated 2026-05-10 for post-HTTP-migration smoke"
+}

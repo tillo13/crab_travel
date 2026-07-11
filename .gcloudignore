@@ -1,0 +1,30 @@
+.git/
+.gitignore
+*.md
+.env
+*.env
+__pycache__/
+*.pyc
+venv*/
+.vscode/
+.idea/
+node_modules/
+.claude/
+
+# ── Never ship debug captures or docs to App Engine ──────────────────────
+# HAR files are network-debug dumps (har-analysis skill) — huge, never served.
+# A 23M redweek HAR was silently baked into every deployed bundle via gcloud's
+# incremental-upload cache until it broke the pipe on a re-stage (2026-06-04).
+*.har
+docs/
+
+# ── Unserved media ───────────────────────────────────────────────────────
+# app.yaml serves ONLY /static. redweek_photos/ is reference imagery, not
+# referenced by any template or route — pure upload weight.
+redweek_photos/
+
+# ── Scratch / private / tests — not part of the running app ──────────────
+_oneoff/
+_private/
+tests/
+*.log

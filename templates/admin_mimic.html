@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Mimic User — Admin{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto animate-in">
+  <a href="/admin" class="text-sm text-crab-sand-dim hover:text-crab-coral transition-colors">&larr; Back to Admin</a>
+
+  <h1 class="text-3xl font-display mt-4 mb-2">Mimic User</h1>
+  <p class="text-sm text-crab-sand-dim mb-6">Switch your session to see the app as another user. Your admin identity is preserved.</p>
+
+  {% if mimic_active %}
+  <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6 flex items-center justify-between">
+    <div>
+      <span class="text-amber-400 font-medium">Currently mimicking:</span>
+      <span class="text-sm ml-2">{{ session.user.name }} ({{ session.user.email }})</span>
+    </div>
+    <form method="POST">
+      <input type="hidden" name="action" value="stop">
+      <button class="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-500/30 transition-colors">
+        Stop Mimicking
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-6">
+    <form method="POST" class="space-y-4">
+      <input type="hidden" name="action" value="mimic">
+      <div>
+        <label class="block text-sm font-semibold font-display mb-2">Select user</label>
+        <select name="target_user_id" class="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-sm">
+          {% for u in users %}
+          <option value="{{ u.pk_id }}">{{ u.full_name }} — {{ u.email }} (ID: {{ u.pk_id }}{% if u.plan_count %}, {{ u.plan_count }} plans{% endif %})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="bg-crab-coral text-white px-6 py-2.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">
+        Switch to User
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

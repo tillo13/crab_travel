@@ -1,0 +1,638 @@
+{% extends "base.html" %}
+{% block title %}{{ area.name }} — area explorer | crab.travel{% endblock %}
+{% block meta_description %}{{ area.tagline }}. Browse every timeshare resort plotted on a map, with real RedWeek ratings and review counts.{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+
+<style>
+  #area-map { background: #0a1729; height: calc(100vh - 80px); min-height: 520px; }
+  #area-map .leaflet-tile { filter: saturate(0.7) brightness(0.9); }
+  #area-map .leaflet-control-attribution {
+    background: rgba(10, 23, 41, 0.7) !important;
+    color: #c9b88a !important;
+    font-size: 10px !important;
+    backdrop-filter: blur(6px);
+  }
+  #area-map .leaflet-control-attribution a { color: #ff8a65 !important; }
+  .area-pin { background: transparent; border: none; }
+  .area-pin svg { overflow: visible; }
+  .area-pin:hover svg circle.area-pin__halo {
+    opacity: 0.55; r: 18;
+    transition: opacity 0.2s, r 0.2s;
+  }
+  .leaflet-container { font-family: inherit; }
+
+  /* Side panel */
+  #area-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: min(380px, 92vw);
+    background: rgba(10, 23, 41, 0.92);
+    backdrop-filter: blur(10px);
+    border-left: 1px solid rgba(255, 138, 101, 0.25);
+    transform: translateX(110%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    padding: 1.5rem;
+    z-index: 1000;
+  }
+  #area-drawer.open { transform: translateX(0); }
+  #area-drawer h2 { color: #ff8a65; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  #area-drawer .meta { color: #c9b88a; font-size: 0.8rem; margin-bottom: 0.75rem; }
+  #area-drawer a.btn {
+    display: inline-block; padding: 0.5rem 0.9rem; background: rgba(255, 138, 101, 0.15);
+    border: 1px solid rgba(255, 138, 101, 0.4); color: #ff8a65; border-radius: 6px;
+    font-size: 0.85rem; margin: 0.25rem 0.5rem 0.25rem 0; text-decoration: none;
+  }
+  #area-drawer a.btn:hover { background: rgba(255, 138, 101, 0.25); }
+
+  /* Top legend / filter bar */
+  #area-header {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 12px 16px; background: rgba(10, 23, 41, 0.85);
+    backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255, 138, 101, 0.18);
+    color: #f0eae0; font-size: 0.85rem;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    z-index: 999;
+  }
+  #area-header .area-title { font-weight: 700; color: #ff8a65; }
+  #area-header .area-tagline { color: #c9b88a; font-size: 0.78rem; }
+  #area-header .legend-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer; user-select: none;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #area-header .legend-chip.dim { opacity: 0.35; }
+  #area-header .legend-chip:hover { background: rgba(255, 255, 255, 0.1); }
+  #area-header .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* Star bar */
+  .stars { color: #ffd166; letter-spacing: 1px; }
+  .stars-dim { color: rgba(255, 209, 102, 0.25); }
+
+  /* View toggle */
+  .view-toggle {
+    display: inline-flex; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; overflow: hidden;
+  }
+  .view-toggle button {
+    padding: 5px 14px; font-size: 0.78rem; background: transparent; color: #c9b88a;
+    border: none; cursor: pointer; transition: all 0.15s;
+  }
+  .view-toggle button.active {
+    background: rgba(255, 138, 101, 0.18); color: #ff8a65;
+    box-shadow: inset 0 0 0 1px rgba(255, 138, 101, 0.35);
+  }
+  .view-toggle button:hover:not(.active) { color: #f0eae0; background: rgba(255,255,255,0.04); }
+
+  /* Board view — adapted from scatterbrain */
+  #area-board {
+    display: none;
+    height: calc(100vh - 80px); min-height: 520px;
+    background: #0a1729;
+    padding: 70px 24px 24px;
+    overflow-x: auto; overflow-y: hidden;
+  }
+  #area-board.visible { display: flex; }
+  #area-board .board-columns {
+    display: flex; gap: 14px; height: 100%; min-width: max-content;
+  }
+  #area-board .board-column {
+    width: 280px; min-width: 280px;
+    display: flex; flex-direction: column;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+  #area-board .board-column-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px;
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.6);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+  }
+  #area-board .board-column-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  #area-board .board-column-name { font-weight: 700; color: #f0eae0; letter-spacing: 1px; }
+  #area-board .board-column-meta { color: rgba(255,255,255,0.4); font-weight: 500; }
+  #area-board .board-column-count { margin-left: auto; font-size: 0.7rem; color: rgba(255,255,255,0.35); }
+  #area-board .board-column-cards {
+    flex: 1; overflow-y: auto; padding: 8px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #area-board .board-card {
+    padding: 11px 13px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 3px solid transparent;
+    border-radius: 8px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  #area-board .board-card:hover {
+    background: rgba(255, 138, 101, 0.08);
+    border-color: rgba(255, 138, 101, 0.25);
+    border-left-color: #ff8a65;
+    transform: translateX(2px);
+  }
+  #area-board .board-card-name {
+    color: #f0eae0; font-size: 0.85rem; font-weight: 600; line-height: 1.3;
+    margin-bottom: 4px;
+  }
+  #area-board .board-card-meta {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.72rem; color: #c9b88a;
+  }
+  #area-board .board-card-rating { color: #ffd166; font-weight: 700; }
+  #area-board .board-card-reviews { color: rgba(201, 184, 138, 0.6); }
+  #area-board .board-card-unrated { color: rgba(255, 255, 255, 0.25); font-style: italic; font-size: 0.7rem; }
+
+  /* Deals view — the "sweet deal hunter" */
+  #area-deals {
+    display: none;
+    height: calc(100vh - 80px); min-height: 520px;
+    background: #0a1729; padding: 70px 24px 24px;
+    overflow-y: auto;
+  }
+  #area-deals.visible { display: block; }
+  #area-deals .deals-header {
+    color: #c9b88a; font-size: 0.78rem; margin-bottom: 14px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  #area-deals .deals-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  #area-deals .deal-card {
+    background: linear-gradient(135deg, rgba(255, 138, 101, 0.06) 0%, rgba(255,255,255,0.03) 100%);
+    border: 1px solid rgba(255, 138, 101, 0.2);
+    border-left: 4px solid #ff8a65;
+    border-radius: 10px; padding: 14px 16px;
+    cursor: pointer; transition: all 0.15s;
+    position: relative;
+  }
+  #area-deals .deal-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 138, 101, 0.6);
+    box-shadow: 0 6px 20px rgba(255, 138, 101, 0.1);
+  }
+  #area-deals .deal-card.tier-fire {
+    border-left-color: #ff5722;
+    background: linear-gradient(135deg, rgba(255, 87, 34, 0.12) 0%, rgba(255, 138, 101, 0.04) 100%);
+  }
+  #area-deals .deal-card.tier-gold {
+    border-left-color: #ffd166;
+  }
+  #area-deals .deal-savings {
+    font-size: 1.6rem; font-weight: 800; color: #ff8a65;
+    line-height: 1; margin-bottom: 2px;
+  }
+  #area-deals .deal-savings.fire { color: #ff5722; }
+  #area-deals .deal-pct {
+    display: inline-block;
+    background: rgba(255, 138, 101, 0.18); color: #ff8a65;
+    font-size: 0.72rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; margin-left: 6px;
+    vertical-align: middle;
+  }
+  #area-deals .deal-tier-fire .deal-pct {
+    background: rgba(255, 87, 34, 0.2); color: #ff7043;
+  }
+  #area-deals .deal-resort {
+    color: #f0eae0; font-size: 0.95rem; font-weight: 700;
+    margin-top: 10px; line-height: 1.25;
+  }
+  #area-deals .deal-meta {
+    color: #c9b88a; font-size: 0.78rem; margin-top: 4px;
+  }
+  #area-deals .deal-prices {
+    display: flex; align-items: baseline; gap: 10px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    font-size: 0.82rem;
+  }
+  #area-deals .deal-price-now { color: #f0eae0; font-weight: 700; font-size: 1.05rem; }
+  #area-deals .deal-price-norm { color: rgba(201, 184, 138, 0.6); text-decoration: line-through; }
+  #area-deals .deal-badges { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+  #area-deals .deal-badge {
+    display: inline-block;
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 2px 7px; border-radius: 4px;
+    background: rgba(255,255,255,0.07); color: #c9b88a;
+  }
+  #area-deals .deal-badge.protected { background: rgba(102, 187, 106, 0.15); color: #81c784; }
+  #area-deals .deal-badge.new      { background: rgba(255, 209, 102, 0.18); color: #ffd166; }
+  #area-deals .deal-badge.verified { background: rgba(79, 195, 247, 0.15); color: #4fc3f7; }
+  #area-deals .deal-empty {
+    color: #c9b88a; padding: 40px; text-align: center;
+    background: rgba(255,255,255,0.02); border-radius: 12px;
+    border: 1px dashed rgba(255,255,255,0.1);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="position: relative;">
+  <div id="area-header">
+    <div>
+      <div class="area-title">{{ area.name }}</div>
+      <div class="area-tagline">{{ area.tagline }}</div>
+    </div>
+    <div style="flex: 1;"></div>
+    {% for s in island_stats %}
+    <div class="legend-chip" data-island="{{ s.island }}">
+      <span class="legend-dot" style="background: {{ s.color }};"></span>
+      <span>{{ s.island }}</span>
+      <span style="color: #c9b88a;">{{ s.count }}</span>
+    </div>
+    {% endfor %}
+    {% if synthesis_count %}
+    <div id="synth-filter-chip" class="legend-chip" style="background:rgba(102, 187, 106, 0.1);border-color:rgba(102, 187, 106, 0.3);color:#81c784;font-weight:600;" title="Click to show only resorts with independent synthesis">
+      <span style="color:#81c784;">🟢</span>
+      <span>{{ synthesis_count }} independent-synth</span>
+    </div>
+    {% endif %}
+    <div class="view-toggle" style="margin-left: 8px;">
+      <button id="view-btn-deals" data-view="deals">🔥 Deals{% if deals_snapshot %} <span style="font-size:0.65rem;opacity:0.6;">{{ deals_snapshot.deals|length }}</span>{% endif %}</button>
+      <button id="view-btn-map" class="active" data-view="map">Map</button>
+      <button id="view-btn-board" data-view="board">Board</button>
+    </div>
+  </div>
+
+  <div id="area-map"></div>
+  <div id="area-board"><div class="board-columns" id="board-columns"></div></div>
+  <div id="area-deals">
+    <div class="deals-header">
+      <div style="color:#ff8a65;font-weight:700;font-size:1rem;">🔥 Sweet deals — listings below their resort+week norm</div>
+      {% if deals_snapshot %}
+      <div>Snapshot: {{ deals_snapshot.generated_at[:16] }} · {{ deals_snapshot.deals|length }} active listings 2+mo out</div>
+      {% endif %}
+      <div style="flex:1;"></div>
+      <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);">Sorted by absolute $ savings vs. resort+week median</div>
+    </div>
+    <div class="deals-grid" id="deals-grid"></div>
+  </div>
+
+  <div id="area-drawer">
+    <button id="area-drawer-close" style="position: absolute; top: 12px; right: 14px; background: transparent; border: none; color: #c9b88a; font-size: 1.4rem; cursor: pointer;">×</button>
+    <div id="area-drawer-body"></div>
+  </div>
+</div>
+
+<script id="area-data" type="application/json">{{ area | tojson | safe }}</script>
+<script id="deals-data" type="application/json">{{ (deals_snapshot or {'deals':[]}) | tojson | safe }}</script>
+<script>
+window.addEventListener('load', function () {
+  const AREA = JSON.parse(document.getElementById('area-data').textContent);
+  const islandFilter = new Set();   // empty = show all; populated = show only these
+  let synthOnly = false;             // when true, only show resorts with synthesis
+
+  const map = L.map('area-map', {
+    zoomControl: true, attributionControl: true,
+    minZoom: AREA.min_zoom || 5, maxZoom: AREA.max_zoom || 18,
+  }).setView(AREA.center, AREA.zoom);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 19,
+  }).addTo(map);
+
+  // Hex pin factory, sized by review_count where available
+  function hexIcon({color, size = 18, ratingLabel = ''}) {
+    const s = size, cx = s / 2, cy = s / 2;
+    const halo = `<circle class="area-pin__halo" cx="${cx}" cy="${cy}" r="14" fill="${color}" opacity="0"/>`;
+    const hex  = `<polygon points="${cx},${cy - s/2.2} ${cx + s/2.5},${cy - s/4.5} ${cx + s/2.5},${cy + s/4.5} ${cx},${cy + s/2.2} ${cx - s/2.5},${cy + s/4.5} ${cx - s/2.5},${cy - s/4.5}" fill="${color}" stroke="#fff2" stroke-width="1.2" opacity="0.95"/>`;
+    const label = ratingLabel
+      ? `<text x="${cx}" y="${cy + 3}" text-anchor="middle" fill="#0a1729" font-size="8" font-weight="800" font-family="ui-sans-serif,system-ui">${ratingLabel}</text>`
+      : '';
+    return L.divIcon({
+      html: `<svg width="${s}" height="${s}" viewBox="-4 -4 ${s+8} ${s+8}">${halo}${hex}${label}</svg>`,
+      className: 'area-pin', iconSize: [s, s], iconAnchor: [cx, cy],
+    });
+  }
+
+  const markers = [];
+  function renderPins() {
+    markers.forEach(m => map.removeLayer(m));
+    markers.length = 0;
+    const visible = AREA.resorts.filter(r => {
+      if (islandFilter.size && !islandFilter.has(r.island)) return false;
+      if (synthOnly && !r.synthesis) return false;
+      return true;
+    });
+    visible.forEach(r => {
+      const color = AREA.island_colors[r.island] || '#888';
+      // Pin size grows with review_count (log scale), 16-30px range
+      const reviews = r.review_count || 0;
+      const size = reviews > 0 ? Math.min(30, 16 + Math.log10(reviews + 1) * 4) : 16;
+      const ratingLabel = r.rating ? r.rating.toFixed(1).replace('.0','') : '';
+      const icon = hexIcon({color, size, ratingLabel});
+      const m = L.marker([r.lat, r.lng], {icon, title: r.name})
+        .on('click', () => openDrawer(r))
+        .addTo(map);
+      markers.push(m);
+    });
+  }
+  renderPins();
+
+  // Legend chip click → toggle island filter (NOTE: synth-filter-chip is also
+  // a .legend-chip but has no data-island; it has its own handler below).
+  document.querySelectorAll('.legend-chip[data-island]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const island = chip.dataset.island;
+      if (islandFilter.has(island)) islandFilter.delete(island);
+      else islandFilter.add(island);
+      // If all islands selected, clear filter
+      const allIslands = Array.from(document.querySelectorAll('.legend-chip')).map(c => c.dataset.island);
+      if (islandFilter.size === allIslands.length) islandFilter.clear();
+      // Update chip dimming
+      document.querySelectorAll('.legend-chip').forEach(c => {
+        if (islandFilter.size === 0) c.classList.remove('dim');
+        else c.classList.toggle('dim', !islandFilter.has(c.dataset.island));
+      });
+      renderPins();
+    });
+  });
+
+  // Drawer
+  const drawer = document.getElementById('area-drawer');
+  const body = document.getElementById('area-drawer-body');
+  document.getElementById('area-drawer-close').addEventListener('click', () => drawer.classList.remove('open'));
+
+  function stars(n) {
+    if (!n) return '<span class="stars-dim">no rating yet</span>';
+    const full = Math.floor(n);
+    const partial = (n - full) >= 0.5;
+    return `<span class="stars">${'★'.repeat(full)}${partial ? '½' : ''}</span>`
+         + `<span class="stars-dim">${'★'.repeat(5 - full - (partial ? 1 : 0))}</span>`;
+  }
+
+  function openDrawer(r) {
+    body.innerHTML = `
+      <h2>${r.name}</h2>
+      <div class="meta">${r.island} · ${r.cluster}</div>
+      <div style="margin: 14px 0; line-height: 1.5;">
+        ${stars(r.rating)}
+        <span style="margin-left: 8px; color: #c9b88a; font-size: 0.85rem;">
+          ${r.rating ? r.rating.toFixed(2) + ' / 5' : ''}
+          ${r.review_count ? ' · ' + r.review_count + ' reviews (' + r.rating_count + ' ratings)' : ''}
+        </span>
+      </div>
+      <div style="font-size: 0.78rem; color: #c9b88a; margin: 14px 0;">
+        Resort ID: <code style="color:#ff8a65">${r.pid}</code><br>
+        Coords: ${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}
+      </div>
+      <div style="margin-top: 18px;">
+        <a class="btn" href="${r.rentals_url}" target="_blank" rel="noopener">View rentals →</a>
+        <a class="btn" href="${r.redweek_url}" target="_blank" rel="noopener">Resort detail →</a>
+      </div>
+      ${r.rating ? `<div style="margin-top: 22px; padding: 10px 12px; background: rgba(255, 138, 101, 0.06); border-left: 3px solid #ff8a65; font-size: 0.82rem; line-height: 1.55;">
+        <strong style="color:#ff8a65">RedWeek rating signal:</strong> ${r.rating_count} people rated this. ${
+          r.rating >= 4.9 ? "Top-tier reputation."
+          : r.rating >= 4.8 ? "Strong reputation; some 'feels dated' comments common at this rating tier."
+          : "Mid-tier — worth checking specific reviews before booking."
+        }
+      </div>` : `<div style="margin-top: 22px; padding: 10px 12px; background: rgba(201, 184, 138, 0.06); border-left: 3px solid #c9b88a; font-size: 0.78rem; color: #c9b88a;">
+        Rating data not yet scraped for this resort. Click the resort-detail link to view RedWeek's page.
+      </div>`}
+      ${renderSynthesis(r)}
+    `;
+    drawer.classList.add('open');
+    map.panTo([r.lat, r.lng], {animate: true});
+  }
+
+  // Render the independent-source synthesis (from kumori LLM over Reddit/TUG/news)
+  function renderSynthesis(r) {
+    const syn = r.synthesis;
+    if (!syn || !syn.summary_json) {
+      return `<div style="margin-top: 18px; padding: 10px 12px; background: rgba(102, 187, 106, 0.04); border-left: 3px solid #66bb6a; font-size: 0.75rem; color: rgba(201, 184, 138, 0.7); line-height: 1.5;">
+        <strong style="color:#81c784;">Independent-source synthesis:</strong> not yet generated for this resort. The watcher cron will produce it on the next pass.
+      </div>`;
+    }
+    const s = syn.summary_json;
+    const considered = s.considered ?? '?';
+    const offtopic = s.off_topic_count ?? '?';
+
+    function section(title, items, color, icon) {
+      if (!items || !items.length) return '';
+      const li = items.map(x => {
+        if (typeof x === 'string') return `<li>${x}</li>`;
+        // For avoid_weeks: {period|week, reason}
+        if (typeof x === 'object') {
+          const k = x.period || x.week || x.date || '';
+          const reason = x.reason || x.notes || '';
+          return `<li><strong>${k}</strong>${k && reason ? ' — ' : ''}${reason}</li>`;
+        }
+        return '';
+      }).join('');
+      return `<div style="margin-top: 12px;">
+        <div style="color: ${color}; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">${icon} ${title}</div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 0.82rem; line-height: 1.5; color: #f0eae0;">${li}</ul>
+      </div>`;
+    }
+
+    // Nearby may be strings or {name, type, notes} objects — normalize for display
+    const nearbyDisplay = (s.nearby || []).map(n => {
+      if (typeof n === 'string') return n;
+      const name = n.name || '';
+      const notes = n.notes || n.type || '';
+      return name + (notes ? ` (${notes})` : '');
+    });
+
+    return `<div style="margin-top: 22px; padding: 14px 14px 10px; background: linear-gradient(135deg, rgba(102, 187, 106, 0.06), rgba(102, 187, 106, 0.02)); border: 1px solid rgba(102, 187, 106, 0.2); border-left: 3px solid #66bb6a; border-radius: 6px;">
+      <div style="color:#81c784; font-weight: 700; font-size: 0.86rem; margin-bottom: 4px;">🟢 Independent-source synthesis</div>
+      <div style="color: rgba(201, 184, 138, 0.7); font-size: 0.7rem; margin-bottom: 6px;">
+        ${considered} on-topic snippets considered · ${offtopic} off-topic ignored · model: ${syn.model || 'unknown'}
+      </div>
+      ${section('What people praise', s.praise, '#81c784', '✓')}
+      ${section('What people complain about', s.complaints, '#ff8a65', '⚠')}
+      ${section('Weeks to avoid', s.avoid_weeks, '#ff5722', '🚫')}
+      ${section('Nearby (worth knowing)', nearbyDisplay, '#4fc3f7', '📍')}
+      ${section('Best fit for', s.best_for, '#ffd166', '🎯')}
+      <div style="margin-top: 12px; font-size: 0.66rem; color: rgba(201, 184, 138, 0.45); font-style: italic;">
+        Synthesized from Reddit threads (r/Hawaii, r/MauiVisitors, r/marriott, r/timeshare, etc.) — independent of RedWeek's booking-incentivized reviews.
+      </div>
+    </div>`;
+  }
+
+  /* ── Board view ─────────────────────────────────────────── */
+  function renderBoard() {
+    const container = document.getElementById('board-columns');
+    container.innerHTML = '';
+
+    // Group by cluster, but order columns by island then cluster
+    const byCluster = new Map();
+    AREA.resorts.filter(r => islandFilter.size === 0 || islandFilter.has(r.island))
+                .forEach(r => {
+      if (!byCluster.has(r.cluster)) byCluster.set(r.cluster, []);
+      byCluster.get(r.cluster).push(r);
+    });
+
+    // Sort columns: by island, then by descending count within island
+    const cols = Array.from(byCluster.entries()).map(([cluster, resorts]) => ({
+      cluster, resorts, island: resorts[0].island,
+      color: AREA.island_colors[resorts[0].island] || '#888',
+    }));
+    // Island order: largest first (matches legend)
+    const islandOrder = {};
+    document.querySelectorAll('.legend-chip').forEach((c, i) => islandOrder[c.dataset.island] = i);
+    cols.sort((a, b) => {
+      const ai = islandOrder[a.island] ?? 99, bi = islandOrder[b.island] ?? 99;
+      if (ai !== bi) return ai - bi;
+      return b.resorts.length - a.resorts.length;
+    });
+
+    cols.forEach(col => {
+      // Sort cards within column: rated first (by rating desc, then review count desc), then unrated
+      col.resorts.sort((a, b) => {
+        const aRated = !!a.rating, bRated = !!b.rating;
+        if (aRated !== bRated) return bRated - aRated;
+        if (aRated) {
+          if (b.rating !== a.rating) return b.rating - a.rating;
+          return (b.review_count || 0) - (a.review_count || 0);
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+      const colEl = document.createElement('div');
+      colEl.className = 'board-column';
+      colEl.innerHTML = `
+        <div class="board-column-header">
+          <span class="board-column-dot" style="background: ${col.color}; box-shadow: 0 0 6px ${col.color}80;"></span>
+          <span class="board-column-name">${col.cluster}</span>
+          <span class="board-column-meta">· ${col.island}</span>
+          <span class="board-column-count">${col.resorts.length}</span>
+        </div>
+        <div class="board-column-cards"></div>
+      `;
+      const cardsEl = colEl.querySelector('.board-column-cards');
+      col.resorts.forEach(r => {
+        const card = document.createElement('div');
+        card.className = 'board-card';
+        const ratingMarkup = r.rating
+          ? `<span class="board-card-rating">★ ${r.rating.toFixed(2)}</span>
+             <span class="board-card-reviews">${r.review_count} reviews</span>`
+          : `<span class="board-card-unrated">no rating data</span>`;
+        card.innerHTML = `
+          <div class="board-card-name">${r.name}</div>
+          <div class="board-card-meta">${ratingMarkup}</div>
+        `;
+        card.addEventListener('click', () => openDrawer(r));
+        cardsEl.appendChild(card);
+      });
+      container.appendChild(colEl);
+    });
+  }
+
+  /* ── Deals view ─────────────────────────────────────────── */
+  const DEALS_RAW = JSON.parse(document.getElementById('deals-data').textContent);
+  const DEALS = (DEALS_RAW.deals || []).filter(d => d.discount_dollars > 0);
+
+  function fmtDate(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+  }
+
+  function renderDeals() {
+    const grid = document.getElementById('deals-grid');
+    grid.innerHTML = '';
+    // Apply island filter to deals too — need to know each deal's island from resort lookup
+    const resortByPid = new Map(AREA.resorts.map(r => [r.pid, r]));
+    const filtered = DEALS.filter(d => {
+      const r = resortByPid.get(d.pid);
+      if (!r) return false;
+      if (islandFilter.size && !islandFilter.has(r.island)) return false;
+      if (synthOnly && !r.synthesis) return false;
+      return true;
+    });
+    if (!filtered.length) {
+      grid.innerHTML = `<div class="deal-empty">No sweet deals match the current filter.${islandFilter.size ? ' Try clearing the island filter.' : ''}</div>`;
+      return;
+    }
+    filtered.forEach(d => {
+      const r = resortByPid.get(d.pid) || {};
+      const dollars = Math.round(d.discount_dollars);
+      // Tier: $3000+ = fire, $1500+ = gold, else normal
+      let tier = '';
+      if (dollars >= 3000) tier = 'tier-fire';
+      else if (dollars >= 1500) tier = 'tier-gold';
+      const fireClass = dollars >= 3000 ? 'fire' : '';
+      const card = document.createElement('div');
+      card.className = `deal-card ${tier}`;
+      const badges = [];
+      if (d.is_protected) badges.push('<span class="deal-badge protected">Full-Service Bookable</span>');
+      if (d.is_new) badges.push('<span class="deal-badge new">New listing</span>');
+      if (d.is_verified) badges.push('<span class="deal-badge verified">Verified seller</span>');
+      const ratingMarkup = r.rating
+        ? `<span style="color:#ffd166;font-weight:700;">★ ${r.rating.toFixed(2)}</span> <span style="color:rgba(255,255,255,0.4);">${r.review_count} reviews</span>`
+        : '';
+      card.innerHTML = `
+        <div>
+          <span class="deal-savings ${fireClass}">−$${dollars.toLocaleString()}</span>
+          <span class="deal-pct">${Math.abs(Math.round(d.discount_pct))}% below norm</span>
+        </div>
+        <div class="deal-resort">${d.resort_name}</div>
+        <div class="deal-meta">
+          ${fmtDate(d.check_in)} → ${fmtDate(d.check_out)} · ${d.bedrooms}BR sleeps ${d.sleeps} · ${d.view || 'view N/A'}
+        </div>
+        ${ratingMarkup ? `<div class="deal-meta" style="margin-top:4px;">${ratingMarkup}</div>` : ''}
+        <div class="deal-prices">
+          <span class="deal-price-now">$${Math.round(d.price).toLocaleString()}/wk</span>
+          <span class="deal-price-norm">$${Math.round(d.week_median).toLocaleString()} norm</span>
+          <span style="margin-left:auto;color:rgba(255,255,255,0.4);font-size:0.72rem;">n=${d.week_n}</span>
+        </div>
+        ${badges.length ? `<div class="deal-badges">${badges.join('')}</div>` : ''}
+      `;
+      card.addEventListener('click', () => window.open(d.url, '_blank', 'noopener'));
+      grid.appendChild(card);
+    });
+  }
+
+  /* ── View switcher ─────────────────────────────────────── */
+  let currentView = 'map';
+  function switchView(view) {
+    currentView = view;
+    document.getElementById('area-map').style.display = view === 'map' ? 'block' : 'none';
+    document.getElementById('area-board').classList.toggle('visible', view === 'board');
+    document.getElementById('area-deals').classList.toggle('visible', view === 'deals');
+    document.querySelectorAll('.view-toggle button').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === view);
+    });
+    if (view === 'board') renderBoard();
+    if (view === 'deals') renderDeals();
+    if (view === 'map') setTimeout(() => map.invalidateSize(), 50);
+  }
+  document.querySelectorAll('.view-toggle button').forEach(b => {
+    b.addEventListener('click', () => switchView(b.dataset.view));
+  });
+
+  // Re-render board/deals when filter chips change.
+  document.querySelectorAll('.legend-chip[data-island]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (currentView === 'board') renderBoard();
+      if (currentView === 'deals') renderDeals();
+    });
+  });
+
+  // Synthesis filter chip: toggles synthOnly mode
+  const synthChip = document.getElementById('synth-filter-chip');
+  if (synthChip) {
+    synthChip.addEventListener('click', () => {
+      synthOnly = !synthOnly;
+      synthChip.style.background = synthOnly ? 'rgba(102, 187, 106, 0.35)' : 'rgba(102, 187, 106, 0.1)';
+      synthChip.style.borderColor = synthOnly ? 'rgba(102, 187, 106, 0.7)' : 'rgba(102, 187, 106, 0.3)';
+      synthChip.style.boxShadow = synthOnly ? 'inset 0 0 0 1px rgba(102, 187, 106, 0.6)' : 'none';
+      renderPins();
+      if (currentView === 'board') renderBoard();
+      if (currentView === 'deals') renderDeals();
+    });
+  }
+});
+</script>
+{% endblock %}

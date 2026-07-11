@@ -1,0 +1,15 @@
+# db-speed-first lint allowlist — acknowledged exceptions (path::function[::loop]).
+# Each line is a deliberate, reviewed exception to ~/.claude/skills/db-speed-first.
+# Schema-ensures are NOT listed here — they are all guarded with @ensure_once.
+
+# Retired Crab Crawlers bot daemon. crawl_forever() is a long-lived loop that
+# opens one connection per crawl cycle (every 2h) — correct for a daemon, not a
+# request path. The /tasks/crawl cron was retired 2026-04-13 (commit f1164f2);
+# this code is inert plumbing kept for a possible future bot showcase.
+dev/bot_orchestrator.py::crawl_forever::loop
+
+# Manual demo-data seeders behind /tasks/seed-* — run by hand, rarely, to seed
+# booked-trip and chat demo content. Per-item loop is fine for a one-shot seed;
+# not a user-facing hot path.
+tasks_routes.py::task_seed_booked_trips::loop
+tasks_routes.py::task_seed_demo_chat::loop

@@ -1,0 +1,106 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Trips — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+{# Mobile: stacked cards (each trip = its own card with notes inline) #}
+<ul class="space-y-3 mb-6 sm:hidden">
+  {% if trips %}
+    {% for t in trips %}
+    <li class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="flex items-baseline justify-between gap-3 mb-1">
+        <div class="font-semibold">{{ t.resort_name or 'Unnamed trip' }}</div>
+        {% if t.cost_usd %}<div class="text-sm font-display text-crab-coral">${{ '{:,.0f}'.format(t.cost_usd) }}</div>{% endif %}
+      </div>
+      {% if t.location %}<div class="text-xs text-crab-sand-dim mb-2">{{ t.location }}</div>{% endif %}
+      <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-crab-sand-dim">
+        {% if t.trip_date_start or t.trip_date_end %}
+        <span>
+          {% if t.trip_date_start %}{{ t.trip_date_start }}{% endif %}
+          {% if t.trip_date_end %} → {{ t.trip_date_end }}{% endif %}
+        </span>
+        {% endif %}
+        {% if t.trip_type %}<span class="capitalize">{{ t.trip_type|replace('_',' ') }}</span>{% endif %}
+      </div>
+      {% if t.notes %}
+      <div class="mt-2 pt-2 border-t border-white/5 text-xs text-crab-sand-dim whitespace-pre-wrap">{{ t.notes }}</div>
+      {% endif %}
+      {% if role in ('owner', 'admin') %}
+      <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/{{ t.pk_id }}/delete" class="mt-2"
+            onsubmit="return confirm('Delete this trip? Participants + exchange links tied to it will lose their trip pointer.')">
+        <button class="text-xs text-red-400 hover:text-red-300">Delete trip ✕</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  {% else %}
+    <li class="bg-crab-card/40 border border-white/6 rounded-xl p-8 text-center text-sm text-crab-sand-dim">No trips recorded yet.</li>
+  {% endif %}
+</ul>
+
+{# Desktop: original table #}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden mb-6 hidden sm:block">
+  {% if trips %}
+  <table class="w-full text-sm">
+    <thead class="bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr><th class="text-left px-4 py-3">Dates</th><th class="text-left">Resort</th><th class="text-left">Location</th><th class="text-left">Type</th><th class="text-right">Cost</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in trips %}
+      <tr class="border-t border-white/5">
+        <td class="px-4 py-3">
+          {% if t.trip_date_start %}{{ t.trip_date_start }}{% endif %}
+          {% if t.trip_date_end %} → {{ t.trip_date_end }}{% endif %}
+        </td>
+        <td class="px-4 py-3">{{ t.resort_name or '—' }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ t.location or '' }}</td>
+        <td class="px-4 py-3 text-crab-sand-dim">{{ (t.trip_type or '')|replace('_',' ') }}</td>
+        <td class="px-4 py-3 text-right">{% if t.cost_usd %}${{ '{:,.2f}'.format(t.cost_usd) }}{% endif %}</td>
+        <td class="px-4 py-3 text-right">{% if role in ('owner', 'admin') %}<form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/{{ t.pk_id }}/delete" onsubmit="return confirm('Delete this trip? Participants + exchange links tied to it will lose their trip pointer.')"><button class="text-xs text-red-400 hover:text-red-300">✕</button></form>{% endif %}</td>
+      </tr>
+      {% if t.notes %}
+      <tr class="border-t border-white/5 bg-crab-navy/20">
+        <td colspan="6" class="px-4 py-2 text-xs text-crab-sand-dim whitespace-pre-wrap">{{ t.notes }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">No trips recorded yet.</div>
+  {% endif %}
+</div>
+
+{% if role != 'readonly' %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6">
+  <h2 class="text-sm font-medium text-crab-sand-dim uppercase tracking-wide mb-3">Add a trip</h2>
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/fact/trips/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="trip_date_start" placeholder="Start (YYYY-MM-DD)" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="trip_date_end" placeholder="End (YYYY-MM-DD)" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <select name="trip_type" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Type…</option>
+      <option value="home_week">Home week</option>
+      <option value="exchange">Exchange</option>
+      <option value="bonus_stay">Bonus stay</option>
+      <option value="rental">Rental</option>
+      <option value="purchase_trip">Purchase trip</option>
+    </select>
+    <select name="property_id" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="">Property (optional)</option>
+      {% for p in properties %}<option value="{{ p.pk_id }}">{{ p.name }}</option>{% endfor %}
+    </select>
+    <input name="resort_name" placeholder="Resort name" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="location" placeholder="Location" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="exchange_number" placeholder="Exchange # (if any)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="cost_usd" placeholder="Cost $" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <select name="uncertainty_level" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+      <option value="confirmed">Confirmed</option>
+      <option value="probable">Probable</option>
+      <option value="family_memory">Family memory</option>
+      <option value="unverified">Unverified</option>
+    </select>
+    <textarea name="notes" rows="2" placeholder="Notes" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">Save trip</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

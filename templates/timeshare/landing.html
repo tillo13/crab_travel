@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Timeshare — crab.travel{% endblock %}
+{% block meta_description %}Keep your family's timeshare facts — maintenance fees, trips, exchanges, people, contacts — in one private place. No Excel, no group texts, no forgotten passwords.{% endblock %}
+{% block og_title %}Timeshare coordination on crab.travel{% endblock %}
+{% block og_description %}One private place for your family's timeshare — fees, trips, people, contacts, exchanges.{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-3xl mx-auto">
+  <div class="mb-10">
+    <h1 class="text-3xl md:text-4xl font-display">Timeshare, the sane way.</h1>
+    <p class="text-base text-crab-sand-dim mt-3 leading-relaxed">
+      If your family owns a timeshare, you probably have fee statements in six inboxes,
+      a portal login nobody can find, and a history of trips only one person remembers.
+      Put it all in one private place.
+    </p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4 mb-10">
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <h3 class="font-semibold mb-2">Maintenance fee timeline</h3>
+      <p class="text-sm text-crab-sand-dim">Every year, what was billed, what was paid, what was the late fee. No more digging.</p>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <h3 class="font-semibold mb-2">Trip history</h3>
+      <p class="text-sm text-crab-sand-dim">Home weeks, exchanges, who went, what it cost. Family memory, structured.</p>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <h3 class="font-semibold mb-2">Portals & contacts</h3>
+      <p class="text-sm text-crab-sand-dim">One place for every login, member number, and support phone tree shortcut.</p>
+    </div>
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <h3 class="font-semibold mb-2">Private by default</h3>
+      <p class="text-sm text-crab-sand-dim">Every group is invite-only. We never index group pages and we don't store your documents.</p>
+    </div>
+  </div>
+
+  {% if session.user %}
+  <a href="/timeshare/groups/new" class="inline-block bg-crab-coral text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+    + Start a timeshare group
+  </a>
+  {% else %}
+  <a href="/login" class="inline-block bg-crab-coral text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+    Sign in to get started
+  </a>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}Live — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .trip-card {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.75rem; padding: 1.25rem; transition: all 0.3s;
+  }
+  html:not(.dark) .trip-card { background: white; border-color: #e5e7eb; }
+  .trip-card:hover { border-color: rgba(232,89,58,0.3); }
+  .trip-card.is-running { border-color: rgba(59,130,246,0.3); animation: pulse-border 2s ease-in-out infinite; }
+  @keyframes pulse-border { 0%,100% { border-color: rgba(59,130,246,0.2); } 50% { border-color: rgba(59,130,246,0.5); } }
+  .phase-badge { display: inline-block; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.1rem 0.45rem; border-radius: 9999px; }
+  .badge-passed { background: rgba(16,185,129,0.15); color: #10B981; }
+  .badge-failed { background: rgba(239,68,68,0.15); color: #EF4444; }
+  .badge-warning { background: rgba(245,158,11,0.15); color: #F59E0B; }
+  .badge-running { background: rgba(59,130,246,0.15); color: #3B82F6; }
+  .badge-crawl { background: rgba(232,89,58,0.15); color: #E8593A; }
+  .badge-idle { background: rgba(255,255,255,0.06); color: #9CA3AF; }
+  .event-row { padding: 0.35rem 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.78rem; }
+  .event-row:last-child { border-bottom: none; }
+  .event-ok { color: #10B981; }
+  .event-error { color: #EF4444; }
+  .event-warning { color: #F59E0B; }
+  #activity-feed { max-height: 500px; overflow-y: auto; }
+  .dest-tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: rgba(232,89,58,0.1); color: #F47A5F; margin-right: 0.25rem; }
+  html:not(.dark) .dest-tag { background: rgba(232,89,58,0.08); }
+  .stat-num { font-family: 'DM Serif Display', Georgia, serif; }
+  .filter-tab { padding: 0.35rem 0.9rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.08); background: transparent; color: #C8C2B8; transition: all 0.2s; }
+  .filter-tab:hover { border-color: rgba(232,89,58,0.3); color: #F0EAE0; }
+  .filter-tab.active { background: rgba(232,89,58,0.15); border-color: rgba(232,89,58,0.3); color: #E8593A; }
+  html:not(.dark) .filter-tab { border-color: #e5e7eb; color: #6b7280; }
+  html:not(.dark) .filter-tab.active { background: rgba(232,89,58,0.08); color: #E8593A; }
+  .trip-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; margin-top: 0.5rem; }
+  .trip-progress-bar { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #E8593A, #0D9488); transition: width 0.5s ease; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto animate-in">
+
+<!-- Header -->
+<div class="mb-8">
+  <h1 class="text-3xl font-display mb-2">See It <span class="text-crab-coral">Live</span></h1>
+  <p class="text-sm text-crab-sand-dim leading-relaxed max-w-2xl mb-4">CrabAI is always planning, building real trips with real flights, hotels, and itineraries. Watch trips progress from <strong class="text-amber-400">Voting</strong> (picking destinations) to <strong class="text-blue-400">Charting</strong> (finding deals) to <strong class="text-crab-teal">Booked</strong> (ready to travel). Click any trip to jump in and explore. These aren't mockups. They're live.</p>
+  <a href="/login" class="inline-flex items-center gap-2 bg-crab-coral hover:bg-crab-coral-light text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+    Start your own trip <span class="opacity-60">&rarr;</span>
+  </a>
+</div>
+
+<!-- Stats Bar -->
+<div class="grid grid-cols-3 gap-3 mb-6">
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-trips" class="text-2xl stat-num text-crab-coral">0</div>
+    <div class="text-xs text-crab-sand-dim">Trips Built</div>
+  </div>
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-destinations" class="text-2xl stat-num text-crab-teal">0</div>
+    <div class="text-xs text-crab-sand-dim">Destinations</div>
+  </div>
+  <div class="text-center py-3 rounded-xl bg-white/3 dark:bg-white/3 border border-white/6">
+    <div id="stat-crabs" class="text-2xl stat-num text-crab-coral-light">0</div>
+    <div class="text-xs text-crab-sand-dim">Travelers</div>
+  </div>
+</div>
+
+<!-- Filter Tabs -->
+<div class="flex gap-2 mb-4">
+  <button id="filter-all" onclick="setFilter('all')" class="filter-tab active">All</button>
+  <button id="filter-active" onclick="setFilter('active')" class="filter-tab">Active</button>
+  <button id="filter-voting" onclick="setFilter('voting')" class="filter-tab">Voting</button>
+  <button id="filter-charting" onclick="setFilter('charting')" class="filter-tab">Charting</button>
+  <button id="filter-booked" onclick="setFilter('booked')" class="filter-tab">Booked</button>
+</div>
+
+<!-- Active Trips -->
+<div class="mb-6" id="active-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+    <span>Live Now</span>
+    <span id="active-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="active-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="trip-card opacity-40 text-center py-8">
+      <div class="text-sm text-crab-sand-dim">No active trips right now...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Voting Trips (planning & voting stage) -->
+<div class="mb-6" id="voting-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Voting</span>
+    <span class="text-xs text-amber-400 font-sans">picking destinations</span>
+    <span id="voting-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="voting-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
+<!-- Charting Trips (locked, searching for deals) -->
+<div class="mb-6" id="charting-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Charting</span>
+    <span class="text-xs text-blue-400 font-sans">finding flights & hotels</span>
+    <span id="charting-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="charting-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
+<!-- Booked Trips (fully booked, ready to go) -->
+<div class="mb-6" id="booked-section">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">
+    <span>Booked</span>
+    <span class="text-xs text-crab-teal font-sans">ready to travel</span>
+    <span id="booked-count" class="text-sm text-crab-sand-dim font-sans font-normal"></span>
+  </h2>
+  <div id="booked-trips" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+</div>
+
+<!-- Live Activity Feed -->
+<div class="trip-card mb-6">
+  <h2 class="font-display text-xl mb-3 flex items-center gap-2">Activity Feed <span class="w-2 h-2 rounded-full bg-crab-coral animate-pulse"></span></h2>
+  <div id="activity-feed">
+    <div class="text-sm text-crab-sand-dim opacity-40">Waiting for crab activity...</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+let pollInterval = null;
+let currentFilter = 'all';
+const TOTAL_PHASES = 13; // setup through stop
+
+// ── Initial data (server-side rendered to avoid blank flash) ──
+{% if initial_data %}
+const _initialData = {{ initial_data|safe }};
+{% else %}
+const _initialData = null;
+{% endif %}
+
+// ── Polling ──────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const resp = await fetch('/api/live/status');
+    const data = await resp.json();
+    if (data.success) renderBoard(data.data);
+  } catch(e) { console.error('Poll:', e); }
+}
+
+// ── Rendering ────────────────────────────────────────────────
+function renderBoard(data) {
+  const {runs, events} = data;
+  if (!runs || runs.length === 0) return;
+
+  // Filter out empty/broken runs (old manual runs with no trip data)
+  const validRuns = runs.filter(r => r.trip_title && r.trip_destinations && r.trip_destinations.length > 0);
+
+  // Stats
+  const allDests = new Set();
+  let totalCrabs = 0;
+  validRuns.forEach(r => {
+    (r.trip_destinations || []).forEach(d => allDests.add(d));
+    totalCrabs += r.trip_group_size || 0;
+  });
+  document.getElementById('stat-trips').textContent = validRuns.length;
+  document.getElementById('stat-destinations').textContent = allDests.size;
+  document.getElementById('stat-crabs').textContent = totalCrabs;
+
+  // Split runs into active, voting, charting, and booked
+  const activeRuns = validRuns.filter(r => r.status === 'running');
+  const bookedRuns = validRuns.filter(r => r.status !== 'running' && (r.plan_status === 'booked' || r.plan_status === 'completed'));
+  const chartingRuns = validRuns.filter(r => r.status !== 'running' && r.plan_status === 'locked');
+  const votingRuns = validRuns.filter(r => r.status !== 'running' && !['booked', 'completed', 'locked'].includes(r.plan_status));
+
+  // Render active trips
+  const activeBoard = document.getElementById('active-trips');
+  const activeCountEl = document.getElementById('active-count');
+  if (activeCountEl) activeCountEl.textContent = activeRuns.length > 0 ? `(${activeRuns.length})` : '';
+
+  if (activeRuns.length > 0) {
+    activeBoard.innerHTML = activeRuns.map(r => renderTripCard(r, true)).join('');
+  } else {
+    activeBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No active trips right now — next crawl coming soon...</div></div>';
+  }
+
+  // Render voting trips
+  const votingBoard = document.getElementById('voting-trips');
+  const votingCountEl = document.getElementById('voting-count');
+  if (votingCountEl) votingCountEl.textContent = votingRuns.length > 0 ? `(${votingRuns.length})` : '';
+
+  if (votingRuns.length > 0) {
+    votingBoard.innerHTML = votingRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    votingBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No trips in voting right now...</div></div>';
+  }
+
+  // Render charting trips
+  const chartingBoard = document.getElementById('charting-trips');
+  const chartingCountEl = document.getElementById('charting-count');
+  if (chartingCountEl) chartingCountEl.textContent = chartingRuns.length > 0 ? `(${chartingRuns.length})` : '';
+
+  if (chartingRuns.length > 0) {
+    chartingBoard.innerHTML = chartingRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    chartingBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No trips charting a course yet...</div></div>';
+  }
+
+  // Render booked trips
+  const bookedBoard = document.getElementById('booked-trips');
+  const bookedCountEl = document.getElementById('booked-count');
+  if (bookedCountEl) bookedCountEl.textContent = bookedRuns.length > 0 ? `(${bookedRuns.length})` : '';
+
+  if (bookedRuns.length > 0) {
+    bookedBoard.innerHTML = bookedRuns.map(r => renderTripCard(r, false)).join('');
+  } else {
+    bookedBoard.innerHTML = '<div class="trip-card opacity-40 text-center py-6"><div class="text-sm text-crab-sand-dim">No fully booked trips yet — watch them come together...</div></div>';
+  }
+
+  // Apply current filter
+  applyFilter();
+
+  // Activity feed
+  const feed = document.getElementById('activity-feed');
+  if (events && events.length > 0) {
+    feed.innerHTML = events.map(e => {
+      const statusClass = e.status === 'ok' ? 'event-ok' : e.status === 'error' ? 'event-error' : 'event-warning';
+      const icon = e.status === 'ok' ? '&#10003;' : e.status === 'error' ? '&#10007;' : '&#9888;';
+      const time = e.created_at ? new Date(e.created_at).toLocaleTimeString() : '';
+      const botName = (e.bot_name || '').replace('[BOT] ', '');
+      return `<div class="event-row">
+        <span class="${statusClass}">${icon}</span>
+        <span class="text-crab-sand-dim text-xs">${time}</span>
+        <span class="text-xs font-medium ml-1">[${e.phase}]</span>
+        <span class="text-xs ml-1 text-crab-coral">${botName}</span>
+        <span class="text-xs text-crab-sand-dim ml-1">${(e.action || '').replace('[BOT] ', '')}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Manage polling — always poll (crabs are always crawling)
+  if (!pollInterval) {
+    pollInterval = setInterval(pollStatus, 10000);
+  }
+}
+
+function renderTripCard(r, isActive) {
+  const isRunning = r.status === 'running';
+  const isBooked = r.plan_status === 'booked' || r.plan_status === 'completed';
+  const isCharting = r.plan_status === 'locked';
+  const badgeClass = isBooked ? 'badge-passed' : isCharting ? 'badge-running' : r.status === 'passed' ? 'badge-warning' : r.status === 'failed' ? 'badge-failed' : r.status === 'running' ? 'badge-running' : r.mode === 'crawl' ? 'badge-crawl' : 'badge-idle';
+  const title = (r.trip_title || (r.mode === 'crawl' ? 'Random Trip' : r.mode || 'Trip')).replace('[BOT] ', '');
+  const dests = (r.trip_destinations || []).map(d => `<span class="dest-tag">${d}</span>`).join('');
+  const vibe = r.trip_vibe || '';
+  const size = r.trip_group_size || '?';
+  const statusLabel = isBooked ? 'booked' : isCharting ? 'charting' : r.status === 'running' ? 'in progress' : r.status === 'failed' ? 'failed' : 'voting';
+  const linkUrl = r.invite_token ? `/to/${r.invite_token}` : (r.plan_id ? `/plan/${r.plan_id}` : null);
+
+  let duration = '';
+  if (r.started_at) {
+    const start = new Date(r.started_at);
+    const end = r.finished_at ? new Date(r.finished_at) : new Date();
+    const secs = Math.round((end - start) / 1000);
+    duration = secs < 60 ? secs + 's' : Math.floor(secs/60) + 'm ' + (secs%60) + 's';
+  }
+
+  let timeAgo = '';
+  if (r.started_at) {
+    const mins = Math.round((Date.now() - new Date(r.started_at)) / 60000);
+    timeAgo = mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins/60) + 'h ago';
+  }
+
+  // Progress bar for active trips
+  const phasesTotal = r.phases_passed + r.phases_failed + r.phases_warned;
+  const progressPct = isRunning ? Math.min(100, Math.round((phasesTotal / TOTAL_PHASES) * 100)) : 100;
+  const progressBar = isActive ? `<div class="trip-progress"><div class="trip-progress-bar" style="width:${progressPct}%"></div></div>` : '';
+
+  // Current phase indicator for active trips
+  const phaseInfo = isActive && r.phases_passed > 0
+    ? `<span class="text-[10px] text-crab-teal">${r.phases_passed} phases done</span>`
+    : '';
+
+  const cardContent = `
+    <div class="flex items-start justify-between mb-2">
+      <div>
+        <div class="font-display text-base">${title}</div>
+        <div class="text-xs text-crab-sand-dim mt-0.5">${vibe}</div>
+      </div>
+      <span class="phase-badge ${badgeClass}">${statusLabel}</span>
+    </div>
+    <div class="mb-2">${dests || '<span class="text-xs text-crab-sand-dim">generating...</span>'}</div>
+    <div class="flex items-center justify-between text-xs text-crab-sand-dim">
+      <span>${size} travelers ${phaseInfo}</span>
+      <span>${duration} &middot; ${timeAgo}</span>
+    </div>
+    ${progressBar}
+    ${isBooked && r.plan_id ? '<div class="mt-2"><a href="/plan/' + r.plan_id + '/summary" class="inline-block text-xs font-medium px-3 py-1 rounded-lg bg-crab-teal/15 text-crab-teal border border-crab-teal/20 hover:bg-crab-teal/25 transition-colors" style="text-decoration:none;">View Trip Summary →</a></div>' : ''}`;
+
+  if (linkUrl) {
+    return `<a href="${linkUrl}" class="trip-card block ${isRunning ? 'is-running' : ''} hover:bg-white/5 dark:hover:bg-white/5" style="text-decoration:none;color:inherit;">${cardContent}</a>`;
+  }
+  return `<div class="trip-card ${isRunning ? 'is-running' : ''}">${cardContent}</div>`;
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('filter-' + filter).classList.add('active');
+  applyFilter();
+}
+
+function applyFilter() {
+  const sections = {
+    active: document.getElementById('active-section'),
+    voting: document.getElementById('voting-section'),
+    charting: document.getElementById('charting-section'),
+    booked: document.getElementById('booked-section'),
+  };
+
+  if (currentFilter === 'all') {
+    Object.values(sections).forEach(el => { if (el) el.style.display = ''; });
+  } else {
+    Object.entries(sections).forEach(([key, el]) => {
+      if (el) el.style.display = key === currentFilter ? '' : 'none';
+    });
+  }
+}
+
+// Render server-side data immediately (no blank flash), then start polling
+if (_initialData) renderBoard(_initialData);
+else pollStatus();
+pollInterval = setInterval(pollStatus, 10000);
+</script>
+{% endblock %}

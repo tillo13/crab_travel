@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}crab.travel — Group trips, without the chaos{% endblock %}
+{% block meta_description %}Plan group trips without the chaos. Pick destinations, let CrabAI find activities, share one link with your crew — everyone votes, drops their airport, marks blackout dates. Free, no credit card.{% endblock %}
+{% block og_title %}crab.travel — Group trips, without the chaos{% endblock %}
+{% block og_description %}Pick destinations. AI finds the fun stuff. Share one link — everyone votes and marks dates. Done.{% endblock %}
+{% block head %}
+<style>
+  .hero-gradient {
+    background: radial-gradient(ellipse at 30% 0%, rgba(232, 89, 58, 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 100%, rgba(13, 148, 136, 0.1) 0%, transparent 50%);
+  }
+  .step-number {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: rgba(232, 89, 58, 0.12);
+    color: #E8593A;
+    flex-shrink: 0;
+  }
+  .scroll-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .scroll-reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .float-tag {
+    position: absolute;
+    padding: 0.3rem 0.7rem;
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(26, 37, 64, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(240, 234, 224, 0.7);
+    backdrop-filter: blur(8px);
+    animation: float 6s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="-mx-4 md:-mx-6 -mt-6 md:-mt-8">
+
+  <!-- Hero -->
+  <section class="hero-gradient px-4 md:px-6 py-20 md:py-32 relative overflow-hidden">
+    <div class="max-w-3xl mx-auto text-center relative z-10">
+      <div class="animate-in">
+        <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl shadow-crab-coral/15 hidden dark:block" alt="" style="animation: crabHello 0.8s cubic-bezier(0.34,1.56,0.64,1) both, crabGlow 3s ease-in-out 0.8s infinite;">
+        <img src="{{ url_for('static', filename='images/crab_logo_white.png') }}" class="w-28 h-28 md:w-36 md:h-36 rounded-3xl mx-auto mb-8 shadow-xl block dark:hidden" alt="" style="animation: crabHello 0.8s cubic-bezier(0.34,1.56,0.64,1) both;">
+        <style>@keyframes crabHello { 0% { transform:scale(0.3) rotate(-20deg); opacity:0; } 40% { transform:scale(1.15) rotate(8deg); opacity:1; } 60% { transform:scale(0.95) rotate(-3deg); } 80% { transform:scale(1.03) rotate(1deg); } 100% { transform:scale(1) rotate(0deg); opacity:1; } }</style>
+        <h1 class="text-4xl md:text-6xl font-display leading-tight mb-6">
+          Your group trip shouldn't live<br class="hidden md:block"> in a spreadsheet.
+        </h1>
+        <p class="text-lg md:text-xl text-crab-sand-dim max-w-2xl mx-auto mb-10 font-light leading-relaxed">
+          Pick some destinations. CrabAI finds the fun stuff. Share one link with your crew.
+          Everyone votes, drops their airport, marks their blackout dates. Done.
+        </p>
+      </div>
+      <div class="animate-in stagger-2">
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+            Start planning
+          </a>
+          <a href="/demo" class="inline-block border border-crab-teal/30 hover:border-crab-teal/60 text-crab-teal px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:bg-crab-teal/5">
+            See a demo trip
+          </a>
+        </div>
+        <p class="text-xs text-crab-sand-dim mt-4 opacity-50">Free. No credit card. Just a Google account.</p>
+      </div>
+    </div>
+
+    <!-- Floating tags -->
+    <div class="hidden md:block">
+      <span class="float-tag" style="top: 25%; left: 8%; animation-delay: 0s;">SEA ✈️</span>
+      <span class="float-tag" style="top: 60%; left: 12%; animation-delay: 1.5s;">ORD ✈️</span>
+      <span class="float-tag" style="top: 30%; right: 8%; animation-delay: 0.8s;">JFK ✈️</span>
+      <span class="float-tag" style="top: 65%; right: 10%; animation-delay: 2.2s;">LAX ✈️</span>
+      <span class="float-tag" style="top: 45%; left: 5%; animation-delay: 3s;">DEN ✈️</span>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="px-4 md:px-6 py-20 md:py-28">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-14">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Three steps to kill the group text</h2>
+        <p class="text-crab-sand-dim">From "we should do something" to "we're booked," without the chaos.</p>
+      </div>
+
+      <div class="space-y-8">
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">1</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Create a plan</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">Add a few destination ideas. CrabAI researches each one: fun things to do, upcoming events, best dates to visit. Like an Evite, but way smarter.</p>
+          </div>
+        </div>
+
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">2</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Share one link</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">Everyone sees the destinations with real activities and events. They vote, enter their airport, and mark dates they can't go. Takes 2 minutes.</p>
+          </div>
+        </div>
+
+        <div class="scroll-reveal flex gap-5 items-start">
+          <div class="step-number">3</div>
+          <div>
+            <h3 class="font-semibold text-lg mb-1">Pick your winner</h3>
+            <p class="text-crab-sand-dim text-sm leading-relaxed">See which destination your group is most excited about. Everyone's airport and schedule is already collected. All that's left is booking.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The Problem -->
+  <section class="px-4 md:px-6 py-16 md:py-24 border-t border-b border-white/5">
+    <div class="max-w-2xl mx-auto scroll-reveal">
+      <blockquote class="text-center">
+        <p class="text-2xl md:text-3xl font-display leading-relaxed mb-6">
+          Every group trip starts the same way.
+          <span class="text-crab-coral">Endless group texts.</span>
+          A spreadsheet nobody updates.
+          <span class="text-crab-coral">Three months later</span>... still no plan.
+        </p>
+        <footer class="text-sm text-crab-sand-dim">
+          There had to be a better way. So we built one.
+        </footer>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- What's Different -->
+  <section class="px-4 md:px-6 py-20 md:py-28">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Not a booking site.</h2>
+        <p class="text-xl text-crab-sand-dim font-light">A coordination layer.</p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6 scroll-reveal">
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-crab-coral/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-crab-coral" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">CrabAI-powered research</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Add a city and CrabAI finds the best things to do, upcoming events, festivals, and ideal dates to visit.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-crab-teal/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-crab-teal" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Everyone weighs in</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Vote on destinations, share airports, mark blackout dates. The group decides together. No more one person doing all the work.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">One link does it all</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Destinations, votes, who's in, schedules, activities. One link replaces 4 spreadsheets and a group chat.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI keeps working -->
+  <section class="px-4 md:px-6 py-20 md:py-28 border-t border-white/5">
+    <div class="max-w-3xl mx-auto">
+      <div class="scroll-reveal text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-display mb-3">Plan early. We'll watch prices for you.</h2>
+        <p class="text-xl text-crab-sand-dim font-light">CrabAI monitors flights and hotels for every member, every night.</p>
+      </div>
+
+      <div class="scroll-reveal grid md:grid-cols-2 gap-6">
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Set it and forget it</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">Add your destinations, airports, and dates. CrabAI checks prices every night and builds a history of what flights and hotels cost over time. The more data you give, the smarter it gets.</p>
+        </div>
+        <div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 card-glow">
+          <div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+          </div>
+          <h3 class="font-semibold mb-1.5">Know when to book</h3>
+          <p class="text-sm text-crab-sand-dim leading-relaxed">CrabAI hunts every member's route across flights, trains, buses, rideshare, rental cars, and more — continuously. See trends, spot drops, check the dashboard anytime or get a daily digest.</p>
+        </div>
+      </div>
+
+      <div class="scroll-reveal text-center mt-8">
+        <p class="text-sm text-crab-sand-dim max-w-lg mx-auto">The best group trips are planned months in advance. Start now, lock in dates, and let CrabAI do the hunting while you live your life.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Expenses -->
+  <section class="px-4 md:px-6 py-16 md:py-24 border-t border-white/5">
+    <div class="max-w-3xl mx-auto scroll-reveal text-center">
+      <h2 class="text-3xl md:text-4xl font-display mb-3">No more "who owes what?"</h2>
+      <p class="text-xl text-crab-sand-dim font-light mb-6">Expense tracking built in. See every cost, every split, every balance.</p>
+      <p class="text-sm text-crab-sand-dim max-w-lg mx-auto">Someone booked the Airbnb. Someone else grabbed the rental car. CrabAI tracks who paid what, calculates who owes who, and shows a clean per-person breakdown on your trip summary. No spreadsheet required.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="px-4 md:px-6 py-20 md:py-28 text-center" style="background: linear-gradient(to bottom, transparent, rgba(232, 89, 58, 0.06));">
+    <div class="scroll-reveal">
+      <h2 class="text-3xl md:text-4xl font-display mb-4">Ready to ditch the spreadsheet?</h2>
+      <p class="text-crab-sand-dim mb-8 max-w-md mx-auto">Create a plan, share a link, and let your crew decide together. It takes 5 minutes.</p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+          Start planning
+        </a>
+        <a href="/live" class="inline-block border border-white/10 hover:border-white/20 text-crab-sand px-8 py-3.5 rounded-xl text-base font-semibold transition-all hover:bg-white/3">
+          See it live
+        </a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.scroll-reveal').forEach(el => observer.observe(el));
+</script>
+{% endblock %}

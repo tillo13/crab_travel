@@ -1,0 +1,1227 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.title }} — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .pin-grid {
+    columns: 2;
+    column-gap: 0.75rem;
+  }
+  @media (min-width: 768px) { .pin-grid { columns: 3; } }
+  @media (min-width: 1024px) { .pin-grid { columns: 4; } }
+  .pin {
+    break-inside: avoid;
+    margin-bottom: 0.75rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease;
+    cursor: default;
+  }
+  .pin:hover {
+    border-color: rgba(232,89,58,0.25);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+  }
+  .pin-img {
+    width: 100%;
+    height: auto;
+    min-height: 100px;
+    object-fit: cover;
+    display: block;
+    background: rgba(255,255,255,0.03);
+  }
+  .cat-stay { border-left: 3px solid #14B8A6; }
+  .cat-do { border-left: 3px solid #E8593A; }
+  .cat-food { border-left: 3px solid #F59E0B; }
+  .cat-event { border-left: 3px solid #8B5CF6; }
+  .cat-badge-stay { background: rgba(20,184,166,0.12); color: #14B8A6; }
+  .cat-badge-do { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .cat-badge-food { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
+  .input-field {
+    width: 100%; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+  html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
+  html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+  .pin:hover .pin-delete { opacity: 1; }
+  .dest-tab { cursor:pointer; padding:0.5rem 1rem; border-radius:0.5rem; font-size:0.9rem; font-weight:500; transition:all 0.2s; }
+  .dest-tab.active { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .dest-tab:not(.active) { color: rgba(200,194,184,0.6); }
+  .dest-tab:not(.active):hover { color: rgba(200,194,184,1); }
+  html:not(.dark) .dest-tab.active { background: rgba(232,89,58,0.08); }
+  html:not(.dark) .dest-tab:not(.active) { color: #9ca3af; }
+  /* Board sub-tabs */
+  .board-tab { cursor:pointer; padding:0.4rem 0.9rem; border-radius:0.4rem; font-size:0.8rem; font-weight:500; transition:all 0.2s; border: 1px solid transparent; }
+  .board-tab.active { background: rgba(232,89,58,0.1); color: #E8593A; border-color: rgba(232,89,58,0.2); }
+  .board-tab:not(.active) { color: rgba(200,194,184,0.5); }
+  .board-tab:not(.active):hover { color: rgba(200,194,184,0.9); }
+  html:not(.dark) .board-tab.active { background: rgba(232,89,58,0.06); }
+  html:not(.dark) .board-tab:not(.active) { color: #9ca3af; }
+  /* Media grid */
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+  .media-card {
+    border-radius: 0.75rem; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease; background: rgba(255,255,255,0.02);
+  }
+  .media-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-1px); }
+  html:not(.dark) .media-card { border-color: rgba(0,0,0,0.08); background: white; }
+  .media-card iframe { width: 100%; aspect-ratio: 16/9; border: 0; display: block; }
+  .media-card img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 200px; }
+  .search-link {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem;
+    border-radius: 0.5rem; font-size: 0.8rem; font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.08); transition: all 0.2s;
+    color: rgba(200,194,184,0.7); text-decoration: none;
+  }
+  .search-link:hover { border-color: rgba(232,89,58,0.3); color: #E8593A; }
+  html:not(.dark) .search-link { border-color: #e5e7eb; color: #6b7280; }
+  html:not(.dark) .search-link:hover { border-color: #E8593A; color: #E8593A; }
+  /* Research progress */
+  .research-progress { max-width: 28rem; margin: 0 auto; }
+  .research-step {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0; font-size: 0.85rem; color: rgba(200,194,184,0.4);
+    transition: all 0.4s ease;
+  }
+  .research-step.active { color: #F0EAE0; }
+  .research-step.done { color: rgba(20,184,166,0.8); }
+  html:not(.dark) .research-step { color: rgba(0,0,0,0.25); }
+  html:not(.dark) .research-step.active { color: #111; }
+  html:not(.dark) .research-step.done { color: #0D9488; }
+  .step-icon {
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.08);
+    transition: all 0.4s ease;
+  }
+  .research-step.active .step-icon {
+    border-color: #E8593A; background: rgba(232,89,58,0.15);
+    animation: stepPulse 1.5s ease-in-out infinite;
+  }
+  .research-step.done .step-icon {
+    border-color: #14B8A6; background: rgba(20,184,166,0.15);
+  }
+  html:not(.dark) .step-icon { border-color: rgba(0,0,0,0.1); }
+  @keyframes stepPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(232,89,58,0); }
+    50% { box-shadow: 0 0 0 6px rgba(232,89,58,0.15); }
+  }
+  .research-timer {
+    font-variant-numeric: tabular-nums; font-size: 0.8rem;
+    color: rgba(200,194,184,0.5);
+  }
+  html:not(.dark) .research-timer { color: #9ca3af; }
+  /* Chat */
+  .chat-container { max-height: 32rem; overflow-y: auto; }
+  .chat-msg { display: flex; gap: 0.6rem; padding: 0.5rem 0.5rem; border-radius: 0.5rem; transition: background 0.15s; }
+  .chat-msg:hover { background: rgba(255,255,255,0.02); }
+  html:not(.dark) .chat-msg:hover { background: rgba(0,0,0,0.02); }
+  .chat-avatar {
+    width: 2rem; height: 2rem; border-radius: 50%; background: rgba(232,89,58,0.12);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 0.8rem; font-weight: 600; color: #E8593A;
+    overflow: hidden;
+  }
+  .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .chat-name { font-size: 0.8rem; font-weight: 600; }
+  .chat-time { font-size: 0.7rem; color: rgba(200,194,184,0.4); margin-left: 0.4rem; }
+  html:not(.dark) .chat-time { color: #9ca3af; }
+  .chat-text { font-size: 0.85rem; line-height: 1.45; margin-top: 0.15rem; color: rgba(240,234,224,0.85); }
+  html:not(.dark) .chat-text { color: #374151; }
+  .chat-actions { display: none; gap: 0.5rem; margin-top: 0.25rem; }
+  .chat-msg:hover .chat-actions { display: flex; }
+  .chat-action-btn {
+    font-size: 0.7rem; color: rgba(200,194,184,0.5); cursor: pointer;
+    background: none; border: none; padding: 0; transition: color 0.15s;
+  }
+  .chat-action-btn:hover { color: #E8593A; }
+  .thread-replies {
+    margin-left: 2.6rem; padding-left: 0.75rem;
+    border-left: 2px solid rgba(255,255,255,0.06); margin-top: 0.15rem;
+  }
+  html:not(.dark) .thread-replies { border-color: rgba(0,0,0,0.06); }
+  .thread-replies .chat-msg { padding: 0.3rem 0.5rem; }
+  .thread-replies .chat-avatar { width: 1.5rem; height: 1.5rem; font-size: 0.65rem; }
+  .thread-reply-input {
+    margin-left: 2.6rem; padding-left: 0.75rem;
+    border-left: 2px solid rgba(232,89,58,0.2); margin-top: 0.25rem;
+  }
+  .thread-toggle {
+    font-size: 0.75rem; color: #E8593A; cursor: pointer; background: none;
+    border: none; padding: 0.2rem 0; font-weight: 500;
+  }
+  .thread-toggle:hover { text-decoration: underline; }
+  .chat-input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+  .chat-input {
+    flex: 1; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.85rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; resize: none; min-height: 2.4rem; max-height: 8rem;
+    font-family: inherit; transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: #E8593A; }
+  .chat-input::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .chat-input { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .chat-input:focus { border-color: #E8593A; }
+  .chat-send-btn {
+    padding: 0.55rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600;
+    background: #E8593A; color: white; border: none; cursor: pointer;
+    transition: background 0.2s; white-space: nowrap;
+  }
+  .chat-send-btn:hover { background: #d4472a; }
+  .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animate-in">
+
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-2xl font-display">{{ plan.title }}</h1>
+    <p class="text-crab-sand-dim text-sm">
+      {{ plan.organizer_name }}
+      {% if plan.timeframe %} · {{ plan.timeframe|replace('-', ' ')|title }}{% endif %}
+      {% if plan.travel_window_start and plan.travel_window_end %}
+       · {{ plan.travel_window_start.strftime('%b %Y') }} – {{ plan.travel_window_end.strftime('%b %Y') }}
+      {% endif %}
+    </p>
+  </div>
+  {% if is_organizer %}
+  <div class="flex items-center gap-2">
+    <span class="text-xs bg-crab-coral/10 text-crab-coral px-2 py-1 rounded-full">Organizer</span>
+    <button onclick="document.getElementById('delete-plan-modal').classList.remove('hidden')"
+      class="p-1.5 rounded-lg text-crab-sand-dim opacity-40 hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all" title="Delete plan">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Delete plan modal -->
+{% if is_organizer %}
+<div id="delete-plan-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('delete-plan-modal').classList.add('hidden')"></div>
+  <div class="relative bg-crab-card border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+    <h3 class="text-lg font-display mb-2">Delete this plan?</h3>
+    <p class="text-sm text-crab-sand-dim mb-5">This will permanently delete <strong class="text-crab-sand">{{ plan.title }}</strong>, all destinations, votes, and member data. This can't be undone.</p>
+    <div class="flex gap-3 justify-end">
+      <button onclick="document.getElementById('delete-plan-modal').classList.add('hidden')"
+        class="px-4 py-2 rounded-lg text-sm font-medium border border-white/10 hover:bg-white/5 transition-colors">Cancel</button>
+      <button onclick="deletePlan()" id="delete-plan-btn"
+        class="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors">Delete Plan</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if plan.description %}
+<p class="text-sm text-crab-sand-dim mb-4">{{ plan.description }}</p>
+{% endif %}
+{% if plan.group_vibes %}
+<div class="flex items-center gap-2 mb-4">
+  <span class="text-xs text-crab-sand-dim">Group vibes:</span>
+  <span class="text-xs bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">{{ plan.group_vibes }}</span>
+</div>
+{% endif %}
+
+<!-- Invite link -->
+{% if is_organizer %}
+<div class="bg-crab-card/40 rounded-xl border border-white/6 p-4 mb-6">
+  <label class="block font-semibold mb-2 text-sm">Share this link with your crew</label>
+  <div class="flex gap-2">
+    <input type="text" id="invite-link" readonly
+      value="{{ request.host_url }}to/{{ plan.invite_token }}"
+      class="flex-1 px-3 py-2 rounded-lg border border-white/10 bg-crab-navy-light text-crab-sand-dim text-sm font-mono">
+    <button onclick="copyInvite()" id="copy-btn"
+      class="px-4 py-2 bg-crab-coral text-white rounded-lg text-sm font-medium hover:bg-crab-coral-light">Copy</button>
+  </div>
+  {% if view_stats %}
+  <div class="flex gap-4 mt-3 text-xs text-crab-sand-dim">
+    <span>{{ view_stats.total_views }} view{{ 's' if view_stats.total_views != 1 }}</span>
+    <span>{{ view_stats.unique_visitors }} unique visitor{{ 's' if view_stats.unique_visitors != 1 }}</span>
+    <span>{{ view_stats.unique_signed_in }} signed in</span>
+  </div>
+  {% endif %}
+
+  <!-- Stage controls -->
+  {% set stage = plan.status or 'voting' %}
+  <div class="flex items-center gap-3 mt-3">
+    <span class="text-xs text-crab-sand-dim">Stage:</span>
+    <div class="flex gap-1.5">
+      {% for s, label, color in [('voting', 'Voting', '#E8593A'), ('planning', 'Planning', '#F59E0B'), ('locked', 'Booked', '#14B8A6')] %}
+      <button onclick="setStage('{{ s }}')" id="stage-btn-{{ s }}"
+        class="text-xs px-3 py-1 rounded-full border transition-colors font-medium
+        {% if stage == s %}text-white{% else %}text-crab-sand-dim border-white/10 hover:border-white/20{% endif %}"
+        style="{% if stage == s %}background: {{ color }}; border-color: {{ color }};{% endif %}">
+        {{ label }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Members & engagement -->
+{% if is_organizer and view_stats %}
+<div class="grid grid-cols-3 gap-3 mb-4">
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    <div class="text-lg font-display text-crab-coral">{{ view_stats.unique_visitors }}</div>
+    <div class="text-xs text-crab-sand-dim">opened link</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    <div class="text-lg font-display text-crab-teal">{{ members|length }}</div>
+    <div class="text-xs text-crab-sand-dim">signed up</div>
+  </div>
+  <div class="bg-crab-card/40 border border-white/6 rounded-lg p-3 text-center">
+    {% set voted_count = member_votes.voted_user_ids|length if member_votes and member_votes.voted_user_ids else 0 %}
+    <div class="text-lg font-display" style="color: {% if voted_count == members|length and members|length > 0 %}#14B8A6{% else %}#F0EAE0{% endif %};">{{ voted_count }}</div>
+    <div class="text-xs text-crab-sand-dim">voted</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="mb-6">
+  <div class="flex items-center gap-2 mb-2">
+    <span class="text-sm font-medium">{{ members|length }} {{ 'person' if members|length == 1 else 'people' }} joined</span>
+    {% if is_organizer and view_stats and view_stats.unique_visitors > members|length %}
+    <span class="text-xs text-crab-sand-dim opacity-60">({{ view_stats.unique_visitors - members|length }} opened link but haven't joined)</span>
+    {% endif %}
+  </div>
+  {% for m in members %}
+  <div class="flex items-center gap-2 py-1.5 {% if not loop.last %}border-b border-white/4{% endif %}">
+    <span class="text-sm font-medium">{{ m.display_name }}</span>
+    {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
+    {% if is_organizer and member_votes and member_votes.voted_user_ids %}
+      {% if m.user_id in member_votes.voted_user_ids %}
+        <span class="text-xs text-crab-teal ml-auto font-medium">✓ ranked</span>
+      {% else %}
+        <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">not ranked yet</span>
+      {% endif %}
+    {% elif is_organizer %}
+      <span class="text-xs text-crab-sand-dim opacity-40 ml-auto">not ranked yet</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pending suggestions from group members -->
+<div id="pending-suggestions" class="mb-4 hidden">
+  <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-sm font-semibold text-amber-400">Suggested by your crew</span>
+      <span class="text-xs text-crab-sand-dim" id="pending-count"></span>
+    </div>
+    <div id="pending-list" class="space-y-2"></div>
+  </div>
+</div>
+
+<!-- Destination tabs + add input -->
+<div class="flex items-center gap-2 mb-4 flex-wrap">
+  <div id="dest-tabs" class="flex items-center gap-1 flex-wrap">
+    <span class="text-sm text-crab-sand-dim mr-1">Destinations:</span>
+    <!-- populated by JS -->
+  </div>
+  <div class="flex gap-1.5 items-center ml-auto shrink-0">
+    <input type="text" id="dest-input" placeholder="Add city..."
+      class="input-field w-36 text-sm py-1.5 px-2.5" onkeydown="if(event.key==='Enter'){addDestination()}">
+    <button onclick="addDestination()" id="add-dest-btn"
+      class="px-3 py-1.5 bg-crab-coral text-white rounded-lg text-xs font-semibold hover:bg-crab-coral-light transition-all shrink-0">+ Add</button>
+  </div>
+</div>
+
+<!-- Destination board (Pinterest-style) -->
+<div id="dest-board">
+  <p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Loading destinations...</p>
+</div>
+
+</div><!-- /animate-in -->
+
+<!-- Group Chat (outside animate-in to avoid column layout bleed) -->
+<div class="mt-8 mb-10" id="chat-section">
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/6">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-display">Group Chat</span>
+        <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
+      </div>
+    </div>
+    <div class="chat-container p-3" id="chat-messages">
+      <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
+    </div>
+    <div class="px-4 py-3 border-t border-white/6">
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input-main" placeholder="Message the group..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+        <button class="chat-send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Delete destination modal -->
+<div id="delete-dest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('delete-dest-modal').classList.add('hidden')"></div>
+  <div class="relative bg-crab-card border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+    <h3 class="text-lg font-display mb-2">Remove destination?</h3>
+    <p class="text-sm text-crab-sand-dim mb-5">Remove <strong class="text-crab-sand" id="delete-dest-name"></strong> and all its research data from this plan?</p>
+    <div class="flex gap-3 justify-end">
+      <button onclick="document.getElementById('delete-dest-modal').classList.add('hidden')"
+        class="px-4 py-2 rounded-lg text-sm font-medium border border-white/10 hover:bg-white/5 transition-colors">Cancel</button>
+      <button onclick="confirmDeleteDest()" id="confirm-delete-dest-btn"
+        class="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors">Remove</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PLAN_ID = '{{ plan.plan_id }}';
+const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
+const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
+let _destinations = [];
+let _activeDestIdx = 0;
+var _voteTallies = {}; // {suggestion_id: {ranks: {1: N, 2: N}, total_votes: N}}
+
+function vibeScore(item) {
+  if (!GROUP_VIBES) return 0;
+  var words = GROUP_VIBES.split(/[\s,]+/).filter(function(w) { return w.length > 2; });
+  var text = ((item.name || '') + ' ' + (item.description || '') + ' ' + (item.category || '')).toLowerCase();
+  var score = 0;
+  words.forEach(function(w) {
+    var re = new RegExp(w, 'gi');
+    var matches = text.match(re);
+    if (matches) score += matches.length;
+  });
+  return score;
+}
+
+async function deletePlan() {
+  var btn = document.getElementById('delete-plan-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/delete', { method: 'POST' });
+    var result = await res.json();
+    if (result.success) {
+      window.location.href = '/dashboard';
+    } else {
+      alert(result.error || 'Failed to delete plan');
+      btn.disabled = false;
+      btn.textContent = 'Delete Plan';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Delete Plan';
+  }
+}
+
+function copyInvite() {
+  navigator.clipboard.writeText(document.getElementById('invite-link').value).then(function() {
+    var btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+  });
+}
+
+function setStage(stage) {
+  fetch('/api/plan/' + PLAN_ID + '/stage', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({stage: stage}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) location.reload();
+  });
+}
+
+function unsplashUrl(query, w, h) {
+  return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
+}
+
+function pinCard(item, type, destName, suggestionId, category, idx) {
+  var catClass = {stay:'cat-stay',do:'cat-do',food:'cat-food',event:'cat-event'}[type] || '';
+  var badgeClass = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'}[type] || '';
+  var label = {stay:'Stay',do:'Activity',food:'Eat & Drink',event:'Event'}[type] || type;
+  var imgQuery = item.image_search || item.name;
+  var imgH = type === 'stay' ? 280 : (type === 'event' ? 200 : 220);
+  var searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(item.name + ' ' + (destName || ''));
+  var html = '<div class="pin ' + catClass + '" style="position:relative;">';
+  if (IS_ORGANIZER && suggestionId) {
+    html += '<button onclick="event.stopPropagation();deletePin(\'' + suggestionId + '\',\'' + category + '\',' + idx + ')" class="absolute top-2 right-2 z-10 w-6 h-6 bg-black/60 hover:bg-red-500/80 text-white rounded-full text-xs flex items-center justify-center transition-colors opacity-0 pin-delete" title="Remove">&times;</button>';
+  }
+  html += '<a href="' + searchUrl + '" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:block;">';
+  html += '<img class="pin-img" src="' + unsplashUrl(imgQuery, 400, imgH) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  html += '<div class="p-3">';
+  html += '<div class="flex items-start justify-between gap-2 mb-1">';
+  html += '<span class="font-semibold text-sm leading-snug hover:text-crab-coral transition-colors">' + item.name + '</span>';
+  if (item.price_hint) html += '<span class="text-xs text-crab-sand-dim shrink-0">' + item.price_hint + '</span>';
+  html += '</div>';
+  html += '<span class="inline-block text-xs px-1.5 py-0.5 rounded ' + badgeClass + ' mb-1.5">' + label + '</span>';
+  if (item.description) html += '<p class="text-xs text-crab-sand-dim leading-relaxed">' + item.description + '</p>';
+  if (item.date_range) html += '<p class="text-xs text-purple-400 font-medium mt-1">' + item.date_range + '</p>';
+  if (item.neighborhood) html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-1">' + item.neighborhood + '</p>';
+  html += '</div></a></div>';
+  return html;
+}
+
+var _researchSteps = [
+  {label: 'Searching for hotels and stays', icon: '🏨', delay: 0},
+  {label: 'Finding activities and things to do', icon: '🎯', delay: 6},
+  {label: 'Discovering restaurants and bars', icon: '🍽️', delay: 14},
+  {label: 'Looking up upcoming events and festivals', icon: '🎉', delay: 22},
+  {label: 'Checking flight prices', icon: '✈️', delay: 30},
+  {label: 'Building your destination board', icon: '📋', delay: 38},
+];
+var _researchTimerInterval = null;
+var _researchStartTime = null;
+
+function renderResearchProgress() {
+  var researching = _destinations.filter(function(d) { return d.status === 'researching'; });
+  var names = researching.map(function(d) { return d.destination_name; });
+  var namesHtml = names.map(function(n) { return '<span class="text-crab-coral">' + n + '</span>'; }).join(', ');
+  var html = '<div class="py-10">';
+  html += '<div class="research-progress">';
+  html += '<div class="text-center mb-6">';
+  html += '<p class="text-lg font-display mb-1">CrabAI is researching ' + namesHtml + '</p>';
+  html += '<p class="research-timer" id="research-timer">0:00</p>';
+  html += '</div>';
+  html += '<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5" id="research-steps">';
+  _researchSteps.forEach(function(step, i) {
+    html += '<div class="research-step" id="rstep-' + i + '">';
+    html += '<div class="step-icon">' + step.icon + '</div>';
+    html += '<span>' + step.label + '</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div></div>';
+  return html;
+}
+
+function startResearchTimer() {
+  if (!_researchStartTime) _researchStartTime = Date.now();
+  if (_researchTimerInterval) return; // already running
+
+  _researchTimerInterval = setInterval(function() {
+    var elapsed = (Date.now() - _researchStartTime) / 1000;
+    var mins = Math.floor(elapsed / 60);
+    var secs = Math.floor(elapsed % 60);
+    var timerEl = document.getElementById('research-timer');
+    if (timerEl) timerEl.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+    // Advance steps based on elapsed time
+    for (var i = 0; i < _researchSteps.length; i++) {
+      var stepEl = document.getElementById('rstep-' + i);
+      if (!stepEl) continue;
+      if (elapsed >= _researchSteps[i].delay + 6) {
+        stepEl.className = 'research-step done';
+      } else if (elapsed >= _researchSteps[i].delay) {
+        stepEl.className = 'research-step active';
+      }
+    }
+  }, 200);
+}
+
+function stopResearchTimer() {
+  if (_researchTimerInterval) { clearInterval(_researchTimerInterval); _researchTimerInterval = null; }
+  _researchStartTime = null;
+}
+
+function renderBoard(dest) {
+  var board = document.getElementById('dest-board');
+  var card = dest.destination_data?.card;
+
+  if (dest.status === 'researching') {
+    board.innerHTML = renderResearchProgress();
+    startResearchTimer();
+    return;
+  }
+  stopResearchTimer();
+  if (dest.status === 'error') {
+    board.innerHTML = '<div class="text-center py-16"><p class="text-red-400 mb-2">Research failed for ' + dest.destination_name + '</p><button onclick="retryResearch(\'' + dest.suggestion_id + '\', \'' + dest.destination_name.replace(/'/g, "\\'") + '\')" class="text-sm text-crab-coral hover:underline">Retry</button></div>';
+    return;
+  }
+  if (!card) {
+    board.innerHTML = '<div class="text-center py-16 text-crab-sand-dim"><p>No research data yet.</p></div>';
+    return;
+  }
+
+  var html = '';
+  // Header
+  html += '<div class="mb-6">';
+  html += '<div class="mb-3">';
+  var destTally = _voteTallies[dest.suggestion_id];
+  html += '<div class="flex items-start justify-between gap-4">';
+  html += '<div>';
+  html += '<h2 class="text-xl font-display">' + dest.destination_name + '</h2>';
+  if (dest.suggested_by_name) html += '<p class="text-xs text-crab-sand-dim mt-0.5 opacity-60">Suggested by ' + dest.suggested_by_name + '</p>';
+  html += '</div>';
+  if (destTally && destTally.total_votes > 0) {
+    var firstPlace = destTally.ranks['1'] || destTally.ranks[1] || 0;
+    html += '<div class="shrink-0 text-center bg-crab-teal/10 border border-crab-teal/20 rounded-xl px-3 py-1.5">';
+    if (firstPlace > 0) {
+      html += '<div class="text-lg font-display text-crab-teal">' + firstPlace + '</div>';
+      html += '<div class="text-xs text-crab-sand-dim">#1 pick' + (firstPlace === 1 ? '' : 's') + '</div>';
+    } else {
+      html += '<div class="text-lg font-display text-crab-teal">' + destTally.total_votes + '</div>';
+      html += '<div class="text-xs text-crab-sand-dim">ranked</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  if (card.summary) html += '<p class="text-sm text-crab-sand-dim mt-1">' + card.summary + '</p>';
+  html += '</div>';
+  // Meta chips
+  html += '<div class="flex flex-wrap gap-2 text-xs">';
+  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+  html += '</div></div>';
+
+  // Board sub-tabs
+  html += '<div class="flex items-center gap-2 mb-4">';
+  html += '<button class="board-tab active" onclick="switchBoardTab(\'pins\', this)">Pins</button>';
+  html += '<button class="board-tab" onclick="switchBoardTab(\'media\', this)">Photos & Videos</button>';
+  html += '</div>';
+
+  // Pinterest grid of pins
+  html += '<div id="board-pins" class="pin-grid">';
+  var dn = dest.destination_name;
+  var sid = dest.suggestion_id;
+  // Flatten all pins, score by vibe relevance, sort highest first
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s, i) { allPins.push({item: s, type: 'stay', cat: 'stays', idx: i}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t, i) { allPins.push({item: t, type: 'do', cat: 'things_to_do', idx: i}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f, i) { allPins.push({item: f, type: 'food', cat: 'food_and_drink', idx: i}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e, i) { allPins.push({item: e, type: 'event', cat: 'upcoming_events', idx: i}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
+  }
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn, sid, p.cat, p.idx); });
+
+  // Add custom pin (organizer)
+  if (IS_ORGANIZER) {
+    html += '<div class="break-inside-avoid mb-3">';
+    html += '<div class="border border-dashed border-white/10 dark:border-white/10 rounded-xl p-3 hover:border-crab-coral/30 transition-colors" style="border-color: var(--pin-border, rgba(255,255,255,0.1));">';
+    html += '<p class="text-xs font-medium mb-2 text-gray-900 dark:text-crab-sand">Add your own pin</p>';
+    html += '<input type="text" id="custom-pin-name" placeholder="Place name" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
+    html += '<input type="text" id="custom-pin-desc" placeholder="Quick description (optional)" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
+    html += '<input type="text" id="custom-pin-url" placeholder="Link URL (optional)" class="input-field mb-1.5" style="font-size:0.8rem;padding:0.4rem 0.6rem;">';
+    html += '<div class="flex gap-1.5 mb-1.5 flex-wrap">';
+    ['stays','things_to_do','food_and_drink','upcoming_events'].forEach(function(c) {
+      var lbl = {stays:'Stay',things_to_do:'Activity',food_and_drink:'Eat & Drink',upcoming_events:'Event'}[c];
+      html += '<label class="cursor-pointer"><input type="radio" name="custom-pin-cat" value="' + c + '" class="peer hidden"' + (c === 'things_to_do' ? ' checked' : '') + '><span class="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-white/10 text-gray-700 dark:text-crab-sand-dim peer-checked:border-crab-coral peer-checked:text-crab-coral transition-colors">' + lbl + '</span></label>';
+    });
+    html += '</div>';
+    html += '<button onclick="addCustomPin(\'' + sid + '\')" class="text-xs bg-crab-coral text-white px-3 py-1.5 rounded-lg font-medium hover:bg-crab-coral-light transition-colors">+ Add Pin</button>';
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+
+  // Media tab (hidden by default)
+  html += '<div id="board-media" style="display:none;">';
+  html += renderMediaSection(dest);
+  html += '</div>';
+
+  board.innerHTML = html;
+}
+
+var _activeBoardTab = 'pins';
+
+function switchBoardTab(tab, btn) {
+  _activeBoardTab = tab;
+  document.getElementById('board-pins').style.display = tab === 'pins' ? '' : 'none';
+  document.getElementById('board-media').style.display = tab === 'media' ? '' : 'none';
+  btn.parentElement.querySelectorAll('.board-tab').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+function youtubeIdFromUrl(url) {
+  var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function renderMediaSection(dest) {
+  var dn = dest.destination_name;
+  var card = dest.destination_data?.card;
+  var customMedia = dest.destination_data?.custom_media || [];
+  var html = '';
+  var vibeQuery = GROUP_VIBES ? (GROUP_VIBES + ' ' + dn) : dn;
+
+  // Custom media added by coordinator (show FIRST — crew picks matter most)
+  if (customMedia.length > 0) {
+    html += '<div class="mb-6">';
+    html += '<p class="text-sm font-medium mb-3">Added by your crew</p>';
+    html += '<div class="media-grid">';
+    customMedia.forEach(function(m, i) {
+      var ytId = youtubeIdFromUrl(m.url);
+      html += '<div class="media-card relative">';
+      if (IS_ORGANIZER) {
+        html += '<button onclick="removeMedia(\'' + dest.suggestion_id + '\', ' + i + ')" class="absolute top-2 right-2 z-10 w-6 h-6 bg-black/60 hover:bg-red-500/80 text-white rounded-full text-xs flex items-center justify-center transition-colors">&times;</button>';
+      }
+      if (ytId) {
+        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'" style="cursor:pointer;" onclick="window.open(\'' + m.url + '\',\'_blank\')">';
+      }
+      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Photos (Pexels API)
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Photos</p>';
+  html += '<div class="media-grid" id="photo-grid-' + dest.suggestion_id + '">';
+  html += '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-4 text-center">Loading photos...</p>';
+  html += '</div>';
+  html += '</div>';
+
+  // YouTube videos
+  html += '<div class="mb-6">';
+  html += '<p class="text-sm font-medium mb-3">Videos</p>';
+  html += '<div class="media-grid" id="yt-grid-' + dest.suggestion_id + '">';
+  html += '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-4 text-center">Loading videos...</p>';
+  html += '</div>';
+  html += '</div>';
+
+  // Add media input (organizer or any member)
+  html += '<div class="border border-dashed border-white/10 rounded-xl p-4">';
+  html += '<p class="text-sm font-medium mb-2">Add a photo or video</p>';
+  html += '<p class="text-xs text-crab-sand-dim mb-3 opacity-60">Paste a YouTube link or image URL to add it to the board</p>';
+  html += '<div class="flex gap-2 mb-2">';
+  html += '<input type="text" id="media-url-input" placeholder="https://youtube.com/watch?v=... or image URL" class="input-field flex-1">';
+  html += '</div>';
+  html += '<div class="flex gap-2">';
+  html += '<input type="text" id="media-caption-input" placeholder="Caption (optional)" class="input-field flex-1">';
+  html += '<button onclick="addMedia(\'' + dest.suggestion_id + '\')" class="px-4 py-2 bg-crab-coral text-white rounded-lg text-sm font-medium hover:bg-crab-coral-light transition-colors shrink-0">+ Add</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // Fetch photos and videos
+  setTimeout(function() {
+    loadPhotos(dest.suggestion_id, dn);
+    loadYouTubeVideos(dest.suggestion_id, dn);
+  }, 100);
+
+  return html;
+}
+
+function loadPhotos(suggestionId, destName) {
+  var grid = document.getElementById('photo-grid-' + suggestionId);
+  if (!grid) return;
+  fetch('/api/photo-search?q=' + encodeURIComponent(destName + ' travel') + '&per_page=8')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.photos.length > 0) {
+        var html = '';
+        data.photos.forEach(function(p) {
+          html += '<div class="media-card">';
+          html += '<a href="' + (p.full || p.url) + '" target="_blank" rel="noopener"><img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.parentElement.style.display=\'none\'" style="width:100%;height:auto;display:block;object-fit:cover;max-height:200px;cursor:pointer;"></a>';
+          if (p.photographer) html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim opacity-60">by ' + p.photographer + '</div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+      } else {
+        grid.innerHTML = '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-2 text-center">No photos found — add your own below</p>';
+      }
+    })
+    .catch(function() {
+      grid.innerHTML = '<p class="text-xs text-crab-sand-dim opacity-50 col-span-full py-2 text-center">No photos found — add your own below</p>';
+    });
+}
+
+function loadYouTubeVideos(suggestionId, destName) {
+  var grid = document.getElementById('yt-grid-' + suggestionId);
+  if (!grid) return;
+  var ytQuery = 'things to do in ' + destName;
+  fetch('/api/youtube-search?q=' + encodeURIComponent(ytQuery) + '&max_results=6')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.videos.length > 0) {
+        var html = '';
+        data.videos.forEach(function(v) {
+          html += '<div class="media-card">';
+          html += '<iframe src="https://www.youtube.com/embed/' + v.id + '" allowfullscreen loading="lazy"></iframe>';
+          html += '<div class="px-3 py-2"><p class="text-xs font-medium leading-snug line-clamp-2">' + v.title + '</p>';
+          html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-0.5">' + v.channel + '</p></div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+      } else {
+        grid.innerHTML = '<div class="col-span-full text-center py-4">' +
+          '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent('things to do in ' + destName) + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for ' + destName + ' videos &rarr;</a></div>';
+      }
+    })
+    .catch(function() {
+      grid.innerHTML = '<div class="col-span-full text-center py-4">' +
+        '<a href="https://www.youtube.com/results?search_query=' + encodeURIComponent('things to do in ' + destName) + '" target="_blank" rel="noopener" class="text-sm text-crab-coral hover:underline">Search YouTube for videos &rarr;</a></div>';
+    });
+}
+
+function renderTabs() {
+  var tabBar = document.getElementById('dest-tabs');
+  var html = '<span class="text-sm text-crab-sand-dim mr-2 shrink-0">Destinations:</span>';
+  _destinations.forEach(function(d, i) {
+    var active = i === _activeDestIdx ? 'active' : '';
+    var emoji = d.status === 'researching' ? '⏳ ' : '';
+    var tally = _voteTallies[d.suggestion_id];
+    var firstPlace = tally ? (tally.ranks['1'] || tally.ranks[1] || 0) : 0;
+    var voteLabel = firstPlace > 0 ? ' <span class="text-xs opacity-60">(' + firstPlace + ' #1)</span>' : (tally && tally.total_votes > 0 ? ' <span class="text-xs opacity-60">(' + tally.total_votes + ' ranked)</span>' : '');
+    html += '<span class="relative inline-flex items-center">';
+    html += '<button class="dest-tab ' + active + '" onclick="switchDest(' + i + ')">' + emoji + d.destination_name + voteLabel + '</button>';
+    if (IS_ORGANIZER) {
+      html += '<button onclick="deleteDestination(\'' + d.suggestion_id + '\', \'' + d.destination_name.replace(/'/g, "\\'") + '\')" class="ml-0.5 text-xs opacity-30 hover:opacity-100 hover:text-red-400 transition-all" title="Remove destination">&times;</button>';
+    }
+    html += '</span>';
+  });
+  tabBar.innerHTML = html;
+}
+
+function switchDest(idx) {
+  _activeDestIdx = idx;
+  renderTabs();
+  renderBoard(_destinations[idx]);
+  loadVotes();
+}
+
+async function loadDestinations() {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destinations');
+    var result = await res.json();
+    if (result.success) {
+      var allDests = result.data.destinations;
+      // Separate pending suggestions from active destinations
+      var pending = allDests.filter(function(d) { return d.status === 'pending'; });
+      _destinations = allDests.filter(function(d) { return d.status !== 'pending'; });
+      renderPendingSuggestions(pending);
+      if (_destinations.length > 0) {
+        if (_activeDestIdx >= _destinations.length) _activeDestIdx = 0;
+        renderTabs();
+        renderBoard(_destinations[_activeDestIdx]);
+        if (_destinations.some(function(d) { return d.status === 'researching'; })) {
+          pollDestinations();
+        }
+      } else {
+        document.getElementById('dest-tabs').innerHTML = '';
+        document.getElementById('dest-board').innerHTML = '<div class="text-center py-16 border border-dashed border-white/10 rounded-xl"><div class="text-3xl mb-3">🗺️</div><p class="text-crab-sand-dim">Add a destination to get started</p><p class="text-xs text-crab-sand-dim opacity-60 mt-1">CrabAI will research stays, activities, food, and events</p></div>';
+      }
+    }
+  } catch (e) {
+    document.getElementById('dest-board').innerHTML = '<p class="text-sm text-crab-sand-dim opacity-60 text-center py-10">Could not load destinations.</p>';
+  }
+}
+
+function renderPendingSuggestions(pending) {
+  var container = document.getElementById('pending-suggestions');
+  var list = document.getElementById('pending-list');
+  var count = document.getElementById('pending-count');
+  if (!container || !list) return;
+  if (pending.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  count.textContent = pending.length + ' pending';
+  var html = '';
+  pending.forEach(function(d) {
+    var who = d.suggested_by_name || 'a member';
+    var when = '';
+    if (d.created_at) {
+      var dt = new Date(d.created_at);
+      when = ' · ' + dt.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' ' + dt.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'});
+    }
+    html += '<div class="flex items-center justify-between bg-crab-card/40 rounded-lg px-4 py-2.5" id="pending-' + d.suggestion_id + '">';
+    html += '<div>';
+    html += '<span class="text-sm font-medium">' + d.destination_name + '</span>';
+    html += '<span class="text-xs text-crab-sand-dim ml-2">suggested by ' + who + when + '</span>';
+    html += '</div>';
+    html += '<div class="flex gap-2">';
+    html += '<button onclick="approveSuggestion(\'' + d.suggestion_id + '\', \'approve\')" class="px-3 py-1 bg-crab-teal/20 text-crab-teal-light rounded-lg text-xs font-semibold hover:bg-crab-teal/30 transition-colors">Approve</button>';
+    html += '<button onclick="approveSuggestion(\'' + d.suggestion_id + '\', \'reject\')" class="px-3 py-1 bg-crab-coral/20 text-crab-coral rounded-lg text-xs font-semibold hover:bg-crab-coral/30 transition-colors">Reject</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function approveSuggestion(suggestionId, action) {
+  var row = document.getElementById('pending-' + suggestionId);
+  if (row) row.style.opacity = '0.5';
+  fetch('/api/plan/' + PLAN_ID + '/approve-suggestion', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({suggestion_id: suggestionId, action: action}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      if (row) row.remove();
+      // Refresh destinations
+      loadDestinations();
+    }
+  })
+  .catch(function() { if (row) row.style.opacity = '1'; });
+}
+
+async function addDestination() {
+  var input = document.getElementById('dest-input');
+  var btn = document.getElementById('add-dest-btn');
+  var name = input.value.trim();
+  if (!name) return;
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ destination: name }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      input.value = '';
+      await loadDestinations();
+      // Switch to the new one (last)
+      switchDest(_destinations.length - 1);
+      pollDestinations();
+    }
+  } catch (e) {}
+  btn.disabled = false;
+  btn.textContent = '+ Add';
+}
+
+var _pollTimer = null;
+var _pollCount = 0;
+function pollDestinations() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollCount = 0;
+  _pollTimer = setInterval(async function() {
+    _pollCount++;
+    if (_pollCount > 40) { clearInterval(_pollTimer); _pollTimer = null; return; }
+    await loadDestinations();
+    if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+    }
+  }, 3000);
+}
+
+async function addCustomPin(suggestionId) {
+  var name = document.getElementById('custom-pin-name').value.trim();
+  if (!name) return;
+  var desc = document.getElementById('custom-pin-desc').value.trim();
+  var url = document.getElementById('custom-pin-url').value.trim();
+  var cat = document.querySelector('input[name="custom-pin-cat"]:checked').value;
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/pin', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name, description: desc, url: url, category: cat }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      await loadDestinations();
+    }
+  } catch (e) {}
+}
+
+async function deletePin(suggestionId, category, idx) {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/pin', {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ category: category, index: idx }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      await loadDestinations();
+    }
+  } catch (e) {}
+}
+
+async function addMedia(suggestionId) {
+  var urlInput = document.getElementById('media-url-input');
+  var captionInput = document.getElementById('media-caption-input');
+  var url = urlInput.value.trim();
+  if (!url) return;
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/media', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url: url, caption: captionInput.value.trim() }),
+    });
+    var result = await res.json();
+    if (result.success) {
+      urlInput.value = '';
+      captionInput.value = '';
+      await loadDestinations();
+      // Stay on media tab
+      setTimeout(function() {
+        var tabs = document.querySelectorAll('.board-tab');
+        if (tabs.length >= 2) switchBoardTab('media', tabs[1]);
+      }, 50);
+    }
+  } catch (e) {}
+}
+
+async function removeMedia(suggestionId, mediaIdx) {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + suggestionId + '/media/' + mediaIdx, { method: 'DELETE' });
+    var result = await res.json();
+    if (result.success) {
+      await loadDestinations();
+      setTimeout(function() {
+        var tabs = document.querySelectorAll('.board-tab');
+        if (tabs.length >= 2) switchBoardTab('media', tabs[1]);
+      }, 50);
+    }
+  } catch (e) {}
+}
+
+var _pendingDeleteDest = null;
+function deleteDestination(suggestionId, destName) {
+  _pendingDeleteDest = suggestionId;
+  document.getElementById('delete-dest-name').textContent = destName;
+  document.getElementById('delete-dest-modal').classList.remove('hidden');
+}
+async function confirmDeleteDest() {
+  if (!_pendingDeleteDest) return;
+  var btn = document.getElementById('confirm-delete-dest-btn');
+  btn.disabled = true; btn.textContent = 'Removing...';
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/destination/' + _pendingDeleteDest, { method: 'DELETE' });
+    var result = await res.json();
+    if (result.success) {
+      _activeDestIdx = 0;
+      await loadDestinations();
+    }
+  } catch (e) {}
+  btn.disabled = false; btn.textContent = 'Remove';
+  document.getElementById('delete-dest-modal').classList.add('hidden');
+  _pendingDeleteDest = null;
+}
+
+async function retryResearch(suggestionId, destName) {
+  var res = await fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ destination: destName }),
+  });
+  if (res.ok) { loadDestinations(); pollDestinations(); }
+}
+
+async function vote(targetType, targetId, voteVal) {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/vote', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, vote: voteVal }),
+    });
+    var result = await res.json();
+    if (result.success) updateVoteScores(result.data.tallies);
+  } catch (e) {}
+}
+
+function updateVoteScores(tallies) {
+  tallies.forEach(function(t) {
+    if (t.target_type === 'destination') {
+      _voteTallies[t.target_id] = {ranks: t.ranks || {}, total_votes: t.total_votes || 0};
+    }
+    var el = document.getElementById('score-' + t.target_type + '-' + t.target_id);
+    if (el) {
+      var firstPlace = (t.ranks && t.ranks['1']) || 0;
+      el.textContent = firstPlace > 0 ? firstPlace + ' #1' : '';
+    }
+  });
+  renderTabs();
+}
+
+async function loadVotes() {
+  try {
+    var res = await fetch('/api/plan/' + PLAN_ID + '/votes');
+    var result = await res.json();
+    if (result.success) updateVoteScores(result.data.tallies);
+  } catch (e) {}
+}
+
+// ── Chat (inline threads) ──
+var _chatMessages = [];
+var _openThreadId = null;
+var _currentUserId = {{ user.id if user and user.id else 'null' }};
+
+function chatAvatar(msg, small) {
+  var cls = small ? 'chat-avatar' : 'chat-avatar';
+  if (msg.user_picture) return '<img src="' + msg.user_picture + '" alt="" onerror="this.parentElement.textContent=\'' + (msg.display_name||'?')[0].toUpperCase() + '\'">';
+  return (msg.display_name || '?')[0].toUpperCase();
+}
+
+function chatTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  var now = new Date();
+  var diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+
+function escapeHtml(t) {
+  var d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+function renderMsg(msg) {
+  var html = '<div class="chat-msg" data-id="' + msg.message_id + '">';
+  html += '<div class="chat-avatar">' + chatAvatar(msg) + '</div>';
+  html += '<div class="flex-1 min-w-0">';
+  html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + (msg.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(msg.created_at) + '</span></div>';
+  html += '<div class="chat-text">' + escapeHtml(msg.content).replace(/\n/g, '<br>') + '</div>';
+  html += '<div class="chat-actions">';
+  html += '<button class="chat-action-btn" onclick="toggleThread(\'' + msg.message_id + '\')">💬 Reply</button>';
+  if (msg.user_id === _currentUserId) html += '<button class="chat-action-btn" onclick="deleteMsg(\'' + msg.message_id + '\')">Delete</button>';
+  html += '</div>';
+  html += '</div></div>';
+
+  // Inline replies
+  if (msg.replies && msg.replies.length > 0) {
+    var isOpen = _openThreadId === msg.message_id;
+    if (!isOpen) {
+      html += '<div style="margin-left:2.6rem;"><button class="thread-toggle" onclick="toggleThread(\'' + msg.message_id + '\')">' + msg.reply_count + (msg.reply_count === 1 ? ' reply' : ' replies') + '</button></div>';
+    } else {
+      html += '<div class="thread-replies">';
+      msg.replies.forEach(function(r) {
+        html += '<div class="chat-msg" data-id="' + r.message_id + '">';
+        html += '<div class="chat-avatar">' + chatAvatar(r) + '</div>';
+        html += '<div class="flex-1 min-w-0">';
+        html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + (r.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(r.created_at) + '</span></div>';
+        html += '<div class="chat-text">' + escapeHtml(r.content).replace(/\n/g, '<br>') + '</div>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // Inline reply input if thread is open
+  if (_openThreadId === msg.message_id) {
+    html += '<div class="thread-reply-input">';
+    html += '<div class="chat-input-row">';
+    html += '<textarea class="chat-input" id="thread-reply-' + msg.message_id + '" placeholder="Reply..." rows="1" style="font-size:0.8rem;min-height:2rem;padding:0.4rem 0.7rem;" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendThreadReply(\'' + msg.message_id + '\')}"></textarea>';
+    html += '<button class="chat-send-btn" style="padding:0.4rem 0.75rem;font-size:0.75rem;" onclick="sendThreadReply(\'' + msg.message_id + '\')">Reply</button>';
+    html += '</div></div>';
+  }
+
+  return html;
+}
+
+function renderChat() {
+  var container = document.getElementById('chat-messages');
+  var countEl = document.getElementById('chat-count');
+  if (!container) return;
+  if (_chatMessages.length === 0) {
+    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">No messages yet. Start the conversation!</p>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  var total = _chatMessages.reduce(function(s, m) { return s + 1 + (m.reply_count || 0); }, 0);
+  if (countEl) countEl.textContent = total + ' message' + (total === 1 ? '' : 's');
+  var html = '';
+  _chatMessages.forEach(function(m) { html += renderMsg(m); });
+  container.innerHTML = html;
+}
+
+function toggleThread(msgId) {
+  _openThreadId = _openThreadId === msgId ? null : msgId;
+  renderChat();
+  if (_openThreadId) {
+    setTimeout(function() {
+      var input = document.getElementById('thread-reply-' + msgId);
+      if (input) input.focus();
+    }, 50);
+  }
+}
+
+function loadChat() {
+  fetch('/api/plan/' + PLAN_ID + '/messages')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        _chatMessages = data.data.messages;
+        renderChat();
+      }
+    })
+    .catch(function(e) { console.warn('Chat fetch error:', e); });
+}
+
+function sendMessage() {
+  var input = document.getElementById('chat-input-main');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function sendThreadReply(parentId) {
+  var input = document.getElementById('thread-reply-' + parentId);
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text, parent_id: parentId}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function deleteMsg(msgId) {
+  if (!confirm('Delete this message?')) return;
+  fetch('/api/plan/' + PLAN_ID + '/messages/' + msgId, {method: 'DELETE'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) loadChat();
+    });
+}
+
+// Auto-grow textareas
+document.addEventListener('input', function(e) {
+  if (e.target.classList.contains('chat-input')) {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+  }
+});
+
+// Init
+loadDestinations();
+loadVotes();
+loadChat();
+// Poll votes and chat so organizer sees live updates
+setInterval(loadVotes, 15000);
+setInterval(loadChat, 15000);
+</script>
+{% endblock %}

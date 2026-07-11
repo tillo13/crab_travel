@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Invite — crab.travel{% endblock %}
+{% block meta_robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<div class="animate-in max-w-md mx-auto mt-12 text-center">
+  <div class="bg-crab-card/40 border border-white/6 rounded-xl p-8">
+    <h1 class="text-xl font-display mb-3">This invite isn't usable</h1>
+    <p class="text-sm text-crab-sand-dim leading-relaxed mb-5">{{ error }}</p>
+    <a href="/dashboard" class="inline-block bg-crab-coral text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-all">
+      Back to dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}

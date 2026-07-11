@@ -1,0 +1,665 @@
+{% extends "timeshare/base_group.html" %}
+{% set group_uuid = group.group_id %}
+{% set nav_active = 'dashboard' %}
+{% block title %}{{ group.name }} — crab.travel{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+
+<style>
+  /* "Private travel journal meets deep-sea chart" — navy waters, coral
+     land highlights, sand parchment text. */
+  #ts-map { background: #0a1729; }
+  #ts-map .leaflet-tile { filter: saturate(0.7) brightness(0.9); }
+  #ts-map .leaflet-control-attribution {
+    background: rgba(10, 23, 41, 0.7) !important;
+    color: #c9b88a !important;
+    font-size: 10px !important;
+    backdrop-filter: blur(6px);
+  }
+  #ts-map .leaflet-control-attribution a { color: #ff8a65 !important; }
+  .ts-hex-pin {
+    background: transparent;
+    border: none;
+  }
+  .ts-hex-pin svg { overflow: visible; }
+  .ts-home-ring {
+    animation: ts-home-pulse 2.6s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes ts-home-pulse {
+    0%, 100% { opacity: 0.35; r: 22; }
+    50% { opacity: 0.8; r: 32; }
+  }
+  @keyframes ts-pin-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+  }
+  .ts-pin-bouncing { animation: ts-pin-bounce 0.6s ease-in-out 2; }
+  .ts-result-card {
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .ts-result-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 138, 101, 0.5);
+    background: rgba(255, 138, 101, 0.04);
+  }
+  .ts-tier-premier_boutique { color: #ffd166; }
+  .ts-tier-premier { color: #e9c46a; }
+  .ts-tier-select { color: #a8c5a5; }
+  .ts-chip-active {
+    background: rgba(255, 138, 101, 0.16);
+    border-color: rgba(255, 138, 101, 0.55);
+    color: #ff8a65;
+  }
+  /* Keep the map's div crisp on high-DPI */
+  .leaflet-container { font-family: inherit; }
+</style>
+{% endblock %}
+
+{% block group_content %}
+{% if request.args.get('welcome') %}
+<div id="ts-welcome" class="bg-emerald-500/8 border border-emerald-500/30 rounded-xl p-5 mb-6 relative">
+  <button type="button" onclick="document.getElementById('ts-welcome').remove();
+    history.replaceState(null,'',window.location.pathname);"
+    class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl leading-none px-2"
+    aria-label="Dismiss">×</button>
+  <div class="text-emerald-300 text-sm font-semibold mb-2">Welcome to {{ group.name }}.</div>
+  <div class="text-sm text-crab-sand leading-relaxed mb-3">
+    This is the family timeshare workspace — what you own, where you've been, fees, contacts, portals, and a searchable resort catalog. <span class="text-crab-sand-dim">You're here as a viewer, so nothing you click can break anything.</span>
+  </div>
+  <div class="flex flex-wrap gap-2 text-xs">
+    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-crab-navy/40 border border-white/10 text-crab-sand-dim">
+      <span class="text-crab-coral">★</span> Browse the world catalog and tag resorts you'd like to consider
+    </span>
+    <a href="/timeshare/g/{{ group.group_id }}/ask" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-crab-coral/15 border border-crab-coral/30 text-crab-coral hover:bg-crab-coral/25 transition-colors">
+      Ask the assistant anything →
+    </a>
+  </div>
+  {% if session.get('shared_view_via_link') %}
+  <div class="text-xs text-crab-sand-dim mt-3 pt-3 border-t border-white/5">
+    Already have a Google account? <a href="/login" class="text-crab-coral hover:underline">Sign in for the full experience →</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 min-h-[78vh]">
+
+  <!-- Left: search + map -->
+  <div class="flex flex-col gap-4 min-h-[78vh]">
+
+    <!-- Hero search -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-5">
+      <div class="flex items-center gap-3 mb-3">
+        <svg class="w-5 h-5 text-crab-coral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <input id="ts-search" type="text" autocomplete="off"
+               placeholder="Search by resort, area, country, airport…"
+               class="flex-1 bg-transparent text-lg font-display focus:outline-none placeholder:text-crab-sand-dim/60">
+        <span id="ts-result-count" class="text-xs text-crab-sand-dim whitespace-nowrap"></span>
+      </div>
+      <div id="ts-chips" class="flex flex-wrap gap-1.5 text-xs">
+        <button data-chip="tier" data-value="Premier_Boutique"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">★ Premier Boutique</button>
+        <button data-chip="tier" data-value="Premier"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Premier</button>
+        <button data-chip="min_sleeps" data-value="4"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Sleeps 4+</button>
+        <button data-chip="min_sleeps" data-value="6"
+          class="ts-chip px-2.5 py-1 rounded-full border border-white/10 bg-crab-navy/40 text-crab-sand-dim hover:border-crab-coral/40 transition-colors">Sleeps 6+</button>
+        <span class="w-px bg-white/10 mx-1"></span>
+        {% for c in countries[:8] %}
+        <span class="ts-chip inline-flex items-stretch rounded-full border border-white/10 bg-crab-navy/40 overflow-hidden hover:border-crab-coral/40 transition-colors" data-chip-group="country" data-country="{{ c.country }}">
+          <button data-chip="country" data-value="{{ c.country }}"
+            class="ts-chip-filter px-2.5 py-1 text-crab-sand-dim hover:text-crab-sand transition-colors" title="Filter results to {{ c.country }}">
+            {{ c.country }}<span class="ml-1 text-[10px] text-crab-sand-dim/70">{{ c.resort_count }}</span>
+          </button>
+          <a href="/timeshare/g/{{ group.group_id }}/destinations/{{ c.country|urlencode }}"
+             class="ts-chip-open px-2 py-1 border-l border-white/10 text-crab-coral hover:bg-crab-coral/10 transition-colors" title="Open {{ c.country }} destination page">→</a>
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden flex-1 relative min-h-[420px]">
+      <div id="ts-map" class="absolute inset-0"></div>
+      <div class="absolute top-3 left-3 z-[400] text-[10px] uppercase tracking-wider text-crab-sand-dim bg-crab-navy/70 backdrop-blur px-2.5 py-1 rounded-full border border-white/5">
+        world catalog · tap a country to filter
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: results + dossier -->
+  <aside class="flex flex-col gap-4">
+    <div id="ts-results" class="bg-crab-card/40 border border-white/6 rounded-xl p-2 overflow-y-auto max-h-[62vh] flex-1">
+      <div class="text-center text-sm text-crab-sand-dim py-8" id="ts-empty">Loading…</div>
+    </div>
+
+    <!-- Dossier quick-links, secondary -->
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xs uppercase tracking-wide text-crab-sand-dim">Dossier</h3>
+        <span class="text-[10px] text-crab-sand-dim">{{ member_counts.accepted }} member{{ 's' if member_counts.accepted != 1 else '' }}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-1.5 text-sm">
+        {% set links = [
+          ('property',  'Property',   fact_counts.properties),
+          ('finances',  'Fees',       fact_counts.maintenance_fees),
+          ('trips',     'Trips',      fact_counts.trips),
+          ('people',    'People',     fact_counts.people),
+          ('portals',   'Portals',    fact_counts.portals),
+          ('contacts',  'Contacts',   fact_counts.contacts),
+          ('documents', 'Documents',  fact_counts.documents),
+          ('timeline',  'Timeline',   fact_counts.timeline),
+        ] %}
+        {% for slug, label, count in links %}
+        <a href="/timeshare/g/{{ group.group_id }}/{{ slug }}"
+           class="group flex items-center justify-between px-3 py-2 rounded-lg hover:bg-crab-navy/40 transition-colors">
+          <span class="text-crab-sand">{{ label }}</span>
+          <span class="text-xs text-crab-sand-dim group-hover:text-crab-coral">{{ count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Photo lightbox (hidden by default) -->
+<div id="ts-lightbox" class="fixed inset-0 z-[600] hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="absolute inset-0 bg-crab-navy/95 backdrop-blur-md"></div>
+  <div class="relative h-full flex flex-col items-center justify-center p-4 md:p-8">
+    <button data-lb-prev type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft'}))"
+            class="absolute left-4 md:left-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">‹</button>
+    <button data-lb-next type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight'}))"
+            class="absolute right-4 md:right-12 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 disabled:opacity-30 transition-colors text-2xl text-crab-sand flex items-center justify-center">›</button>
+    <button type="button"
+            onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"
+            class="absolute top-4 right-4 w-10 h-10 rounded-full bg-crab-navy/80 border border-white/10 hover:border-crab-coral/50 transition-colors text-xl text-crab-sand">×</button>
+    <img data-lb-img src="" alt="" class="max-h-[80vh] max-w-[90vw] object-contain rounded-lg shadow-2xl">
+    <div data-lb-caption class="mt-3 text-xs text-crab-sand-dim text-center"></div>
+  </div>
+</div>
+
+<!-- Resort detail drawer (hidden by default) -->
+<div id="ts-drawer" class="fixed inset-0 z-[500] hidden" aria-hidden="true">
+  <div class="absolute inset-0 bg-crab-navy/70 backdrop-blur-sm" data-drawer-close></div>
+  <aside class="absolute right-0 top-0 bottom-0 w-full md:w-[540px] bg-crab-navy border-l border-white/6 overflow-y-auto animate-in">
+    <div class="sticky top-0 bg-crab-navy/95 backdrop-blur border-b border-white/6 p-4 flex items-center justify-between">
+      <div class="text-xs uppercase tracking-wide text-crab-sand-dim" id="ts-drawer-crumbs">—</div>
+      <button data-drawer-close class="text-crab-sand-dim hover:text-crab-coral text-xl leading-none px-2">×</button>
+    </div>
+    <div id="ts-drawer-body" class="p-5"></div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const GROUP_UUID = {{ group.group_id|tojson }};
+  const HOME_PROPERTY_NAME = {{ (home_property.name if home_property else '')|tojson }};
+
+  /* ── country centroids — rough anchor points for II's main countries.
+     Not perfect, but gives Celeste geography at a glance before the Phase
+     8c per-resort geocode lands. */
+  const CENTROIDS = {
+    // ── Americas ──
+    'USA':[39.5,-98.35], 'United States':[39.5,-98.35], 'Canada':[56.1,-106.3],
+    'Mexico':[23.6,-102.5],
+    'Alabama':[32.3,-86.9],'Arizona':[34.0,-111.1],'California':[36.8,-119.4],
+    'Colorado':[39.1,-105.7],'Florida':[27.8,-81.7],'Georgia':[32.2,-83.2],
+    'Hawaii':[20.7,-156.4],'Illinois':[40.0,-89.0],'Indiana':[39.8,-86.2],
+    'Maine':[45.3,-69.2],'Maryland':[39.0,-76.8],'Massachusetts':[42.2,-71.6],
+    'Missouri':[38.4,-92.3],'Nevada':[38.8,-116.4],'New Hampshire':[43.7,-71.6],
+    'New Jersey':[40.1,-74.4],'New Mexico':[34.4,-106.1],'New York':[42.9,-75.5],
+    'North Carolina':[35.6,-79.4],'Ohio':[40.3,-82.8],'Oregon':[43.8,-120.6],
+    'Pennsylvania':[40.9,-77.8],'South Carolina':[33.8,-80.9],'Tennessee':[35.9,-86.7],
+    'Texas':[31.0,-99.9],'Utah':[39.3,-111.7],'Vermont':[44.1,-72.7],
+    'Virginia':[37.4,-78.6],'Washington':[47.4,-121.5],'Wisconsin':[44.3,-89.6],
+    'British Columbia':[53.7,-127.6],'Ontario':[51.3,-85.3],'Quebec':[52.0,-71.8],
+    // ── Europe ──
+    'Spain':[40.4,-3.7], 'Portugal':[39.4,-8.2],
+    'France':[46.2,2.2], 'Italy':[41.9,12.6], 'Malta':[35.9,14.5],
+    'United Kingdom':[54.0,-2.0], 'UK':[54.0,-2.0], 'Ireland':[53.1,-7.6],
+    'Germany':[51.2,10.4], 'Netherlands':[52.1,5.3], 'Belgium':[50.5,4.5],
+    'Switzerland':[46.8,8.2], 'Austria':[47.5,14.5], 'Greece':[39.1,21.8],
+    'Turkey':[39.0,35.2], 'Croatia':[45.1,15.2], 'Czech Republic':[49.8,15.5],
+    'Hungary':[47.2,19.5], 'Slovenia':[46.1,14.8], 'Norway':[60.5,8.5],
+    'Sweden':[60.1,18.6], 'Denmark':[56.3,9.5], 'Finland':[61.9,25.7],
+    'Iceland':[64.9,-19.0], 'Poland':[51.9,19.1], 'Romania':[45.9,24.9],
+    'Bulgaria':[42.7,25.5], 'Cyprus':[35.1,33.4], 'Andorra':[42.5,1.6],
+    'Gibraltar':[36.1,-5.3], 'Isle of Man':[54.2,-4.5], 'Jersey':[49.2,-2.1],
+    'Canary Islands':[28.3,-16.5], 'Madeira':[32.8,-17.0],
+    // ── Africa & Middle East ──
+    'Morocco':[31.8,-7.1], 'Egypt':[26.8,30.8], 'Kenya':[-0.0,37.9],
+    'South Africa':[-30.6,22.9], 'Tanzania':[-6.4,34.9], 'UAE':[23.4,53.8],
+    'United Arab Emirates':[23.4,53.8], 'Israel':[31.0,34.9],
+    'Jordan':[30.6,36.2], 'Oman':[21.5,55.9], 'Namibia':[-22.9,18.5],
+    'Botswana':[-22.3,24.7], 'Zambia':[-13.1,27.9], 'Mauritius':[-20.3,57.6],
+    'Seychelles':[-4.7,55.5], 'Reunion':[-21.1,55.5], 'Cabo Verde':[16.0,-24.0],
+    'Cape Verde':[16.0,-24.0],
+    // ── Asia ──
+    'India':[20.6,78.9], 'Sri Lanka':[7.9,80.8], 'Thailand':[15.9,100.9],
+    'Vietnam':[14.1,108.3], 'Indonesia':[-0.8,113.9], 'Philippines':[12.9,121.8],
+    'Malaysia':[4.2,101.9], 'Japan':[36.2,138.3], 'China':[35.9,104.2],
+    'South Korea':[36.5,127.8], 'Taiwan':[23.7,121.0], 'Cambodia':[12.6,104.9],
+    'Laos':[19.9,102.5], 'Nepal':[28.4,84.1], 'Maldives':[3.2,73.2],
+    // ── Oceania ──
+    'Australia':[-25.3,133.8], 'New Zealand':[-40.9,174.9], 'Fiji':[-17.7,178.1],
+    'French Polynesia':[-17.7,-149.4], 'Tahiti':[-17.7,-149.4],
+    'New Caledonia':[-21.5,165.6], 'Vanuatu':[-16.0,167.0], 'Samoa':[-13.8,-172.1],
+    'Cook Islands':[-21.2,-159.8],
+    // ── Caribbean ──
+    'Aruba':[12.5,-69.9], 'Bahamas':[25.0,-77.4], 'Barbados':[13.2,-59.5],
+    'Jamaica':[18.1,-77.3], 'Dominican Republic':[18.7,-70.2],
+    'Puerto Rico':[18.2,-66.6], 'Curaçao':[12.2,-69.0], 'Curacao':[12.2,-69.0],
+    'Cuba':[21.5,-77.8], 'Saint Lucia':[13.9,-61.0], 'Saint Martin':[18.1,-63.1],
+    'Sint Maarten':[18.1,-63.1], 'Cayman Islands':[19.5,-80.6],
+    'Turks and Caicos':[21.7,-71.8], 'Antigua':[17.1,-61.8],
+    'Grenada':[12.1,-61.7], 'British Virgin Islands':[18.4,-64.6],
+    'US Virgin Islands':[18.3,-64.9], 'Martinique':[14.6,-61.0],
+    'Guadeloupe':[16.3,-61.6], 'Bonaire':[12.2,-68.3], 'Dominica':[15.4,-61.4],
+    'St. Kitts':[17.4,-62.8], 'Anguilla':[18.2,-63.1],
+    // ── Central / South America ──
+    'Costa Rica':[9.9,-84.0], 'Panama':[8.5,-80.8], 'Guatemala':[15.8,-90.2],
+    'Belize':[17.2,-88.5], 'Honduras':[15.2,-86.2], 'Nicaragua':[12.9,-85.2],
+    'El Salvador':[13.8,-88.9], 'Brazil':[-14.2,-51.9], 'Argentina':[-38.4,-63.6],
+    'Chile':[-35.7,-71.5], 'Colombia':[4.6,-74.3], 'Peru':[-9.2,-75.0],
+    'Uruguay':[-32.5,-55.8], 'Venezuela':[6.4,-66.6], 'Ecuador':[-1.8,-78.2],
+    'Bolivia':[-16.3,-63.6], 'Paraguay':[-23.4,-58.4], 'Suriname':[3.9,-56.0],
+    'Guyana':[4.9,-58.9],
+    // II's own region labels appearing as area.country in some rows
+    'Canada - Eastern':[46.0,-71.0], 'Canada - Western':[54.0,-120.0],
+    'USA - Florida':[27.8,-81.7], 'USA - Hawaii':[20.7,-156.4],
+  };
+
+  /* ── state */
+  const state = { q: '', filters: { tier: null, country: null, min_sleeps: null }, results: [] };
+
+  /* ── DOM refs */
+  const searchInput = document.getElementById('ts-search');
+  const chipsRow = document.getElementById('ts-chips');
+  const resultsBox = document.getElementById('ts-results');
+  const countEl = document.getElementById('ts-result-count');
+  const emptyEl = document.getElementById('ts-empty');
+  const drawer = document.getElementById('ts-drawer');
+  const drawerBody = document.getElementById('ts-drawer-body');
+  const drawerCrumbs = document.getElementById('ts-drawer-crumbs');
+
+  /* ── map */
+  let map, countryLayer, markerByCountry = new Map();
+
+  function initMap() {
+    map = L.map('ts-map', {
+      zoomControl: true, attributionControl: true,
+      worldCopyJump: true, minZoom: 2, maxZoom: 9,
+    }).setView([30, 0], 2);
+    // CartoDB Dark Matter — truly no-key, free forever, matches our palette.
+    // Stadia started returning 401 without an account in early 2025.
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(map);
+    countryLayer = L.layerGroup().addTo(map);
+  }
+
+  /* ── hex-pin factory */
+  function hexIcon({size = 28, color = '#ff8a65', stroke = '#ffb89a', label = '', ring = false}) {
+    const s = size, cx = s / 2, cy = s / 2;
+    const glow = ring ? `<circle class="ts-home-ring" cx="${cx}" cy="${cy}" r="22" fill="none" stroke="${color}" stroke-width="2"/>` : '';
+    const hex = `<polygon points="${cx},${cy - s/2.2} ${cx + s/2.5},${cy - s/4.5} ${cx + s/2.5},${cy + s/4.5} ${cx},${cy + s/2.2} ${cx - s/2.5},${cy + s/4.5} ${cx - s/2.5},${cy - s/4.5}"
+                    fill="${color}" stroke="${stroke}" stroke-width="1.5" opacity="0.92"/>`;
+    const text = label ? `<text x="${cx}" y="${cy + 3}" text-anchor="middle" fill="#0a1729" font-size="9" font-weight="700" font-family="ui-sans-serif,system-ui">${label}</text>` : '';
+    return L.divIcon({
+      html: `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" overflow="visible">${glow}${hex}${text}</svg>`,
+      className: 'ts-hex-pin', iconSize: [s, s], iconAnchor: [cx, cy],
+    });
+  }
+
+  /* ── rebuild map from current result set
+     If a resort has Google-sourced map_lat/map_lng, drop an individual pin.
+     Resorts WITHOUT coords get grouped into country-centroid cluster pins.
+     As Google enrichment fills in over time, the map gets more granular. */
+  function updateMap(results) {
+    countryLayer.clearLayers();
+    markerByCountry.clear();
+    const allLatLngs = [];   // collected to auto-fit when a filter is active
+    const needCluster = new Map();   // country → [resort,...]
+    for (const r of results) {
+      if (r.map_lat != null && r.map_lng != null) {
+        // Per-resort pin
+        const isHome = HOME_PROPERTY_NAME && r.name === HOME_PROPERTY_NAME;
+        const icon = hexIcon({
+          size: isHome ? 26 : 18,
+          color: isHome ? '#ffd166' : (r.tier === 'Premier_Boutique' ? '#ffd166' : '#ff8a65'),
+          stroke: isHome ? '#fff0b8' : '#ffb89a',
+          ring: isHome,
+        });
+        const m = L.marker([r.map_lat, r.map_lng], {icon, title: r.name})
+          .on('click', () => openResort(r.ii_code))
+          .addTo(countryLayer);
+        if (!markerByCountry.has(r.country)) markerByCountry.set(r.country, m);
+        allLatLngs.push([r.map_lat, r.map_lng]);
+      } else if (r.country) {
+        if (!needCluster.has(r.country)) needCluster.set(r.country, []);
+        needCluster.get(r.country).push(r);
+      }
+    }
+    for (const [country, rs] of needCluster) {
+      const coord = CENTROIDS[country];
+      if (!coord) continue;
+      const isHome = HOME_PROPERTY_NAME && rs.some(r => r.name === HOME_PROPERTY_NAME);
+      const size = Math.min(44, 20 + Math.log2(rs.length + 1) * 4);
+      const icon = hexIcon({
+        size, label: rs.length,
+        color: isHome ? '#ffd166' : '#ff8a65',
+        stroke: isHome ? '#fff0b8' : '#ffb89a',
+        ring: isHome,
+      });
+      const popupHtml = `
+        <div class="text-sm">
+          <div class="font-semibold text-crab-sand mb-1">${country}</div>
+          <div class="text-xs text-crab-sand-dim mb-2">${rs.length} resort${rs.length !== 1 ? 's' : ''} indexed</div>
+          <a href="/timeshare/g/${GROUP_UUID}/destinations/${encodeURIComponent(country)}"
+             class="inline-block text-xs bg-crab-coral text-white px-2.5 py-1 rounded-md font-semibold">Explore ${country} →</a>
+          <a href="#" data-filter-country="${country}"
+             class="inline-block text-xs text-crab-coral ml-2">Just filter results</a>
+        </div>`;
+      const m = L.marker(coord, {icon, title: country})
+        .bindPopup(popupHtml, {className: 'ts-country-popup'})
+        .on('click', function(e) { this.openPopup(); })
+        .addTo(countryLayer);
+      m.on('popupopen', function(e) {
+        const link = e.popup.getElement().querySelector('[data-filter-country]');
+        if (link) link.addEventListener('click', ev => {
+          ev.preventDefault();
+          setFilter('country', country);
+          m.closePopup();
+        });
+      });
+      if (!markerByCountry.has(country)) markerByCountry.set(country, m);
+      allLatLngs.push(coord);
+    }
+
+    // Auto-fit map to visible pins whenever a search or filter is active,
+    // so typing "hawaii" pans + zooms the map to Hawaii automatically.
+    const hasSearchOrFilter = (state.q && state.q.length > 0)
+      || state.filters.country || state.filters.tier
+      || state.filters.min_sleeps;
+    if (hasSearchOrFilter && allLatLngs.length > 0) {
+      const bounds = L.latLngBounds(allLatLngs);
+      if (allLatLngs.length === 1) {
+        // Single pin — fitBounds zooms too close; set a sensible regional view
+        map.setView(allLatLngs[0], 8, {animate: true});
+      } else {
+        map.fitBounds(bounds, {padding: [50, 50], maxZoom: 7, animate: true});
+      }
+    }
+    // No filters active: reset to world view if user just cleared everything.
+    // Tracked via lastHadFilter so we only reset ON the transition, not every render.
+    if (!hasSearchOrFilter && state.lastHadFilter) {
+      map.setView([30, 0], 2, {animate: true});
+    }
+    state.lastHadFilter = hasSearchOrFilter;
+  }
+
+  /* ── render result cards */
+  function photoThumb(r) {
+    const urls = r.photo_urls || [];
+    if (!urls.length) return '';
+    return `<img src="${urls[0]}" loading="lazy" alt="" class="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-crab-navy/40">`;
+  }
+  function tierBadge(r) {
+    if (!r.tier) return '';
+    const cls = 'ts-tier-' + r.tier.toLowerCase();
+    const label = r.tier.replace('_', ' ');
+    return `<span class="text-[10px] uppercase tracking-wider font-semibold ${cls}">★ ${label}</span>`;
+  }
+  function sleepLabel(r) {
+    const s = r.sleeping_capacity || {};
+    if (!s.total) return '';
+    return `<span class="text-xs text-crab-sand-dim">sleeps ${s.total}</span>`;
+  }
+  function renderResults(results) {
+    countEl.textContent = results.length === 1 ? '1 resort' : `${results.length} resorts`;
+    if (!results.length) {
+      resultsBox.innerHTML = `<div class="text-center text-sm text-crab-sand-dim py-10">No matches. Try a different country or clear filters.</div>`;
+      return;
+    }
+    const html = results.map(r => {
+      const ratingBadge = r.google_rating
+        ? `<span class="text-xs text-amber-300">★ ${Number(r.google_rating).toFixed(1)} <span class="text-crab-sand-dim">(${Number(r.google_user_ratings_total||0).toLocaleString()})</span></span>`
+        : '';
+      return `
+      <button data-ii-code="${r.ii_code}" class="ts-result-card w-full text-left border border-white/5 rounded-lg p-3 mb-1.5 flex gap-3 items-start">
+        ${photoThumb(r)}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 justify-between">
+            <div class="font-semibold truncate">${escapeHtml(r.name || r.ii_code)}</div>
+            ${tierBadge(r)}
+          </div>
+          <div class="text-xs text-crab-sand-dim mt-0.5 truncate">
+            ${escapeHtml([r.area_name, r.country].filter(Boolean).join(' · '))}
+          </div>
+          <div class="flex items-center gap-3 mt-1.5">
+            ${ratingBadge}
+            ${sleepLabel(r)}
+            ${r.check_in_day ? `<span class="text-xs text-crab-sand-dim">check-in ${escapeHtml(r.check_in_day.split(',')[0].trim())}</span>` : ''}
+          </div>
+        </div>
+      </button>
+    `;}).join('');
+    resultsBox.innerHTML = html;
+    resultsBox.querySelectorAll('[data-ii-code]').forEach(el => {
+      el.addEventListener('click', () => openResort(el.dataset.iiCode));
+      el.addEventListener('mouseenter', () => highlightCountry(findById(el.dataset.iiCode)?.country));
+    });
+  }
+
+  /* ── detail drawer */
+  async function openResort(code) {
+    const r = findById(code);
+    if (!r) return;
+    drawerCrumbs.textContent = [r.region_name, r.area_name, r.country].filter(Boolean).join(' › ');
+    drawerBody.innerHTML = renderResortDetail(r);
+    drawer.classList.remove('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+    // Wire up lightbox clicks for this drawer's photos
+    const photos = r.photo_urls || [];
+    drawerBody.querySelectorAll('[data-ts-lightbox]').forEach(el => {
+      el.addEventListener('click', () => openLightbox(photos, parseInt(el.dataset.tsLightbox, 10), r.name));
+    });
+    // bounce pin
+    const m = markerByCountry.get(r.country);
+    if (m && m._icon) {
+      m._icon.classList.add('ts-pin-bouncing');
+      setTimeout(() => m._icon && m._icon.classList.remove('ts-pin-bouncing'), 1400);
+    }
+  }
+
+  /* ── photo lightbox — click a thumbnail → fullscreen carousel */
+  let lbState = null;
+  function openLightbox(photos, index, caption) {
+    lbState = { photos, index: index || 0, caption };
+    renderLightbox();
+    document.getElementById('ts-lightbox').classList.remove('hidden');
+  }
+  function closeLightbox() {
+    const el = document.getElementById('ts-lightbox');
+    if (el) el.classList.add('hidden');
+    lbState = null;
+  }
+  function lbStep(delta) {
+    if (!lbState) return;
+    const n = lbState.photos.length;
+    lbState.index = (lbState.index + delta + n) % n;
+    renderLightbox();
+  }
+  function renderLightbox() {
+    const el = document.getElementById('ts-lightbox');
+    if (!el || !lbState) return;
+    const { photos, index, caption } = lbState;
+    el.querySelector('[data-lb-img]').src = photos[index];
+    el.querySelector('[data-lb-caption]').textContent = `${caption || ''} — photo ${index + 1} of ${photos.length}`;
+    el.querySelector('[data-lb-prev]').disabled = photos.length < 2;
+    el.querySelector('[data-lb-next]').disabled = photos.length < 2;
+  }
+  document.addEventListener('keydown', e => {
+    if (!lbState) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') lbStep(-1);
+    if (e.key === 'ArrowRight') lbStep(1);
+  });
+  function renderResortDetail(r) {
+    const photos = r.photo_urls || [];
+    const photoGrid = photos.length ? `
+      <div class="grid grid-cols-3 gap-1.5 mb-5">
+        ${photos.slice(0, 9).map((u, i) => `
+          <button type="button" data-ts-lightbox="${i}"
+                  class="aspect-[4/3] overflow-hidden rounded-lg bg-crab-navy/40 hover:opacity-90 transition-opacity cursor-zoom-in">
+            <img src="${u}" alt="" class="w-full h-full object-cover pointer-events-none">
+          </button>
+        `).join('')}
+      </div>` : '';
+    const sc = r.sleeping_capacity || {};
+    const facts = [
+      ['Tier', r.tier ? r.tier.replace('_', ' ') : null],
+      ['Nearest airport', r.nearest_airport],
+      ['Check-in', r.check_in_day],
+      ['Bedrooms', sc.bedrooms],
+      ['Sleeps private', sc.private],
+      ['Sleeps total', sc.total],
+    ].filter(([,v]) => v);
+    return `
+      ${tierBadge(r)}
+      <h2 class="text-2xl font-display mt-1 mb-1">${escapeHtml(r.name || r.ii_code)}</h2>
+      <div class="text-sm text-crab-sand-dim mb-4">${escapeHtml([r.area_name, r.country].filter(Boolean).join(', '))}</div>
+      ${photoGrid}
+      ${facts.length ? `<dl class="grid grid-cols-2 gap-3 text-sm mb-5">
+        ${facts.map(([k, v]) => `
+          <div>
+            <dt class="text-xs text-crab-sand-dim">${k}</dt>
+            <dd class="mt-0.5">${escapeHtml(String(v))}</dd>
+          </div>`).join('')}
+      </dl>` : ''}
+      ${r.description ? `<p class="text-sm text-crab-sand-dim leading-relaxed mb-5">${escapeHtml(r.description)}</p>` : ''}
+      <div class="flex gap-2 pt-3 border-t border-white/5">
+        <form method="POST" action="/timeshare/g/${GROUP_UUID}/shortlist/toggle" class="flex-1">
+          <input type="hidden" name="resort_code" value="${r.ii_code}">
+          <input type="hidden" name="network" value="interval_international">
+          <button class="w-full bg-crab-coral text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+            ★ Add to {{ group.name }}'s Considering
+          </button>
+        </form>
+        <a href="/timeshare/catalog/resort/${r.ii_code}" target="_blank"
+           class="px-4 py-2 rounded-xl text-sm bg-crab-navy/60 border border-white/10 hover:border-crab-coral/40 transition-colors whitespace-nowrap">
+          Full page ↗
+        </a>
+      </div>
+    `;
+  }
+  document.querySelectorAll('[data-drawer-close]').forEach(el => el.addEventListener('click', closeDrawer));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+  function closeDrawer() {
+    drawer.classList.add('hidden');
+    drawer.setAttribute('aria-hidden', 'true');
+  }
+
+  function findById(code) { return state.results.find(r => r.ii_code === code); }
+  function highlightCountry(country) {
+    if (!country) return;
+    const m = markerByCountry.get(country);
+    if (m && m._icon) {
+      m._icon.classList.add('ts-pin-bouncing');
+      setTimeout(() => m._icon && m._icon.classList.remove('ts-pin-bouncing'), 600);
+    }
+  }
+
+  /* ── helpers */
+  function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+  /* ── fetch */
+  let fetchToken = 0;
+  async function fetchResults() {
+    const token = ++fetchToken;
+    const params = new URLSearchParams();
+    if (state.q) params.set('q', state.q);
+    if (state.filters.tier) params.set('tier', state.filters.tier);
+    if (state.filters.country) params.set('country', state.filters.country);
+    if (state.filters.min_sleeps) params.set('min_sleeps', state.filters.min_sleeps);
+    params.set('limit', '200');
+    try {
+      const r = await fetch(`/timeshare/g/${GROUP_UUID}/api/resorts/search?${params}`);
+      const data = await r.json();
+      if (token !== fetchToken) return;
+      state.results = data.results || [];
+      // Server may have promoted free-text like "hawaii" to a country filter.
+      // Reflect that in local state + chips so the UI explains what happened.
+      const hint = data.hint || {};
+      if (hint.promoted_to_country && state.filters.country !== hint.promoted_to_country) {
+        state.filters.country = hint.promoted_to_country;
+        refreshChipStates();
+      }
+      renderResults(state.results);
+      updateMap(state.results);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  /* ── chip toggles */
+  function setFilter(key, value) {
+    if (state.filters[key] === value) state.filters[key] = null;
+    else state.filters[key] = value;
+    refreshChipStates();
+    fetchResults();
+  }
+  function refreshChipStates() {
+    chipsRow.querySelectorAll('button.ts-chip, .ts-chip-filter').forEach(el => {
+      const k = el.dataset.chip, v = el.dataset.value;
+      if (!k) return;
+      const active = String(state.filters[k]) === v;
+      // Highlight the whole split-chip wrapper when it's a country filter
+      const wrapper = el.closest('[data-chip-group="country"]');
+      (wrapper || el).classList.toggle('ts-chip-active', active);
+    });
+  }
+  chipsRow.addEventListener('click', e => {
+    // If user clicked the arrow-link half of the split chip, let the anchor work
+    if (e.target.closest('.ts-chip-open')) return;
+    // Filter buttons (both legacy .ts-chip and the new .ts-chip-filter work)
+    const btn = e.target.closest('.ts-chip-filter, button.ts-chip');
+    if (!btn || !btn.dataset.chip) return;
+    setFilter(btn.dataset.chip, btn.dataset.value);
+  });
+
+  /* ── search */
+  let searchTimer = 0;
+  searchInput.addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.q = e.target.value.trim();
+      fetchResults();
+    }, 200);
+  });
+
+  /* ── init */
+  document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    fetchResults();
+    searchInput.focus();
+  });
+  // If DOM already ready (late-attached script)
+  if (document.readyState !== 'loading') {
+    setTimeout(() => { initMap(); fetchResults(); searchInput.focus(); }, 0);
+  }
+})();
+</script>
+{% endblock %}

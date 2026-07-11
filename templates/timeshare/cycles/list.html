@@ -1,0 +1,68 @@
+{% extends "timeshare/base_group.html" %}
+{% block title %}Cycles — {{ group.name }}{% endblock %}
+
+{% block group_content %}
+<div class="bg-crab-card/40 border border-white/6 rounded-xl p-6 mb-6">
+  <h2 class="text-lg font-semibold mb-1">Plan a use-year cycle</h2>
+  <p class="text-xs text-crab-sand-dim mb-4">
+    A <strong class="text-crab-sand">cycle</strong> is a full crab.travel plan tied to this timeshare group. Every accepted family member gets seeded as a plan member, destinations get voted on, and OpenCrab starts hunting flights + hotels + transfers once the destination is locked.
+  </p>
+  {% if role in ('owner', 'admin') %}
+  <form method="POST" action="/timeshare/g/{{ group_uuid }}/cycles/new" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+    <input name="title" required placeholder='2026 Cycle — Week 38' class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="travel_window_start" type="date" placeholder="Start" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="travel_window_end" type="date" placeholder="End" class="bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <input name="timeframe" placeholder="Timeframe (optional)" class="col-span-2 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5">
+    <textarea name="description" rows="2" placeholder="Notes for family (optional)" class="col-span-2 md:col-span-4 bg-crab-navy/60 border border-white/10 rounded px-2 py-1.5"></textarea>
+    <button type="submit" class="col-span-2 md:col-span-4 bg-crab-coral text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-crab-coral-light transition-colors">
+      Create cycle
+    </button>
+  </form>
+  {% else %}
+  <p class="text-xs text-crab-sand-dim">Only group admins can start a new cycle. Ask an admin to kick it off.</p>
+  {% endif %}
+</div>
+
+<div class="bg-crab-card/40 border border-white/6 rounded-xl overflow-hidden">
+  <div class="px-5 py-3 bg-crab-navy/40 text-xs uppercase tracking-wide text-crab-sand-dim">
+    {{ cycles|length }} cycle{{ 's' if cycles|length != 1 else '' }}
+  </div>
+  {% if cycles %}
+  <table class="w-full text-sm">
+    <thead class="text-xs uppercase tracking-wide text-crab-sand-dim">
+      <tr>
+        <th class="text-left px-5 py-3">Title</th>
+        <th class="text-left">Travel window</th>
+        <th class="text-left">Status</th>
+        <th class="text-right">Members</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cycles %}
+      <tr class="border-t border-white/5">
+        <td class="px-5 py-3 font-medium">
+          <a href="/timeshare/g/{{ group_uuid }}/cycles/{{ c.plan_id }}" class="hover:text-crab-coral">{{ c.title }}</a>
+          {% if c.description %}<div class="text-xs text-crab-sand-dim mt-0.5">{{ c.description|truncate(120) }}</div>{% endif %}
+        </td>
+        <td class="px-5 py-3 text-crab-sand-dim">
+          {% if c.travel_window_start %}{{ c.travel_window_start.strftime('%b %d, %Y') }}{% endif %}
+          {% if c.travel_window_end %} → {{ c.travel_window_end.strftime('%b %d, %Y') }}{% endif %}
+          {% if not c.travel_window_start and not c.travel_window_end %}—{% endif %}
+        </td>
+        <td class="px-5 py-3 text-crab-sand-dim">{{ c.status }}</td>
+        <td class="px-5 py-3 text-right">{{ c.member_count }}</td>
+        <td class="px-5 py-3 text-right">
+          <a href="/to/{{ c.invite_token }}" class="text-crab-coral hover:underline">Open plan →</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-crab-sand-dim">
+    No cycles yet. {% if role in ('owner', 'admin') %}Use the form above to kick one off.{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Changelog — Admin{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto animate-in">
+  <div class="mb-6">
+    <a href="/admin" class="text-sm text-crab-sand-dim hover:text-crab-coral transition-colors">&larr; Back to Admin</a>
+    <h1 class="text-3xl font-display mt-2">Changelog</h1>
+    <p class="text-sm text-crab-sand-dim">Last {{ commits|length }} deploys from <a href="https://github.com/tillo13/crab_travel" class="text-crab-coral hover:underline" target="_blank">GitHub</a></p>
+  </div>
+
+  {% if not commits %}
+  <div class="bg-crab-card/40 border border-white/6 rounded-2xl p-8 text-center">
+    <p class="text-crab-sand-dim">Could not load commits from GitHub.</p>
+  </div>
+  {% else %}
+  <div class="space-y-1">
+    {% for c in commits %}
+    {% set ts = c.date.replace('T', ' ').replace('Z', ' UTC') %}
+    {% set is_today = c.date[:10] == now_str %}
+    <div class="bg-crab-card/40 border border-white/6 rounded-xl px-5 py-3.5 hover:border-white/12 transition-colors group {% if loop.first %}border-crab-coral/20{% endif %}">
+      <div class="flex items-start gap-3">
+        {% if c.avatar %}
+        <img src="{{ c.avatar }}" class="w-7 h-7 rounded-full mt-0.5 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" alt="">
+        {% endif %}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-0.5">
+            <a href="{{ c.url }}" target="_blank" class="text-sm font-semibold hover:text-crab-coral transition-colors truncate">{{ c.title }}</a>
+            {% if loop.first %}
+            <span class="shrink-0 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-crab-coral/15 text-crab-coral">latest</span>
+            {% endif %}
+          </div>
+          {% if c.body %}
+          <p class="text-xs text-crab-sand-dim leading-relaxed mb-1 whitespace-pre-line">{{ c.body[:300] }}</p>
+          {% endif %}
+          <div class="flex items-center gap-3 text-xs text-crab-sand-dim opacity-60">
+            <a href="{{ c.url }}" target="_blank" class="font-mono hover:text-crab-coral transition-colors">{{ c.sha }}</a>
+            <span>{{ c.author }}</span>
+            <span>{{ ts }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

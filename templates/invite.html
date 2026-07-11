@@ -1,0 +1,2501 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.title }} — crab.travel{% endblock %}
+{% block head %}
+<style>
+  .pin-grid {
+    columns: 2;
+    column-gap: 0.75rem;
+  }
+  @media (min-width: 768px) { .pin-grid { columns: 3; } }
+  @media (min-width: 1024px) { .pin-grid { columns: 4; } }
+  .pin {
+    break-inside: avoid;
+    margin-bottom: 0.75rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease;
+  }
+  .pin:hover {
+    border-color: rgba(232,89,58,0.25);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+  }
+  .pin-img {
+    width: 100%;
+    height: auto;
+    min-height: 100px;
+    object-fit: cover;
+    display: block;
+    background: rgba(255,255,255,0.03);
+  }
+  .cat-stay { border-left: 3px solid #14B8A6; }
+  .cat-do { border-left: 3px solid #E8593A; }
+  .cat-food { border-left: 3px solid #F59E0B; }
+  .cat-event { border-left: 3px solid #8B5CF6; }
+  .cat-badge-stay { background: rgba(20,184,166,0.12); color: #14B8A6; }
+  .cat-badge-do { background: rgba(232,89,58,0.12); color: #E8593A; }
+  .cat-badge-food { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .cat-badge-event { background: rgba(139,92,246,0.12); color: #8B5CF6; }
+  html:not(.dark) .pin { border-color: rgba(0,0,0,0.08); }
+  html:not(.dark) .pin:hover { border-color: rgba(232,89,58,0.3); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+  .vote-pill {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.3rem 0.6rem; border-radius: 9999px; font-size: 0.8rem;
+    font-weight: 500; border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer; transition: all 0.2s; background: transparent;
+    color: rgba(200,194,184,0.7);
+  }
+  .vote-pill:hover { border-color: rgba(255,255,255,0.15); color: #F0EAE0; }
+  .vote-pill.voted-up { background: rgba(13,148,136,0.15); border-color: #0D9488; color: #14B8A6; }
+  .vote-pill.voted-down { background: rgba(232,89,58,0.12); border-color: #E8593A; color: #F47A5F; }
+  html:not(.dark) .vote-pill { border-color: rgba(0,0,0,0.1); color: #6b7280; }
+  html:not(.dark) .vote-pill:hover { border-color: rgba(0,0,0,0.2); color: #111; }
+  /* Destination tabs */
+  .dest-tab-bar {
+    display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .dest-tab-bar::-webkit-scrollbar { display: none; }
+  .dest-tab {
+    flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    padding: 0.75rem 1.25rem; border-radius: 0.75rem; cursor: pointer;
+    border: 2px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);
+    transition: all 0.25s; min-width: 120px; text-align: center;
+  }
+  .dest-tab:hover { border-color: rgba(232,89,58,0.2); background: rgba(255,255,255,0.04); }
+  .dest-tab.active { border-color: #E8593A; background: rgba(232,89,58,0.08); }
+  .dest-tab.voted { border-color: #14B8A6; }
+  .dest-tab.active.voted { border-color: #14B8A6; background: rgba(20,184,166,0.08); }
+  html:not(.dark) .dest-tab { border-color: rgba(0,0,0,0.08); background: white; }
+  html:not(.dark) .dest-tab:hover { border-color: rgba(232,89,58,0.3); }
+  html:not(.dark) .dest-tab.active { border-color: #E8593A; background: rgba(232,89,58,0.04); }
+  html:not(.dark) .dest-tab.voted { border-color: #0D9488; }
+  .dest-tab-name { font-weight: 600; font-size: 0.9rem; line-height: 1.2; }
+  .dest-tab-votes { font-size: 0.7rem; color: rgba(200,194,184,0.5); }
+  html:not(.dark) .dest-tab-votes { color: #9ca3af; }
+  .dest-tab-check { color: #14B8A6; font-size: 0.75rem; font-weight: 600; }
+  /* Vote bar */
+  .vote-bar {
+    display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    padding: 0.85rem 1.5rem; font-size: 1rem; width: 100%;
+    font-weight: 700; cursor: pointer; transition: all 0.25s;
+    background: linear-gradient(135deg, rgba(232,89,58,0.15), rgba(232,89,58,0.08));
+    border-bottom: 2px solid rgba(232,89,58,0.2); color: #E8593A;
+    border-radius: 0.75rem 0.75rem 0 0;
+  }
+  .vote-bar:hover { background: linear-gradient(135deg, rgba(232,89,58,0.25), rgba(232,89,58,0.12)); }
+  .vote-bar.voted {
+    background: linear-gradient(135deg, rgba(20,184,166,0.2), rgba(20,184,166,0.08));
+    border-bottom-color: rgba(20,184,166,0.3); color: #14B8A6;
+  }
+  .vote-bar.voted:hover { background: linear-gradient(135deg, rgba(20,184,166,0.3), rgba(20,184,166,0.12)); }
+  html:not(.dark) .vote-bar { background: linear-gradient(135deg, rgba(232,89,58,0.08), rgba(232,89,58,0.03)); color: #E8593A; }
+  html:not(.dark) .vote-bar.voted { background: linear-gradient(135deg, rgba(13,148,136,0.1), rgba(13,148,136,0.04)); color: #0D9488; }
+  /* Section headers */
+  .section-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600; color: rgba(200,194,184,0.4); margin-bottom: 0.75rem;
+  }
+  html:not(.dark) .section-label { color: #9ca3af; }
+  .stat-card {
+    text-align: center; padding: 0.75rem 1rem; border-radius: 0.75rem;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  }
+  html:not(.dark) .stat-card { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.06); }
+  .input-field {
+    width: 100%; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; transition: border-color 0.2s;
+  }
+  .input-field:focus { border-color: #E8593A; }
+  .input-field::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .input-field { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .input-field:focus { border-color: #E8593A; }
+  .blackout-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+    border-radius: 0.5rem; font-size: 0.8rem;
+    background: rgba(232,89,58,0.1); border: 1px solid rgba(232,89,58,0.2); color: #F47A5F;
+  }
+  .blackout-chip button { opacity:0.6; cursor:pointer; background:none; border:none; color:inherit; font-size:1rem; line-height:1; }
+  .blackout-chip button:hover { opacity:1; }
+  /* Calendar */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cal-header { text-align: center; font-size: 0.65rem; font-weight: 600; color: rgba(200,194,184,0.4); padding: 0.25rem; text-transform: uppercase; }
+  html:not(.dark) .cal-header { color: #9ca3af; }
+  .cal-day {
+    min-height: 4.5rem; display: flex; flex-direction: column; align-items: center;
+    border-radius: 0.375rem; font-size: 0.75rem; position: relative; cursor: default;
+    border: 1px solid transparent; transition: all 0.15s; overflow: hidden; padding: 0.25rem 0;
+  }
+  .cal-day.has-people { cursor: pointer; }
+  .cal-day.has-people:hover { filter: brightness(1.2); }
+  .cal-day.empty { opacity: 0; min-height: 0; }
+  .cal-day.past { opacity: 0.25; }
+  .cal-day.green-ideal { background: rgba(16,185,129,0.22); border-color: rgba(16,185,129,0.4); color: #10B981; }
+  .cal-day.green-maybe { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.3); color: #F59E0B; }
+  .cal-day.yellow { background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.25); color: #FBBF24; }
+  .cal-day.red { background: rgba(232,89,58,0.12); border-color: rgba(232,89,58,0.2); color: #E8593A; }
+  .cal-day .cal-names { margin-top: 1px; text-align: center; font-size: 0.5rem; line-height: 1.2; font-weight: 500; overflow: hidden; padding: 0 2px; word-break: break-word; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+  .cal-name-line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+  .cal-day.green-ideal .cal-names { color: #10B981; }
+  .cal-day.green-maybe .cal-names { color: #D97706; }
+  .cal-day.red .cal-names { color: #F47A5F; }
+  .cal-day.yellow .cal-names { color: #D97706; }
+  .cal-day .cal-dots { position: absolute; bottom: 2px; display: flex; gap: 1px; }
+  .cal-dot { width: 3px; height: 3px; border-radius: 50%; }
+  .cal-nav-btn { padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: inherit; }
+  .cal-nav-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
+  html:not(.dark) .cal-nav-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
+  html:not(.dark) .cal-nav-btn:hover { background: rgba(0,0,0,0.08); }
+  /* Range picker */
+  .rp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .rp-header { text-align: center; font-size: 0.65rem; font-weight: 600; color: rgba(200,194,184,0.4); padding: 0.25rem; text-transform: uppercase; }
+  html:not(.dark) .rp-header { color: #9ca3af; }
+  .rp-day {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;
+    border: 1px solid transparent; transition: all 0.15s;
+  }
+  .rp-day:hover:not(.rp-past):not(.rp-empty) { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
+  html:not(.dark) .rp-day:hover:not(.rp-past):not(.rp-empty) { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.15); }
+  .rp-day.rp-empty { cursor: default; }
+  .rp-day.rp-past { opacity: 0.25; cursor: default; }
+  .rp-day.rp-start, .rp-day.rp-end { background: rgba(232,89,58,0.25); border-color: #E8593A; color: #E8593A; font-weight: 700; }
+  .rp-day.rp-in-range { background: rgba(232,89,58,0.1); border-color: rgba(232,89,58,0.15); color: #F47A5F; }
+  .rp-month-label { font-size: 0.8rem; font-weight: 600; text-align: center; }
+  .cal-toggle, .chat-toggle { cursor: pointer; transition: transform 0.2s; }
+  .cal-toggle.collapsed, .chat-toggle.collapsed { transform: rotate(-90deg); }
+  .cal-legend { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .cal-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; color: rgba(200,194,184,0.6); }
+  html:not(.dark) .cal-legend-item { color: #6b7280; }
+  .cal-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  /* Chat */
+  .chat-container { max-height: 600px; overflow-y: auto; }
+  .chat-msg {
+    display: flex; gap: 0.65rem; padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem; transition: background 0.15s;
+  }
+  .chat-msg:hover { background: rgba(255,255,255,0.03); }
+  html:not(.dark) .chat-msg:hover { background: rgba(0,0,0,0.02); }
+  .chat-avatar {
+    width: 2rem; height: 2rem; border-radius: 0.375rem; flex-shrink: 0;
+    background: rgba(232,89,58,0.15); display: flex; align-items: center;
+    justify-content: center; font-size: 0.8rem; font-weight: 600; color: #E8593A;
+    overflow: hidden;
+  }
+  .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .chat-name { font-size: 0.8rem; font-weight: 600; }
+  .chat-time { font-size: 0.7rem; color: rgba(200,194,184,0.4); margin-left: 0.4rem; }
+  html:not(.dark) .chat-time { color: #9ca3af; }
+  .chat-text { font-size: 0.85rem; line-height: 1.45; margin-top: 0.15rem; color: rgba(240,234,224,0.85); }
+  html:not(.dark) .chat-text { color: #374151; }
+  .chat-actions { display: none; gap: 0.5rem; margin-top: 0.25rem; }
+  .chat-msg:hover .chat-actions { display: flex; }
+  .chat-action-btn {
+    font-size: 0.7rem; color: rgba(200,194,184,0.5); cursor: pointer;
+    background: none; border: none; padding: 0; transition: color 0.15s;
+  }
+  .chat-action-btn:hover { color: #E8593A; }
+  .thread-replies {
+    margin-left: 2.6rem; padding-left: 0.75rem;
+    border-left: 2px solid rgba(255,255,255,0.06); margin-top: 0.15rem;
+  }
+  html:not(.dark) .thread-replies { border-color: rgba(0,0,0,0.06); }
+  .thread-replies .chat-msg { padding: 0.3rem 0.5rem; }
+  .thread-replies .chat-avatar { width: 1.5rem; height: 1.5rem; font-size: 0.65rem; }
+  .thread-reply-input {
+    margin-left: 2.6rem; padding-left: 0.75rem;
+    border-left: 2px solid rgba(232,89,58,0.2); margin-top: 0.25rem;
+  }
+  .thread-toggle {
+    font-size: 0.75rem; color: #E8593A; cursor: pointer; background: none;
+    border: none; padding: 0.2rem 0; font-weight: 500;
+  }
+  .thread-toggle:hover { text-decoration: underline; }
+  .chat-input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+  .chat-input {
+    flex: 1; padding: 0.6rem 0.85rem; border-radius: 0.5rem; font-size: 0.85rem;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #F0EAE0; outline: none; resize: none; min-height: 2.4rem; max-height: 8rem;
+    font-family: inherit; transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: #E8593A; }
+  .chat-input::placeholder { color: rgba(200,194,184,0.4); }
+  html:not(.dark) .chat-input { background: white; border-color: #e5e7eb; color: #111; }
+  html:not(.dark) .chat-input:focus { border-color: #E8593A; }
+  .chat-send-btn {
+    padding: 0.55rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600;
+    background: #E8593A; color: white; border: none; cursor: pointer;
+    transition: background 0.2s; white-space: nowrap;
+  }
+  .chat-send-btn:hover { background: #d4472a; }
+  .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
+  /* Media */
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+  .media-card {
+    border-radius: 0.75rem; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.25s ease; background: rgba(255,255,255,0.02);
+  }
+  .media-card:hover { border-color: rgba(232,89,58,0.2); transform: translateY(-1px); }
+  html:not(.dark) .media-card { border-color: rgba(0,0,0,0.08); background: white; }
+  .media-card iframe { width: 100%; aspect-ratio: 16/9; border: 0; display: block; }
+  .media-card img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 200px; }
+  /* Vote celebration */
+  .vote-celebrate {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;
+  }
+  .confetti {
+    position: absolute; width: 8px; height: 8px; border-radius: 2px;
+    animation: confettiFall 1.2s ease-out forwards;
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(80vh) rotate(720deg); opacity: 0; }
+  }
+  .vote-flash {
+    animation: voteFlash 0.4s ease-out;
+  }
+  @keyframes voteFlash {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  .researching-pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
+  /* Research progress */
+  .research-progress { max-width: 28rem; margin: 0 auto; }
+  .research-step {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0; font-size: 0.85rem; color: rgba(200,194,184,0.4);
+    transition: all 0.4s ease;
+  }
+  .research-step.active { color: #F0EAE0; }
+  .research-step.done { color: rgba(20,184,166,0.8); }
+  html:not(.dark) .research-step { color: rgba(0,0,0,0.25); }
+  html:not(.dark) .research-step.active { color: #111; }
+  html:not(.dark) .research-step.done { color: #0D9488; }
+  .step-icon {
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.08);
+    transition: all 0.4s ease;
+  }
+  .research-step.active .step-icon {
+    border-color: #E8593A; background: rgba(232,89,58,0.15);
+    animation: stepPulse 1.5s ease-in-out infinite;
+  }
+  .research-step.done .step-icon {
+    border-color: #14B8A6; background: rgba(20,184,166,0.15);
+  }
+  html:not(.dark) .step-icon { border-color: rgba(0,0,0,0.1); }
+  @keyframes stepPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(232,89,58,0); }
+    50% { box-shadow: 0 0 0 6px rgba(232,89,58,0.15); }
+  }
+  .research-timer { font-variant-numeric: tabular-nums; font-size: 0.8rem; color: rgba(200,194,184,0.5); }
+  html:not(.dark) .research-timer { color: #9ca3af; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+  {% if is_bot_trip %}
+  <!-- Example trip banner -->
+  <div class="text-center mb-4 animate-in">
+    <a href="/live" class="inline-flex items-center gap-2 bg-crab-teal/10 border border-crab-teal/20 rounded-full px-4 py-1.5 text-xs font-medium text-crab-teal hover:bg-crab-teal/15 transition-colors">
+      &larr; Back to examples &nbsp;&middot;&nbsp; This is what your trip could look like on crab.travel
+    </a>
+  </div>
+  {% endif %}
+
+  {% if viewing_as %}
+  <!-- Demo viewer banner + stage switcher -->
+  <div class="text-center mb-4 animate-in">
+    <div class="inline-flex flex-col sm:flex-row items-center gap-2">
+      <div class="inline-flex items-center gap-2 bg-crab-coral/10 border border-crab-coral/20 rounded-full px-5 py-2 text-sm font-medium text-crab-coral">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        Viewing as <span class="font-bold">{{ viewing_as }}</span>
+      </div>
+      <div class="inline-flex items-center gap-1 bg-crab-card/60 border border-white/8 rounded-full px-2 py-1 text-xs">
+        <span class="text-crab-sand-dim px-1">Demo:</span>
+        <a href="/demo/voting" class="px-3 py-1 rounded-full transition-colors {% if demo_stage == 'voting' %}bg-crab-coral/20 text-crab-coral font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Voting</a>
+        <a href="/demo/planning" class="px-3 py-1 rounded-full transition-colors {% if demo_stage == 'planning' %}bg-amber-400/20 text-amber-400 font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Planning</a>
+        <a href="/demo/booked" class="px-3 py-1 rounded-full transition-colors {% if demo_stage in ('booked', none) %}bg-green-400/20 text-green-400 font-semibold{% else %}text-crab-sand-dim hover:text-crab-sand hover:bg-white/5{% endif %}">Booked</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Header -->
+  <div class="text-center mb-8 animate-in">
+    <p class="text-sm font-medium text-crab-coral mb-3 tracking-wide uppercase">{% if is_bot_trip %}Example Trip{% else %}You're invited{% endif %}</p>
+    <h1 class="text-3xl md:text-4xl font-display mb-2">{{ plan.title|replace('[BOT] ', '') }}</h1>
+    <p class="text-crab-sand-dim">
+      <span class="font-medium text-crab-sand">{% if needs_login %}{{ plan.organizer_name.split()[0] }}{% if plan.organizer_name.split()|length > 1 %} {{ plan.organizer_name.split()[1][0] }}.{% endif %}{% else %}{{ plan.organizer_name|replace('[BOT] ', '') }}{% endif %}</span> is putting this together
+    </p>
+    {% if plan.description %}
+    <p class="text-crab-sand-dim text-sm mt-2 max-w-lg mx-auto">{{ plan.description }}</p>
+    {% endif %}
+    {% if plan.group_vibes %}
+    <div class="mt-3"><span class="text-xs bg-crab-coral/10 text-crab-coral px-3 py-1 rounded-full font-medium">{{ plan.group_vibes }}</span></div>
+    {% endif %}
+    {% if stage in ('locked', 'booked') %}
+    <p class="text-xs text-crab-sand-dim mt-4 max-w-md mx-auto opacity-60">This trip is confirmed! Browse the details below.</p>
+    {% else %}
+    <p class="text-xs text-crab-sand-dim mt-4 max-w-md mx-auto opacity-60">Scroll down to see the destinations being considered.</p>
+    {% endif %}
+
+    <!-- Stage indicator — override to 'booked' if plan says so OR if locked_destination is set -->
+    {% set stage = plan.status or 'planning' %}
+    {% if plan.locked_destination and stage not in ('locked', 'booked') %}{% set stage = 'locked' %}{% endif %}
+    <div class="mt-4 inline-flex items-center gap-2 bg-crab-card/40 border border-white/6 rounded-full px-4 py-1.5">
+      {% if stage in ('locked', 'booked') %}
+        <span class="w-2 h-2 rounded-full bg-green-400"></span>
+        <span class="text-xs font-medium text-green-400">{% if stage == 'booked' %}Booked{% else %}Locked In{% endif %}</span>
+        <span class="text-xs text-crab-sand-dim">— trip confirmed!</span>
+      {% elif stage == 'planning' %}
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span class="text-xs font-medium text-amber-400">Planning</span>
+        <span class="text-xs text-crab-sand-dim">— finalizing details</span>
+      {% else %}
+        <span class="w-2 h-2 rounded-full bg-crab-coral animate-pulse"></span>
+        <span class="text-xs font-medium text-crab-coral">Voting</span>
+        <span class="text-xs text-crab-sand-dim">— pick where to go!</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  {% if stage in ('locked', 'booked') and booked_summary %}
+  {# Booked trip stats — show destination, cost, dates, people #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-in stagger-1">
+    <div class="stat-card">
+      <div class="text-sm font-semibold text-crab-teal">{{ plan.locked_destination or 'TBD' }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">destination</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-display text-crab-coral" id="stat-members">{{ members|length }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">travelers</div>
+    </div>
+    <div class="stat-card">
+      {% if booked_summary.grand_total %}
+      <div class="text-lg font-display text-crab-teal">${{ '{:,.0f}'.format(booked_summary.grand_total) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">total cost</div>
+      {% elif booked_summary.flight_total or booked_summary.hotel_total %}
+      <div class="text-lg font-display text-crab-teal">${{ '{:,.0f}'.format((booked_summary.flight_total or 0) + (booked_summary.hotel_total or 0)) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">flights + hotels</div>
+      {% else %}
+      <div class="text-sm font-semibold">—</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">total cost</div>
+      {% endif %}
+    </div>
+    <div class="stat-card">
+      {% if booked_summary.per_person %}
+      <div class="text-lg font-display">${{ '{:,.0f}'.format(booked_summary.per_person) }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">per person</div>
+      {% elif plan.travel_window_start and plan.travel_window_end %}
+      <div class="text-sm font-semibold">{{ plan.travel_window_start.strftime('%b %d') }} – {{ plan.travel_window_end.strftime('%b %d') }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">travel dates</div>
+      {% else %}
+      <div class="text-sm font-semibold">—</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">per person</div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  {# Active trip stats — voting/planning mode #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-in stagger-1">
+    <div class="stat-card">
+      <div class="text-2xl font-display text-crab-coral" id="stat-members">{{ members|length }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">{{ 'person' if members|length == 1 else 'people' }} joined</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-display text-crab-teal" id="stat-destinations">{{ destinations|length }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">destinations</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-display" id="stat-votes">{{ vote_tallies|sum(attribute='total_votes') if vote_tallies else 0 }}</div>
+      <div class="text-xs text-crab-sand-dim mt-0.5">rankings</div>
+    </div>
+    <div class="stat-card">
+      {% if plan.travel_window_start and plan.travel_window_end %}
+      <div class="text-sm font-semibold">{{ plan.travel_window_start.strftime('%b %d') }} – {{ plan.travel_window_end.strftime('%b %d') }}</div>
+      {% elif plan.timeframe and plan.timeframe != 'anytime' %}
+      <div class="text-sm font-semibold">{{ plan.timeframe|replace('-', ' ')|title }}</div>
+      {% else %}
+      <div class="text-sm font-semibold">Flexible</div>
+      {% endif %}
+      <div class="text-xs text-crab-sand-dim mt-0.5">travel window</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Who's in -->
+  <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-1 animate-in stagger-1">
+    <span class="text-xs font-medium text-crab-sand-dim shrink-0 uppercase tracking-wide">Who's in:</span>
+    {% for m in members %}
+    <div class="flex items-center gap-1.5 bg-crab-card/40 border border-white/6 rounded-full px-3 py-1 shrink-0 text-sm cursor-pointer hover:border-crab-coral/40 hover:bg-crab-coral/5 transition-all" onclick="showMemberDetail({{ m.pk_id }})">
+      {% if needs_login %}{{ m.display_name.split()[0] }}{% if m.display_name.split()|length > 1 %} {{ m.display_name.split()[1][0] }}.{% endif %}{% else %}{{ m.display_name|replace('[BOT] ', '') }}{% endif %}
+      {% if m.home_airport %}<span class="text-xs text-crab-sand-dim opacity-60">{{ m.home_airport }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if needs_login %}
+  <!-- Sign in CTA -->
+  <div class="text-center py-6 mb-4 animate-in stagger-2">
+    <a href="/login/google"
+      class="inline-flex items-center gap-2.5 bg-white dark:bg-crab-card border border-gray-300 dark:border-white/10 rounded-xl px-6 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-crab-card-hover transition-all hover:shadow-lg">
+      <svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Sign in to vote, suggest destinations, and chat
+    </a>
+  </div>
+  {% endif %}
+
+  {% if not needs_login %}
+  <!-- Group Chat (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-1" id="chat-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleChat()">
+        <div class="flex items-center gap-2">
+          <svg id="chat-chevron" class="w-4 h-4 chat-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">💬 Group Chat</span>
+          <span class="text-xs text-crab-sand-dim" id="chat-count"></span>
+        </div>
+      </div>
+      <div id="chat-body" style="display:none;">
+        <div class="chat-container p-3" id="chat-messages">
+          <p class="text-sm text-crab-sand-dim text-center py-6 opacity-50">Loading messages...</p>
+        </div>
+        <div class="px-4 py-3 border-t border-white/6">
+          <div class="chat-input-row">
+            <textarea class="chat-input" id="chat-input-main" placeholder="Message the group..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+            <button class="chat-send-btn" onclick="sendMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Group Availability (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-1" id="calendar-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleCalendar()">
+        <div class="flex items-center gap-2">
+          <svg id="cal-chevron" class="w-4 h-4 cal-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">📅 Group Availability</span>
+          <span id="cal-summary" class="text-xs text-crab-sand-dim opacity-60 ml-1"></span>
+        </div>
+      </div>
+      <div id="cal-body" class="p-4 md:p-5" style="display:none;">
+        <div class="flex items-center justify-between mb-4">
+          <div class="cal-legend">
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#10B981;"></div> Ideal</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F59E0B;"></div> If needed</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#FBBF24;"></div> Conflicts</div>
+            <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#E8593A;"></div> Blocked</div>
+          </div>
+          <div class="flex gap-1.5">
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(-1);">&larr;</button>
+            <button class="cal-nav-btn" onclick="event.stopPropagation(); calNav(1);">&rarr;</button>
+          </div>
+        </div>
+        <div id="cal-months" class="space-y-6"></div>
+        <div id="cal-hover-info" class="text-xs text-crab-sand-dim mt-3 min-h-[1.25rem]"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar Date Modal -->
+  <div id="cal-date-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeCalModal()"></div>
+    <div class="relative bg-crab-navy border border-white/10 rounded-2xl max-w-sm w-full max-h-[70vh] overflow-y-auto p-5 shadow-2xl">
+      <button onclick="closeCalModal()" class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl">&times;</button>
+      <div id="cal-date-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- Mark Booked Modal -->
+  <div id="mark-booked-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBookedModal()"></div>
+    <div class="relative bg-crab-navy border border-white/10 rounded-2xl max-w-xs w-full p-5 shadow-2xl">
+      <button onclick="closeBookedModal()" class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl">&times;</button>
+      <h3 id="booked-modal-label" class="text-sm font-display mb-4">Mark as booked</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-crab-sand-dim block mb-1">Price paid (optional)</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-crab-sand-dim text-sm">$</span>
+            <input id="booked-price-input" type="number" step="0.01" min="0" placeholder="0.00"
+              class="w-full pl-7 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-crab-sand placeholder:text-crab-sand-dim/40 focus:outline-none focus:border-crab-teal/50">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-crab-sand-dim block mb-1">Confirmation # (optional)</label>
+          <input id="booked-conf-input" type="text" placeholder="e.g. ABC123"
+            class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-crab-sand placeholder:text-crab-sand-dim/40 focus:outline-none focus:border-crab-teal/50">
+        </div>
+        <button id="booked-submit-btn" onclick="submitMarkBooked()"
+          class="w-full py-2 rounded-lg bg-crab-teal text-white text-sm font-medium hover:bg-crab-teal/80 transition-colors">
+          Confirm Booked
+        </button>
+        <p class="text-[10px] text-crab-sand-dim text-center">Both fields are optional — just click confirm to mark it done</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member Detail Modal -->
+  <div id="member-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeMemberModal()"></div>
+    <div class="relative bg-crab-navy border border-white/10 rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6 shadow-2xl">
+      <button onclick="closeMemberModal()" class="absolute top-3 right-3 text-crab-sand-dim hover:text-crab-sand text-xl">&times;</button>
+      <div id="member-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- Hunt Results (collapsible, only shown for locked plans) -->
+  {% if plan.locked_destination or plan.status == 'locked' %}
+  <div class="mb-4 animate-in stagger-1" id="watches-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleWatches()">
+        <div class="flex items-center gap-2">
+          <svg id="watches-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">🦀 CrabAI Hunts</span>
+          <span class="text-xs text-crab-sand-dim" id="watches-count"></span>
+        </div>
+      </div>
+      <div id="watches-body">
+        <div class="p-4 md:p-6" id="watches-container">
+          <p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">Loading hunts...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Update Your Info (collapsible — collapsed on bot/demo trips) -->
+  <div class="mb-4 animate-in stagger-1" id="details-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDetails()">
+        <div class="flex items-center gap-2">
+          <svg id="details-chevron" class="w-4 h-4 chat-toggle {% if is_bot_trip or viewing_as %}collapsed{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">✏️ {% if is_member %}Update Your Info{% else %}Join {{ plan.title|replace('[BOT] ', '') }}{% endif %}</span>
+        </div>
+      </div>
+      <div id="details-body" class="p-6 md:p-8" {% if is_bot_trip or viewing_as %}style="display:none"{% endif %}>
+        {% if is_bot_trip %}
+        <div class="mb-5 p-3 rounded-xl bg-crab-teal/10 border border-crab-teal/20 text-sm text-crab-sand">
+          This is a demo trip — feel free to join and click around to see what the experience looks like! Your profile and preferences will be saved to your account, but this isn't a real trip.
+          {% if is_member %}
+          <div class="mt-2 pt-2 border-t border-crab-teal/20">
+            Want to remove this from your trips? <button onclick="leaveTrip()" class="text-crab-coral hover:underline font-medium">Leave this demo trip</button>
+          </div>
+          {% endif %}
+        </div>
+        {% elif is_member %}
+        <div class="mb-5 flex justify-end">
+          <button onclick="leaveTrip()" class="text-xs text-crab-sand-dim hover:text-crab-coral transition-colors">Leave this trip</button>
+        </div>
+        {% endif %}
+        <div class="mb-5">
+          <label class="block text-sm font-medium mb-1.5">Where are you based?</label>
+          <input type="text" id="home-airport" class="input-field max-w-xs" placeholder="e.g. Seattle, Phoenix, JFK, 90210" value="{{ member_airport or '' }}">
+          <p id="airport-resolved" class="text-xs mt-1 opacity-60 text-crab-teal hidden"></p>
+          <p id="airport-hint" class="text-xs text-crab-sand-dim mt-1 opacity-60">City, airport code, or zip — we'll find your nearest airport</p>
+        </div>
+        <div class="mb-5">
+          <label class="flex items-center gap-3 cursor-pointer group">
+            <input type="checkbox" id="is-flexible" class="w-4 h-4 rounded border-white/20 accent-crab-teal" {{ 'checked' if member_flexible else '' }} onchange="toggleBlackouts()">
+            <span class="text-sm font-medium group-hover:text-crab-sand transition-colors">I'm flexible — I'll make whatever dates work</span>
+          </label>
+        </div>
+        <div id="blackout-section" class="{{ 'hidden' if member_flexible else '' }}">
+          <div class="mb-6">
+            <label class="block text-sm font-medium mb-1.5">Dates that <span class="text-crab-teal">work for you</span></label>
+            <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges — mark as Ideal or If Needed</p>
+            <div id="tentative-list" class="flex flex-wrap gap-2 mb-3">
+              {% for t in tentative_dates %}
+              {% set pref = 'ideal' if (t.preference or 'works') in ['ideal', 'works'] else 'if_needed' %}
+              {% set pcolor = 'rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10B981' if pref == 'ideal' else 'rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25);color:#F59E0B' %}
+              <div class="blackout-chip" style="background:{{ pcolor }};" data-start="{{ t.start }}" data-end="{{ t.end }}" data-preference="{{ pref }}">
+                {% if pref == 'ideal' %}★{% else %}~{% endif %} {{ t.start }} to {{ t.end }}
+                <button onclick="removeChip(this.parentElement)">&times;</button>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="bg-crab-card/30 border border-white/6 rounded-xl p-3 mb-2">
+              <div class="flex items-center justify-between mb-2">
+                <button class="cal-nav-btn" onclick="rpNav('tentative', -1)">&larr;</button>
+                <span id="rp-tentative-label" class="rp-month-label"></span>
+                <button class="cal-nav-btn" onclick="rpNav('tentative', 1)">&rarr;</button>
+              </div>
+              <div id="rp-tentative-grid" class="rp-grid"></div>
+              <div id="rp-tentative-selection" class="text-xs text-crab-sand-dim mt-2 min-h-[1.25rem]">Click a start date, then an end date</div>
+            </div>
+            <div class="flex items-end gap-2">
+              <div>
+                <label class="text-xs text-crab-sand-dim">Preference</label>
+                <select id="tentative-pref" class="input-field text-sm" style="min-width:100px;">
+                  <option value="ideal" selected>Ideal</option>
+                  <option value="if_needed">If needed</option>
+                </select>
+              </div>
+              <button onclick="addTentative()" id="tentative-add-btn" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap opacity-40 pointer-events-none">+ Add dates</button>
+            </div>
+          </div>
+          <label class="block text-sm font-medium mb-1.5">Dates you <span class="text-crab-coral">cannot</span> go</label>
+          <p class="text-xs text-crab-sand-dim mb-3 opacity-60">Add date ranges when you're unavailable</p>
+          <div id="blackout-list" class="flex flex-wrap gap-2 mb-3">
+            {% for b in blackouts %}
+            <div class="blackout-chip" data-start="{{ b.start }}" data-end="{{ b.end }}">
+              {{ b.start }} to {{ b.end }}
+              <button onclick="removeChip(this.parentElement)">&times;</button>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="bg-crab-card/30 border border-white/6 rounded-xl p-3 mb-2">
+            <div class="flex items-center justify-between mb-2">
+              <button class="cal-nav-btn" onclick="rpNav('blackout', -1)">&larr;</button>
+              <span id="rp-blackout-label" class="rp-month-label"></span>
+              <button class="cal-nav-btn" onclick="rpNav('blackout', 1)">&rarr;</button>
+            </div>
+            <div id="rp-blackout-grid" class="rp-grid"></div>
+            <div id="rp-blackout-selection" class="text-xs text-crab-sand-dim mt-2 min-h-[1.25rem]">Click a start date, then an end date</div>
+          </div>
+          <button onclick="addBlackout()" id="blackout-add-btn" class="px-3 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap opacity-40 pointer-events-none">+ Add dates</button>
+        </div>
+        <div class="mt-8">
+          <button onclick="submitJoin()" id="submit-btn"
+            class="w-full sm:w-auto px-8 py-3 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl font-semibold text-sm transition-all hover:shadow-lg hover:shadow-crab-coral/20">
+            {% if is_member %}Save changes{% else %}I'm in — join {{ plan.title|replace('[BOT] ', '') }}{% endif %}
+          </button>
+          <p id="submit-status" class="text-sm mt-3 hidden"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmation" class="hidden animate-in mt-8">
+    <div class="text-center py-8 bg-crab-teal/10 border border-crab-teal/20 rounded-2xl px-6">
+      <img src="{{ url_for('static', filename='images/crab_logo.png') }}" class="w-12 h-12 rounded-xl mx-auto mb-2" alt="">
+      <h2 class="text-xl font-display mb-2">You're in!</h2>
+      <p class="text-sm text-crab-sand-dim mb-4" id="confirm-msg">We'll track flights and email you as things develop.</p>
+      {% if not profile_completed %}
+      <div class="border-t border-crab-teal/20 pt-4 mt-4">
+        <p class="text-sm text-crab-sand-dim mb-3">Complete your profile so CrabAI can personalize recommendations for you across all trips.</p>
+        <a href="/profile" class="inline-flex items-center gap-2 bg-crab-coral hover:bg-crab-coral-light text-white rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:shadow-lg">
+          Complete your profile
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Where Are We Headed? (collapsible, expanded by default) -->
+  <div class="mb-4 animate-in stagger-2" id="destinations-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDestinations()">
+        <div class="flex items-center gap-2">
+          <svg id="dest-chevron" class="w-4 h-4 chat-toggle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">🗺️ Where Are We Headed?</span>
+          <span class="text-xs text-crab-sand-dim opacity-60">{{ destinations|length }} destination{{ 's' if destinations|length != 1 else '' }}</span>
+        </div>
+      </div>
+      <div id="dest-body" class="p-4 md:p-6">
+        {% if not needs_login and stage not in ('locked', 'booked') %}
+        <div class="flex gap-2 mb-4">
+          <input type="text" id="suggest-input" class="input-field flex-1" placeholder="Suggest a destination... (e.g. Nashville, Lisbon)" onkeydown="if(event.key==='Enter'){suggestDestination()}">
+          <button onclick="suggestDestination()" class="px-4 py-2 bg-crab-card hover:bg-crab-card-hover border border-white/10 rounded-lg text-sm font-medium transition-colors">Add</button>
+        </div>
+        {% endif %}
+        {% if destinations %}
+        <p class="text-sm text-crab-sand-dim text-center mb-4">Vote for the destinations you'd be down for. You can pick as many as you want.</p>
+        <div id="dest-tab-bar" class="dest-tab-bar mb-6">
+          <!-- populated by JS -->
+        </div>
+        <div id="dest-content" class="mb-4">
+          <!-- populated by JS -->
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+          <div class="text-3xl mb-3">🗺️</div>
+          <p class="text-crab-sand-dim">No destinations added yet. Suggest one above!</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 🦀 CrabAI Deal Hunter (collapsible, collapsed by default) -->
+  <div class="mb-4 animate-in stagger-3" id="deals-section">
+    <div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-white/6 cursor-pointer select-none" onclick="toggleDeals()">
+        <div class="flex items-center gap-2">
+          <svg id="deals-chevron" class="w-4 h-4 chat-toggle collapsed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <span class="text-sm font-display">🦀 CrabAI Deal Hunter</span>
+          <span id="deals-summary" class="text-xs text-crab-sand-dim opacity-60">— hunting…</span>
+        </div>
+        <button id="deals-refresh" class="text-xs text-crab-sand-dim hover:text-crab-sand opacity-60 hover:opacity-100" onclick="event.stopPropagation(); loadDealBoard(true);" title="Refresh">🔄</button>
+      </div>
+      <div id="deals-body" class="p-4 md:p-6" style="display:none;">
+        <div id="deals-content">
+          <div class="text-center py-8 text-crab-sand-dim text-sm">Loading deals…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      var PLAN_ID = {{ plan.plan_id|tojson }};
+      var MEMBER_TOKEN = {{ (board_member_token or '')|tojson }};
+      var loaded = false;
+
+      window.toggleDeals = function() {
+        var body = document.getElementById('deals-body');
+        var chev = document.getElementById('deals-chevron');
+        var open = body.style.display === 'none';
+        body.style.display = open ? 'block' : 'none';
+        if (chev) chev.classList.toggle('collapsed', !open);
+        if (open && !loaded) loadDealBoard(false);
+      };
+
+      window.loadDealBoard = function(force) {
+        var url = '/api/plan/' + encodeURIComponent(PLAN_ID) + '/board';
+        if (MEMBER_TOKEN) url += '?as=' + encodeURIComponent(MEMBER_TOKEN);
+        document.getElementById('deals-content').innerHTML =
+          '<div class="text-center py-8 text-crab-sand-dim text-sm">Loading deals…</div>';
+        fetch(url, {credentials: 'same-origin'})
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            if (!data || !data.success) throw new Error((data && data.error) || 'failed');
+            loaded = true;
+            renderDealBoard(data);
+          })
+          .catch(function(err){
+            document.getElementById('deals-content').innerHTML =
+              '<div class="text-center py-6 text-crab-sand-dim text-sm">Couldn\u2019t load deals: ' +
+              String(err.message || err).replace(/[<>&]/g, '') + '</div>';
+          });
+      };
+
+      function esc(s){ return String(s==null?'':s).replace(/[<>&"]/g, function(c){
+        return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
+      function fmt(p){ return '$' + Math.round(p).toLocaleString(); }
+
+      function rowHtml(r) {
+        var meta = [esc(r.provider), esc(r.detail), '<span class="opacity-50">via ' + esc(r.source) + '</span>']
+          .filter(function(x){ return x && x !== ''; }).join(' · ');
+        return '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" ' +
+          'class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors">' +
+          '<div class="flex items-center gap-3 min-w-0">' +
+            '<span class="font-display text-crab-sand tabular-nums">' + fmt(r.price_usd) + '</span>' +
+            '<span class="text-xs text-crab-sand-dim truncate">' + meta + '</span>' +
+          '</div>' +
+          '<span class="text-xs text-crab-coral whitespace-nowrap">Book →</span>' +
+        '</a>';
+      }
+
+      function cardHtml(title, rows) {
+        if (!rows || !rows.length) return '';
+        var body = rows.slice(0, 5).map(rowHtml).join('');
+        var more = rows.length > 5
+          ? '<details class="mt-2"><summary class="text-xs text-crab-sand-dim cursor-pointer select-none">' +
+            'Show ' + (rows.length - 5) + ' more' +
+            '</summary><div class="mt-1 space-y-1">' + rows.slice(5).map(rowHtml).join('') + '</div></details>'
+          : '';
+        return '<div class="mb-4 bg-crab-card/30 border border-white/6 rounded-xl p-3">' +
+          '<h4 class="text-xs uppercase tracking-wider text-crab-sand-dim mb-2">' + esc(title) + '</h4>' +
+          '<div class="space-y-1">' + body + '</div>' + more +
+        '</div>';
+      }
+
+      function othersHtml(others) {
+        if (!others || !others.length) return '';
+        var items = others.map(function(o, i){
+          var id = 'other-' + i;
+          var summary = esc(o.member) + (o.origin ? ' · <span class="opacity-70">' + esc(o.origin) + ' → ' + '</span>' : ' · ') +
+            (o.cheapest != null ? 'from ' + fmt(o.cheapest) : 'no price yet') +
+            ' · <span class="opacity-70">' + o.count + ' option' + (o.count === 1 ? '' : 's') + '</span>';
+          var rows = (o.flights || []).slice(0, 10).map(rowHtml).join('');
+          return '<details class="py-1 border-b border-white/5 last:border-0">' +
+            '<summary class="text-sm cursor-pointer select-none py-1 text-crab-sand-dim hover:text-crab-sand">' +
+              '▸ ' + summary +
+            '</summary><div class="mt-2 space-y-1 pl-4">' + (rows || '<div class="text-xs text-crab-sand-dim opacity-60">no deals found yet</div>') + '</div>' +
+          '</details>';
+        }).join('');
+        return '<div class="mt-4 bg-crab-card/30 border border-white/6 rounded-xl p-3">' +
+          '<h4 class="text-xs uppercase tracking-wider text-crab-sand-dim mb-2">🌍 Flights for everyone else</h4>' +
+          items +
+        '</div>';
+      }
+
+      function renderDealBoard(d) {
+        var parts = [];
+        var yours = d.yours;
+        if (yours && d.viewer) {
+          var route = d.viewer.origin ? (d.viewer.origin + ' → destination') : 'your route';
+          if (yours.flights && yours.flights.length) parts.push(cardHtml('✈️  Your flight · ' + route, yours.flights));
+        }
+        var g = d.group || {};
+        if (g.hotels && g.hotels.length) parts.push(cardHtml('🏨  Hotels · everyone shares', g.hotels));
+        if (g.activities && g.activities.length) parts.push(cardHtml('🎟️  Activities', g.activities));
+        if (g.other && g.other.length) parts.push(cardHtml('📍  Other deals', g.other));
+        parts.push(othersHtml(d.others));
+
+        if (!parts.filter(Boolean).length) {
+          parts.push('<div class="text-center py-6 text-crab-sand-dim text-sm">CrabAI hasn\u2019t found deals on this plan yet. Check back soon.</div>');
+        }
+
+        var updated = d.updated_at ? new Date(d.updated_at) : null;
+        var ago = '';
+        if (updated) {
+          var mins = Math.max(0, Math.round((Date.now() - updated.getTime()) / 60000));
+          ago = mins < 60 ? (mins + 'm ago') : (Math.round(mins/60) + 'h ago');
+        }
+        document.getElementById('deals-content').innerHTML = parts.join('');
+
+        var sum = document.getElementById('deals-summary');
+        if (sum) sum.textContent = (d.total_deals || 0) + ' deal' + ((d.total_deals === 1) ? '' : 's') +
+          (ago ? ' · ' + ago : '');
+      }
+
+      // Auto-expand if URL hash is #deals
+      if ((location.hash || '').toLowerCase() === '#deals') {
+        setTimeout(function(){ window.toggleDeals(); }, 100);
+      }
+    })();
+  </script>
+
+  {% if viewing_as %}
+  {# CTA for demo viewers #}
+  <div class="text-center mt-10 py-8 border-t border-white/6">
+    <p class="text-crab-sand-dim text-sm mb-4">This is what your trip could look like. Ready to plan your own?</p>
+    <a href="/login" class="inline-block bg-crab-coral hover:bg-crab-coral-light text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:shadow-lg hover:shadow-crab-coral/25 hover:-translate-y-0.5">
+      Start your own trip
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+const PLAN_ID = '{{ plan.plan_id }}';
+const NEEDS_LOGIN = {{ 'true' if needs_login else 'false' }};
+var _isMember = {{ 'true' if is_member else 'false' }};
+const IS_ORGANIZER = {{ 'true' if is_organizer else 'false' }};
+const GROUP_VIBES = '{{ plan.group_vibes or '' }}'.toLowerCase();
+
+// ── Airport resolver ──
+var _airportTimer = null;
+document.getElementById('home-airport')?.addEventListener('input', function() {
+  var val = this.value.trim();
+  var resolved = document.getElementById('airport-resolved');
+  var hint = document.getElementById('airport-hint');
+  clearTimeout(_airportTimer);
+  if (!val || val.length < 2) {
+    resolved.classList.add('hidden');
+    hint.classList.remove('hidden');
+    return;
+  }
+  _airportTimer = setTimeout(function() {
+    fetch('/api/airport/resolve?q=' + encodeURIComponent(val))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.result) {
+          resolved.textContent = '✈ ' + data.result.code + ' — ' + data.result.name;
+          resolved.classList.remove('hidden');
+          hint.classList.add('hidden');
+        } else {
+          resolved.classList.add('hidden');
+          hint.textContent = "We'll figure out your airport — just tell us your city or area";
+          hint.classList.remove('hidden');
+        }
+      });
+  }, 400);
+});
+
+function vibeScore(item) {
+  if (!GROUP_VIBES) return 0;
+  var words = GROUP_VIBES.split(/[\s,]+/).filter(function(w) { return w.length > 2; });
+  var text = ((item.name || '') + ' ' + (item.description || '') + ' ' + (item.category || '')).toLowerCase();
+  var score = 0;
+  words.forEach(function(w) {
+    var re = new RegExp(w, 'gi');
+    var matches = text.match(re);
+    if (matches) score += matches.length;
+  });
+  return score;
+}
+
+// ── Destination data from server (avoid extra fetch for initial render) ──
+var _destinations = {{ destinations_json|safe if destinations_json is defined else '[]' }};
+
+function unsplashUrl(query, w, h) {
+  return 'https://source.unsplash.com/' + w + 'x' + h + '/?' + encodeURIComponent(query + ',travel');
+}
+
+// ── Research progress ──
+var _researchSteps = [
+  {label: 'Searching for hotels and stays', icon: '🏨', delay: 0},
+  {label: 'Finding activities and things to do', icon: '🎯', delay: 3},
+  {label: 'Discovering restaurants and bars', icon: '🍽️', delay: 7},
+  {label: 'Looking up upcoming events and festivals', icon: '🎉', delay: 11},
+  {label: 'Checking flight prices', icon: '✈️', delay: 15},
+  {label: 'Building your destination board', icon: '📋', delay: 19},
+];
+var _researchTimerInterval = null;
+var _researchStartTime = null;
+
+function renderResearchProgress(researchingDests) {
+  var names = researchingDests.map(function(d) { return d.destination_name; });
+  var namesHtml = names.map(function(n) { return '<span class="text-crab-coral">' + n + '</span>'; }).join(', ');
+  var html = '<div class="py-10">';
+  html += '<div class="research-progress">';
+  html += '<div class="text-center mb-6">';
+  html += '<p class="text-lg font-display mb-1">CrabAI is researching ' + namesHtml + '</p>';
+  html += '<p class="research-timer" id="research-timer">0:00</p>';
+  html += '</div>';
+  html += '<div class="bg-crab-card/40 border border-white/6 rounded-xl p-5" id="research-steps">';
+  _researchSteps.forEach(function(step, i) {
+    html += '<div class="research-step" id="rstep-' + i + '">';
+    html += '<div class="step-icon">' + step.icon + '</div>';
+    html += '<span>' + step.label + '</span>';
+    html += '</div>';
+  });
+  html += '</div></div></div>';
+  return html;
+}
+
+function startResearchTimer() {
+  if (_researchTimerInterval) clearInterval(_researchTimerInterval);
+  _researchStartTime = Date.now();
+  _researchTimerInterval = setInterval(function() {
+    var elapsed = (Date.now() - _researchStartTime) / 1000;
+    var mins = Math.floor(elapsed / 60);
+    var secs = Math.floor(elapsed % 60);
+    var timerEl = document.getElementById('research-timer');
+    if (timerEl) timerEl.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+    for (var i = 0; i < _researchSteps.length; i++) {
+      var stepEl = document.getElementById('rstep-' + i);
+      if (!stepEl) continue;
+      if (elapsed >= _researchSteps[i].delay + 3) {
+        stepEl.className = 'research-step done';
+      } else if (elapsed >= _researchSteps[i].delay) {
+        stepEl.className = 'research-step active';
+      }
+    }
+  }, 200);
+}
+
+function stopResearchTimer() {
+  if (_researchTimerInterval) { clearInterval(_researchTimerInterval); _researchTimerInterval = null; }
+}
+
+function pinCard(item, type, destName) {
+  var catClass = {stay:'cat-stay',do:'cat-do',food:'cat-food',event:'cat-event'}[type] || '';
+  var badgeClass = {stay:'cat-badge-stay',do:'cat-badge-do',food:'cat-badge-food',event:'cat-badge-event'}[type] || '';
+  var label = {stay:'Stay',do:'Activity',food:'Eat & Drink',event:'Event'}[type] || type;
+  var imgQuery = item.image_search || item.name;
+  var imgH = type === 'stay' ? 280 : (type === 'event' ? 200 : 220);
+  var searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(item.name + ' ' + (destName || ''));
+
+  var html = '<a href="' + searchUrl + '" target="_blank" rel="noopener" class="pin ' + catClass + '" style="cursor:pointer;text-decoration:none;color:inherit;display:block;">';
+  html += '<img class="pin-img" src="' + unsplashUrl(imgQuery, 400, imgH) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  html += '<div class="p-3">';
+  html += '<div class="flex items-start justify-between gap-2 mb-1">';
+  html += '<span class="font-semibold text-sm leading-snug">' + item.name + '</span>';
+  if (item.price_hint) html += '<span class="text-xs text-crab-sand-dim shrink-0">' + item.price_hint + '</span>';
+  html += '</div>';
+  html += '<span class="inline-block text-xs px-1.5 py-0.5 rounded ' + badgeClass + ' mb-1.5">' + label + '</span>';
+  if (item.description) html += '<p class="text-xs text-crab-sand-dim leading-relaxed">' + item.description + '</p>';
+  if (item.date_range) html += '<p class="text-xs text-purple-400 font-medium mt-1">' + item.date_range + '</p>';
+  if (item.neighborhood) html += '<p class="text-xs text-crab-sand-dim opacity-60 mt-1">' + item.neighborhood + '</p>';
+  html += '</div></a>';
+  return html;
+}
+
+var _activeDest = 0;
+var _userVotes = {}; // {suggestion_id: rank}
+
+// Initialize user's own votes from server
+{% if my_votes %}
+{% for key, val in my_votes.items() %}
+{% if val > 0 %}
+(function() { var k = '{{ key }}'; var sid = k.replace('destination:', ''); _userVotes[sid] = {{ val }}; })();
+{% endif %}
+{% endfor %}
+{% endif %}
+
+function renderCards() {
+  var tabBar = document.getElementById('dest-tab-bar');
+  var content = document.getElementById('dest-content');
+  if (!tabBar || !content) return;
+
+  var researching = _destinations.filter(function(d) { return d.status === 'researching'; });
+  var ready = _destinations.filter(function(d) { return d.status !== 'researching' && d.status !== 'error'; });
+
+  // Render tab bar
+  var tabHtml = '';
+  var numDests = ready.length;
+  ready.forEach(function(dest, i) {
+    var sid = dest.suggestion_id;
+    var tally = _voteTallies[sid] || {ranks: {}, total_votes: 0};
+    var myRank = _userVotes[sid] || 0;
+    var isActive = i === _activeDest;
+    var classes = 'dest-tab' + (isActive ? ' active' : '') + (myRank ? ' voted' : '');
+    tabHtml += '<button class="' + classes + '" onclick="switchDest(' + i + ')">';
+    tabHtml += '<span class="dest-tab-name">' + dest.destination_name + '</span>';
+    if (myRank) {
+      tabHtml += '<span class="dest-tab-check">Your #' + myRank + '</span>';
+    } else if (tally.total_votes > 0) {
+      tabHtml += '<span class="dest-tab-votes">' + tally.total_votes + ' ranked</span>';
+    }
+    tabHtml += '</button>';
+  });
+  tabBar.innerHTML = tabHtml;
+
+  // Render content for active destination
+  var html = '';
+  if (researching.length > 0) {
+    html += renderResearchProgress(researching);
+  }
+
+  if (ready.length > 0 && _activeDest < ready.length) {
+    var dest = ready[_activeDest];
+    html += renderDestContent(dest);
+  }
+
+  content.innerHTML = html;
+
+  // Load media for active destination
+  if (ready.length > 0 && _activeDest < ready.length) {
+    var d = ready[_activeDest];
+    loadInvitePhotos(d.suggestion_id, d.destination_name);
+    loadInviteYouTube(d.suggestion_id, d.destination_name);
+  }
+
+  if (researching.length > 0) startResearchTimer();
+}
+
+function switchDest(idx) {
+  _activeDest = idx;
+  renderCards();
+  var content = document.getElementById('dest-content');
+  if (content) content.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function renderDestContent(dest) {
+  var card = dest.destination_data ? dest.destination_data.card : null;
+  if (!card) return '';
+  var sid = dest.suggestion_id;
+  var dn = dest.destination_name;
+  var tally = _voteTallies[sid] || {ranks: {}, total_votes: 0};
+  var myRank = _userVotes[sid] || 0;
+  var customMedia = dest.destination_data?.custom_media || [];
+  var numDests = _destinations.filter(function(d) { return d.status !== 'researching' && d.status !== 'error'; }).length;
+  var html = '';
+
+  // Summary section with rank voting at top
+  html += '<div class="bg-crab-card/40 border border-white/6 rounded-2xl overflow-hidden mb-6">';
+
+  // Rank bar — the primary CTA
+  if (!NEEDS_LOGIN && numDests > 1) {
+    html += '<div class="px-4 py-3 border-b border-white/6" id="rank-bar-' + sid + '">';
+    html += '<div class="text-xs font-semibold text-crab-sand-dim mb-2">Rank ' + dn + ':</div>';
+    html += '<div class="flex gap-2 flex-wrap">';
+    for (var r = 1; r <= numDests; r++) {
+      var isMyRank = myRank === r;
+      var rankCount = tally.ranks[r] || tally.ranks[String(r)] || 0;
+      var btnCls = isMyRank
+        ? 'px-3 py-1.5 rounded-lg text-sm font-bold transition-all cursor-pointer border-2 border-crab-teal bg-crab-teal/15 text-crab-teal'
+        : 'px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer border border-white/10 hover:border-white/25 text-crab-sand-dim';
+      html += '<button class="' + btnCls + '" onclick="setRank(\'' + sid + '\',' + r + ')">';
+      html += '#' + r;
+      if (rankCount > 0) html += ' <span style="opacity:0.5;font-size:0.7rem;">(' + rankCount + ')</span>';
+      html += '</button>';
+    }
+    if (myRank) {
+      html += '<button class="px-2 py-1 text-xs text-crab-sand-dim opacity-50 hover:opacity-100 transition-opacity" onclick="setRank(\'' + sid + '\',0)">clear</button>';
+    }
+    html += '</div></div>';
+  } else if (!NEEDS_LOGIN && numDests === 1) {
+    html += '<div class="vote-bar voted" style="cursor:default;">🏖️ ' + dn + '</div>';
+  }
+
+  html += '<div class="p-5 md:p-6">';
+  html += '<h3 class="text-xl font-display mb-2">' + dn + '</h3>';
+  if (card.summary) html += '<p class="text-sm text-crab-sand-dim leading-relaxed mb-3">' + card.summary + '</p>';
+
+  // Meta chips
+  html += '<div class="flex flex-wrap gap-2 text-xs mb-3">';
+  if (card.estimated_total_per_person) html += '<span class="bg-crab-coral/10 text-crab-coral px-2.5 py-1 rounded-full font-medium">' + card.estimated_total_per_person + ' per person</span>';
+  if (card.best_dates) html += '<span class="bg-teal-500/10 text-teal-400 px-2.5 py-1 rounded-full">' + card.best_dates + '</span>';
+  if (card.weather_note) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + card.weather_note + '</span>';
+  if (dest.compatibility_score) html += '<span class="bg-white/5 text-crab-sand-dim px-2.5 py-1 rounded-full">' + dest.compatibility_score + '% match</span>';
+  html += '</div>';
+
+  // Highlights
+  if (card.highlights && card.highlights.length > 0) {
+    html += '<div class="flex flex-wrap gap-1.5">';
+    card.highlights.forEach(function(h) {
+      html += '<span class="text-xs bg-crab-teal/10 text-crab-teal px-2 py-0.5 rounded-full">' + h + '</span>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div></div>';
+
+  // Places section
+  html += '<div class="mb-6">';
+  html += '<p class="section-label">Places & spots in ' + dn + '</p>';
+  html += '<div class="pin-grid">';
+  var allPins = [];
+  if (card.stays) card.stays.forEach(function(s) { allPins.push({item: s, type: 'stay'}); });
+  if (card.things_to_do) card.things_to_do.forEach(function(t) { allPins.push({item: t, type: 'do'}); });
+  if (card.food_and_drink) card.food_and_drink.forEach(function(f) { allPins.push({item: f, type: 'food'}); });
+  if (card.upcoming_events) card.upcoming_events.forEach(function(e) { allPins.push({item: e, type: 'event'}); });
+  if (GROUP_VIBES) {
+    allPins.sort(function(a, b) { return vibeScore(b.item) - vibeScore(a.item); });
+  }
+  allPins.forEach(function(p) { html += pinCard(p.item, p.type, dn); });
+  html += '</div></div>';
+
+  // Custom media
+  if (customMedia.length > 0) {
+    html += '<div class="mb-6">';
+    html += '<p class="section-label">Added by the organizer</p>';
+    html += '<div class="media-grid">';
+    customMedia.forEach(function(m) {
+      var ytId = youtubeIdFromUrl(m.url);
+      html += '<div class="media-card">';
+      if (ytId) {
+        html += '<iframe src="https://www.youtube.com/embed/' + ytId + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        html += '<img src="' + m.url + '" alt="" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      }
+      if (m.caption) html += '<div class="px-3 py-2 text-xs text-crab-sand-dim">' + m.caption + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Photos
+  html += '<div class="mb-6" id="photo-section-' + sid + '" style="display:none;">';
+  html += '<p class="section-label">Photos</p>';
+  html += '<div class="media-grid" id="photo-grid-' + sid + '"></div>';
+  html += '</div>';
+
+  // Videos
+  html += '<div class="mb-6" id="yt-section-' + sid + '" style="display:none;">';
+  html += '<p class="section-label">Videos</p>';
+  html += '<div class="media-grid" id="yt-grid-' + sid + '"></div>';
+  html += '</div>';
+
+  return html;
+}
+
+function ensureMember() {
+  if (_isMember) return Promise.resolve(true);
+  return fetch('/api/plan/' + PLAN_ID + '/join-full', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({home_airport: '', is_flexible: true, blackouts: [], tentative_dates: [], votes: {}}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) { _isMember = true; return true; }
+    return false;
+  })
+  .catch(function() { return false; });
+}
+
+function celebrateVote(btn) {
+  // Flash the button
+  btn.classList.add('vote-flash');
+  setTimeout(function() { btn.classList.remove('vote-flash'); }, 400);
+
+  // Spin the nav crab
+  var navCrab = document.querySelector('.nav-crab');
+  if (navCrab) {
+    navCrab.style.animation = 'crabSpin 0.5s ease-in-out';
+    navCrab.addEventListener('animationend', function() { navCrab.style.animation = 'crabBob 3s ease-in-out infinite'; }, {once: true});
+  }
+
+  // Mini confetti burst
+  var overlay = document.createElement('div');
+  overlay.className = 'vote-celebrate';
+  document.body.appendChild(overlay);
+  var colors = ['#E8593A', '#14B8A6', '#F59E0B', '#8B5CF6', '#3B82F6', '#EC4899'];
+  var rect = btn.getBoundingClientRect();
+  var cx = rect.left + rect.width / 2;
+  var cy = rect.top;
+  for (var i = 0; i < 24; i++) {
+    var c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = cx + (Math.random() - 0.5) * 200 + 'px';
+    c.style.top = cy + 'px';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    c.style.animationDelay = (Math.random() * 0.3) + 's';
+    c.style.animationDuration = (0.8 + Math.random() * 0.6) + 's';
+    overlay.appendChild(c);
+  }
+  setTimeout(function() { overlay.remove(); }, 1800);
+}
+
+function setRank(sid, rank) {
+  if (NEEDS_LOGIN) return;
+  var currentRank = _userVotes[sid] || 0;
+  // If clicking the same rank, toggle it off
+  var newRank = (currentRank === rank) ? 0 : rank;
+
+  ensureMember().then(function(ok) {
+    if (!ok) return;
+    fetch('/api/plan/' + PLAN_ID + '/vote', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target_type: 'destination', target_id: sid, vote: newRank}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        // Update tallies
+        if (data.data.tallies) {
+          _voteTallies = {};
+          data.data.tallies.forEach(function(t) {
+            _voteTallies[t.target_id] = {ranks: t.ranks || {}, total_votes: t.total_votes || 0};
+          });
+        }
+        // Update user votes from server response
+        if (data.data.my_votes) {
+          _userVotes = {};
+          Object.keys(data.data.my_votes).forEach(function(key) {
+            var val = data.data.my_votes[key];
+            if (val > 0) {
+              var voteSid = key.replace('destination:', '');
+              _userVotes[voteSid] = val;
+            }
+          });
+        }
+        if (newRank > 0) {
+          var bar = document.getElementById('rank-bar-' + sid);
+          if (bar) celebrateVote(bar);
+        }
+        renderCards();
+      }
+    });
+  });
+}
+
+function youtubeIdFromUrl(url) {
+  var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function loadInvitePhotos(suggestionId, destName) {
+  fetch('/api/photo-search?q=' + encodeURIComponent(destName + ' travel') + '&per_page=6')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.photos.length > 0) {
+        var grid = document.getElementById('photo-grid-' + suggestionId);
+        var section = document.getElementById('photo-section-' + suggestionId);
+        if (!grid || !section) return;
+        var html = '';
+        data.photos.forEach(function(p) {
+          html += '<div class="media-card">';
+          html += '<a href="' + (p.full || p.url) + '" target="_blank" rel="noopener"><img src="' + p.url + '" alt="' + (p.alt || destName) + '" loading="lazy" onerror="this.parentElement.parentElement.style.display=\'none\'" style="cursor:pointer;"></a>';
+          if (p.photographer) html += '<div class="px-3 py-1.5 text-xs text-crab-sand-dim opacity-60">by ' + p.photographer + '</div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+        section.style.display = '';
+      }
+    })
+    .catch(function() {});
+}
+
+function loadInviteYouTube(suggestionId, destName) {
+  var ytQuery = 'things to do in ' + destName;
+  fetch('/api/youtube-search?q=' + encodeURIComponent(ytQuery) + '&max_results=4')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.videos.length > 0) {
+        var grid = document.getElementById('yt-grid-' + suggestionId);
+        var section = document.getElementById('yt-section-' + suggestionId);
+        if (!grid || !section) return;
+        var html = '';
+        data.videos.forEach(function(v) {
+          html += '<div class="media-card">';
+          html += '<iframe src="https://www.youtube.com/embed/' + v.id + '" allowfullscreen loading="lazy"></iframe>';
+          html += '<div class="px-3 py-2"><p class="text-xs font-medium leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + v.title + '</p></div>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+        section.style.display = '';
+      }
+    })
+    .catch(function() {});
+}
+
+
+// ── Voting (rank-order) ──
+var _voteTallies = {}; // {suggestion_id: {ranks: {1: count, 2: count}, total_votes: N}}
+{% if vote_tallies %}
+{% for t in vote_tallies %}
+_voteTallies['{{ t.target_id }}'] = {ranks: {{ t.ranks|tojson }}, total_votes: {{ t.total_votes|int }}};
+{% endfor %}
+{% endif %}
+
+// ── Suggest destination ──
+function suggestDestination() {
+  var input = document.getElementById('suggest-input');
+  if (!input) return;
+  var name = input.value.trim();
+  if (!name) return;
+  input.value = '';
+  input.disabled = true;
+
+  fetch('/api/plan/' + PLAN_ID + '/suggest-destination', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({destination: name}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    input.disabled = false;
+    if (data.success) {
+      if (data.data.status === 'pending') {
+        // Non-organizer: show toast, don't add to local list
+        showToast('Nice pick! We\'ll let the coordinator know about ' + name + '.');
+      } else {
+        // Organizer: add to local destinations array as "researching" and re-render
+        _destinations.push({
+          suggestion_id: data.data.suggestion_id,
+          destination_name: name,
+          status: 'researching',
+          destination_data: null,
+        });
+        renderCards();
+        pollDestinations();
+      }
+    }
+  })
+  .catch(function() { input.disabled = false; showToast('Something went wrong. Try again.'); });
+}
+
+function showToast(msg) {
+  var toast = document.createElement('div');
+  toast.textContent = msg;
+  toast.style.cssText = 'position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#0D9488;color:white;padding:0.75rem 1.5rem;border-radius:0.75rem;font-size:0.875rem;font-weight:500;z-index:9999;box-shadow:0 8px 25px rgba(0,0,0,0.3);animation:fadeInUp 0.3s ease;';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; }, 2500);
+  setTimeout(function() { toast.remove(); }, 3000);
+}
+
+// ── Your Details (join form) ──
+function toggleBlackouts() {
+  var section = document.getElementById('blackout-section');
+  var checkbox = document.getElementById('is-flexible');
+  if (section && checkbox) section.classList.toggle('hidden', checkbox.checked);
+}
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+function datesOverlap(s1, e1, s2, e2) { return s1 <= e2 && s2 <= e1; }
+
+function checkOverlapWith(start, end, listId) {
+  var chips = document.querySelectorAll('#' + listId + ' .blackout-chip');
+  for (var i = 0; i < chips.length; i++) {
+    if (datesOverlap(start, end, chips[i].dataset.start, chips[i].dataset.end)) return true;
+  }
+  return false;
+}
+
+// ── Range Picker ──
+var _rpState = {
+  tentative: {month: new Date().getMonth(), year: new Date().getFullYear(), start: null, end: null},
+  blackout: {month: new Date().getMonth(), year: new Date().getFullYear(), start: null, end: null}
+};
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function rpNav(id, dir) {
+  var s = _rpState[id];
+  s.month += dir;
+  if (s.month > 11) { s.month = 0; s.year++; }
+  if (s.month < 0) { s.month = 11; s.year--; }
+  rpRender(id);
+}
+
+function rpRender(id) {
+  var s = _rpState[id];
+  var label = document.getElementById('rp-' + id + '-label');
+  var grid = document.getElementById('rp-' + id + '-grid');
+  if (!label || !grid) return;
+  label.textContent = MONTH_NAMES[s.month] + ' ' + s.year;
+  var today = todayStr();
+  var firstDay = new Date(s.year, s.month, 1).getDay();
+  var daysInMonth = new Date(s.year, s.month + 1, 0).getDate();
+  var html = '';
+  DAY_NAMES.forEach(function(d) { html += '<div class="rp-header">' + d + '</div>'; });
+  for (var i = 0; i < firstDay; i++) html += '<div class="rp-day rp-empty"></div>';
+  for (var d = 1; d <= daysInMonth; d++) {
+    var ds = s.year + '-' + String(s.month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    var isPast = ds < today;
+    var cls = 'rp-day';
+    if (isPast) cls += ' rp-past';
+    if (s.start && ds === s.start) cls += ' rp-start';
+    if (s.end && ds === s.end) cls += ' rp-end';
+    if (s.start && s.end && ds > s.start && ds < s.end) cls += ' rp-in-range';
+    html += '<div class="' + cls + '" data-ds="' + ds + '" onclick="rpClick(\'' + id + '\',\'' + ds + '\',' + isPast + ')">' + d + '</div>';
+  }
+  grid.innerHTML = html;
+}
+
+function rpClick(id, ds, isPast) {
+  if (isPast) return;
+  var s = _rpState[id];
+  if (!s.start || s.end) {
+    // Starting a new selection
+    s.start = ds; s.end = null;
+    rpUpdateSelection(id);
+  } else {
+    // Setting end date
+    if (ds < s.start) { s.end = s.start; s.start = ds; }
+    else if (ds === s.start) { s.end = ds; }
+    else { s.end = ds; }
+    rpUpdateSelection(id);
+  }
+  rpRender(id);
+}
+
+function rpUpdateSelection(id) {
+  var s = _rpState[id];
+  var sel = document.getElementById('rp-' + id + '-selection');
+  var btn = document.getElementById(id + '-add-btn');
+  if (!sel || !btn) return;
+  if (s.start && s.end) {
+    sel.innerHTML = '<span style="color:#E8593A;font-weight:600;">' + s.start + '</span> to <span style="color:#E8593A;font-weight:600;">' + s.end + '</span>';
+    btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+  } else if (s.start) {
+    sel.innerHTML = 'Start: <span style="color:#E8593A;font-weight:600;">' + s.start + '</span> — now click an end date';
+    btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+  } else {
+    sel.textContent = 'Click a start date, then an end date';
+    btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+  }
+}
+
+function rpReset(id) {
+  _rpState[id].start = null; _rpState[id].end = null;
+  rpUpdateSelection(id); rpRender(id);
+}
+
+function addBlackout() {
+  var s = _rpState.blackout;
+  if (!s.start || !s.end) return;
+  if (checkOverlapWith(s.start, s.end, 'tentative-list')) { alert('This conflicts with your available dates. Remove the overlap first.'); return; }
+  if (checkOverlapWith(s.start, s.end, 'blackout-list')) { alert('This overlaps with an existing blackout.'); return; }
+  var list = document.getElementById('blackout-list');
+  var chip = document.createElement('div');
+  chip.className = 'blackout-chip';
+  chip.dataset.start = s.start;
+  chip.dataset.end = s.end;
+  chip.innerHTML = s.start + ' to ' + s.end + ' <button onclick="removeBlackout(this.parentElement)">&times;</button>';
+  list.appendChild(chip);
+  rpReset('blackout');
+}
+
+function removeChip(chip) { chip.remove(); }
+function removeBlackout(chip) { chip.remove(); }
+
+var PREF_STYLES = {
+  ideal: {bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', color:'#10B981', icon:'★ '},
+  if_needed: {bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.25)', color:'#F59E0B', icon:'~ '}
+};
+
+function addTentative() {
+  var s = _rpState.tentative;
+  if (!s.start || !s.end) return;
+  var pref = document.getElementById('tentative-pref').value;
+  if (checkOverlapWith(s.start, s.end, 'blackout-list')) { alert('This conflicts with your blackout dates. Remove the overlap first.'); return; }
+  if (checkOverlapWith(s.start, s.end, 'tentative-list')) { alert('This overlaps with an existing date range.'); return; }
+  var ps = PREF_STYLES[pref] || PREF_STYLES.ideal;
+  var list = document.getElementById('tentative-list');
+  var chip = document.createElement('div');
+  chip.className = 'blackout-chip';
+  chip.style.background = ps.bg;
+  chip.style.borderColor = ps.border;
+  chip.style.color = ps.color;
+  chip.dataset.start = s.start;
+  chip.dataset.preference = pref;
+  chip.dataset.end = s.end;
+  chip.innerHTML = ps.icon + s.start + ' to ' + s.end + ' <button onclick="removeChip(this.parentElement)">&times;</button>';
+  list.appendChild(chip);
+  rpReset('tentative');
+}
+
+// Initialize range pickers
+rpRender('tentative'); rpRender('blackout');
+
+function getTentativeDates() {
+  var chips = document.querySelectorAll('#tentative-list .blackout-chip');
+  return Array.from(chips).map(function(c) { var p = c.dataset.preference; return {start: c.dataset.start, end: c.dataset.end, preference: (p === 'if_needed') ? 'if_needed' : 'ideal'}; });
+}
+
+function getBlackouts() {
+  var chips = document.querySelectorAll('#blackout-list .blackout-chip');
+  return Array.from(chips).map(function(c) { return {start: c.dataset.start, end: c.dataset.end}; });
+}
+
+function getVotes() {
+  var votes = {};
+  Object.keys(_userVotes).forEach(function(sid) {
+    votes[sid] = 1;
+  });
+  return votes;
+}
+
+function submitJoin() {
+  var btn = document.getElementById('submit-btn');
+  var status = document.getElementById('submit-status');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  var payload = {
+    home_airport: document.getElementById('home-airport').value.trim(),
+    is_flexible: document.getElementById('is-flexible').checked,
+    blackouts: document.getElementById('is-flexible').checked ? [] : getBlackouts(),
+    tentative_dates: document.getElementById('is-flexible').checked ? [] : getTentativeDates(),
+    votes: getVotes(),
+  };
+
+  fetch('/api/plan/' + PLAN_ID + '/join-full', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var resolvedText = document.getElementById('airport-resolved').textContent;
+      var airport = resolvedText || payload.home_airport || 'your city';
+      document.getElementById('confirm-msg').textContent = "You're in! We'll track flights from " + airport + " and keep you updated.";
+      document.getElementById('confirmation').classList.remove('hidden');
+      btn.textContent = 'Saved!';
+      btn.className = btn.className.replace('bg-crab-coral', 'bg-crab-teal').replace('hover:bg-crab-coral-light', 'hover:bg-crab-teal-light');
+      // Refresh calendar data
+      fetch('/api/plan/' + PLAN_ID + '/calendar')
+        .then(function(r) { return r.json(); })
+        .then(function(cal) {
+          if (cal.blackouts) {
+            _calData = cal;
+            renderCalendar();
+          }
+        }).catch(function() {});
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.textContent = 'Save changes';
+        btn.className = btn.className.replace('bg-crab-teal', 'bg-crab-coral').replace('hover:bg-crab-teal-light', 'hover:bg-crab-coral-light');
+      }, 3000);
+    } else {
+      status.textContent = data.error || 'Something went wrong';
+      status.className = 'text-sm mt-3 text-crab-coral';
+      btn.disabled = false;
+      btn.textContent = 'Try again';
+    }
+  })
+  .catch(function() {
+    status.textContent = 'Network error';
+    status.className = 'text-sm mt-3 text-crab-coral';
+    btn.disabled = false;
+    btn.textContent = 'Try again';
+  });
+}
+
+// ── Chat ──
+var _chatMessages = [];
+var _openThreadId = null;
+var _currentUserId = {{ user.id if user and user.id else 'null' }};
+
+function stripBot(s) { return (s || '').replace(/\[BOT\]\s*/g, ''); }
+
+function chatAvatar(msg) {
+  var name = stripBot(msg.display_name || '?');
+  if (msg.user_picture) return '<img src="' + msg.user_picture + '" alt="" onerror="this.parentElement.textContent=\'' + name[0].toUpperCase() + '\'">';
+  return name[0].toUpperCase();
+}
+
+function chatTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  var now = new Date();
+  var diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+
+function renderMsg(msg) {
+  var html = '<div class="chat-msg" data-id="' + msg.message_id + '">';
+  html += '<div class="chat-avatar">' + chatAvatar(msg) + '</div>';
+  html += '<div class="flex-1 min-w-0">';
+  html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + stripBot(msg.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(msg.created_at) + '</span></div>';
+  html += '<div class="chat-text">' + escapeHtml(stripBot(msg.content)).replace(/\n/g, '<br>') + '</div>';
+  html += '<div class="chat-actions">';
+  if (!NEEDS_LOGIN) html += '<button class="chat-action-btn" onclick="toggleThread(\'' + msg.message_id + '\')">💬 Reply</button>';
+  if (msg.user_id === _currentUserId) html += '<button class="chat-action-btn" onclick="deleteMsg(\'' + msg.message_id + '\')">Delete</button>';
+  html += '</div>';
+  html += '</div></div>';
+
+  // Inline replies
+  if (msg.replies && msg.replies.length > 0) {
+    var isOpen = _openThreadId === msg.message_id;
+    if (!isOpen) {
+      html += '<div style="margin-left:2.6rem;"><button class="thread-toggle" onclick="toggleThread(\'' + msg.message_id + '\')">' + msg.reply_count + (msg.reply_count === 1 ? ' reply' : ' replies') + '</button></div>';
+    } else {
+      html += '<div class="thread-replies">';
+      msg.replies.forEach(function(r) {
+        html += '<div class="chat-msg" data-id="' + r.message_id + '">';
+        html += '<div class="chat-avatar">' + chatAvatar(r) + '</div>';
+        html += '<div class="flex-1 min-w-0">';
+        html += '<div class="flex items-baseline gap-1"><span class="chat-name">' + stripBot(r.display_name||'Anonymous') + '</span><span class="chat-time">' + chatTime(r.created_at) + '</span></div>';
+        html += '<div class="chat-text">' + escapeHtml(stripBot(r.content)).replace(/\n/g, '<br>') + '</div>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // Inline reply input if thread is open
+  if (!NEEDS_LOGIN && _openThreadId === msg.message_id) {
+    html += '<div class="thread-reply-input">';
+    html += '<div class="chat-input-row">';
+    html += '<textarea class="chat-input" id="thread-reply-' + msg.message_id + '" placeholder="Reply..." rows="1" style="font-size:0.8rem;min-height:2rem;padding:0.4rem 0.7rem;" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendThreadReply(\'' + msg.message_id + '\')}"></textarea>';
+    html += '<button class="chat-send-btn" style="padding:0.4rem 0.75rem;font-size:0.75rem;" onclick="sendThreadReply(\'' + msg.message_id + '\')">Reply</button>';
+    html += '</div></div>';
+  }
+
+  return html;
+}
+
+function escapeHtml(t) {
+  var d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+function renderChat() {
+  var container = document.getElementById('chat-messages');
+  var countEl = document.getElementById('chat-count');
+  if (!container) return;
+  if (_chatMessages.length === 0) {
+    container.innerHTML = '<div class="text-center py-8"><img src="/static/images/crab_logo.png" class="w-12 h-12 rounded-lg mx-auto mb-3 crab-glow" alt=""><p class="text-sm text-crab-sand-dim opacity-50">No messages yet. Start the conversation!</p></div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  var total = _chatMessages.reduce(function(s, m) { return s + 1 + (m.reply_count || 0); }, 0);
+  if (countEl) countEl.textContent = total + ' message' + (total === 1 ? '' : 's');
+  var html = '';
+  _chatMessages.forEach(function(m) { html += renderMsg(m); });
+  container.innerHTML = html;
+}
+
+function toggleThread(msgId) {
+  _openThreadId = _openThreadId === msgId ? null : msgId;
+  renderChat();
+  if (_openThreadId) {
+    setTimeout(function() {
+      var input = document.getElementById('thread-reply-' + msgId);
+      if (input) input.focus();
+    }, 50);
+  }
+}
+
+function loadChat() {
+  fetch('/api/plan/' + PLAN_ID + '/messages')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      if (data.success) {
+        _chatMessages = data.data.messages;
+        renderChat();
+      }
+    })
+    .catch(function(e) { console.warn('Chat fetch error:', e); });
+}
+
+function sendMessage() {
+  var input = document.getElementById('chat-input-main');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function sendThreadReply(parentId) {
+  var input = document.getElementById('thread-reply-' + parentId);
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  fetch('/api/plan/' + PLAN_ID + '/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: text, parent_id: parentId}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) loadChat();
+  });
+}
+
+function deleteMsg(msgId) {
+  if (!confirm('Delete this message?')) return;
+  fetch('/api/plan/' + PLAN_ID + '/messages/' + msgId, {method: 'DELETE'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) loadChat();
+    });
+}
+
+// Auto-grow textareas
+document.addEventListener('input', function(e) {
+  if (e.target.classList.contains('chat-input')) {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+  }
+});
+
+// ── Init ──
+if (!NEEDS_LOGIN) {
+  loadChat();
+  setInterval(loadChat, 15000);
+}
+
+var _pollTimer = null;
+var _pollCount = 0;
+
+function pollDestinations() {
+  if (_pollTimer) return; // already polling
+  _pollCount = 0;
+  _pollTimer = setInterval(function() {
+    _pollCount++;
+    if (_pollCount > 40) { clearInterval(_pollTimer); _pollTimer = null; return; }
+    fetch('/api/plan/' + PLAN_ID + '/destinations')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          _destinations = data.data.destinations;
+          renderCards();
+          if (!_destinations.some(function(d) { return d.status === 'researching'; })) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+          }
+        }
+      });
+  }, 3000);
+}
+
+if (_destinations.length > 0) {
+  renderCards();
+  if (_destinations.some(function(d) { return d.status === 'researching'; })) {
+    pollDestinations();
+  }
+}
+
+// ── Calendar Availability ──
+var _calData = {{ calendar_json|safe }};
+var _calOffset = 0; // month offset from today for navigation
+var _calMonthsToShow = 3;
+
+function getFirstName(name) {
+  return (name || '').split(' ')[0];
+}
+
+function toggleSection(bodyId, chevId) {
+  var body = document.getElementById(bodyId);
+  var chev = document.getElementById(chevId);
+  if (!body || !chev) return;
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    chev.classList.remove('collapsed');
+  } else {
+    body.style.display = 'none';
+    chev.classList.add('collapsed');
+  }
+}
+function toggleChat() { toggleSection('chat-body', 'chat-chevron'); }
+function toggleDetails() { toggleSection('details-body', 'details-chevron'); }
+
+function leaveTrip() {
+  if (!confirm('Leave this trip? You can always rejoin later via the invite link.')) return;
+  fetch('/api/plan/{{ plan.plan_id }}/leave', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.success) {
+        window.location.href = '/plans';
+      } else {
+        alert(d.error || 'Could not leave trip');
+      }
+    });
+}
+function toggleDestinations() { toggleSection('dest-body', 'dest-chevron'); }
+function toggleWatches() { toggleSection('watches-body', 'watches-chevron'); }
+
+function toggleCalendar() {
+  var body = document.getElementById('cal-body');
+  var chev = document.getElementById('cal-chevron');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    chev.classList.remove('collapsed');
+  } else {
+    body.style.display = 'none';
+    chev.classList.add('collapsed');
+  }
+}
+
+function calNav(dir) {
+  _calOffset += dir;
+  if (_calOffset < 0) _calOffset = 0;
+  renderCalendar();
+}
+
+function renderCalendar() {
+  var container = document.getElementById('cal-months');
+  if (!container || !_calData.blackouts) return;
+
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  var todayStr = today.toISOString().split('T')[0];
+
+  // Determine how many months to show based on data span
+  var allDates = [];
+  (_calData.blackouts || []).forEach(function(b) { allDates.push(b.start, b.end); });
+  (_calData.tentative || []).forEach(function(t) { allDates.push(t.start, t.end); });
+  allDates.sort();
+
+  var dataSpanMonths = 3;
+  if (allDates.length) {
+    var earliest = new Date(allDates[0] + 'T00:00:00');
+    var latest = new Date(allDates[allDates.length - 1] + 'T00:00:00');
+    dataSpanMonths = Math.max(3, (latest.getFullYear() - today.getFullYear()) * 12 + latest.getMonth() - today.getMonth() + 1);
+    // Auto-skip to first month with data if current view is empty
+    if (_calOffset === 0) {
+      var firstDataMonth = (earliest.getFullYear() - today.getFullYear()) * 12 + earliest.getMonth() - today.getMonth();
+      if (firstDataMonth > 0) _calOffset = firstDataMonth;
+    }
+  }
+
+  // Build date→info map with preference tracking
+  var dateMap = {};
+  var PREF_ORDER = {ideal: 0, if_needed: 1};
+  (_calData.blackouts || []).forEach(function(b) {
+    var d = new Date(b.start + 'T00:00:00');
+    var end = new Date(b.end + 'T00:00:00');
+    while (d <= end) {
+      var ds = d.toISOString().split('T')[0];
+      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: [], prefs: {}};
+      if (dateMap[ds].blocked.indexOf(b.name) === -1) dateMap[ds].blocked.push(b.name);
+      d.setDate(d.getDate() + 1);
+    }
+  });
+  (_calData.tentative || []).forEach(function(t) {
+    var d = new Date(t.start + 'T00:00:00');
+    var end = new Date(t.end + 'T00:00:00');
+    var pref = (t.preference === 'if_needed') ? 'if_needed' : 'ideal';
+    while (d <= end) {
+      var ds = d.toISOString().split('T')[0];
+      if (!dateMap[ds]) dateMap[ds] = {blocked: [], available: [], prefs: {}};
+      if (dateMap[ds].available.indexOf(t.name) === -1) dateMap[ds].available.push(t.name);
+      // Track best preference per person
+      if (!dateMap[ds].prefs[t.name] || PREF_ORDER[pref] < PREF_ORDER[dateMap[ds].prefs[t.name]]) {
+        dateMap[ds].prefs[t.name] = pref;
+      }
+      d.setDate(d.getDate() + 1);
+    }
+  });
+
+  var totalMembers = (_calData.members || []).length;
+  var flexMembers = (_calData.members || []).filter(function(m) { return m.is_flexible; }).map(function(m) { return m.name; });
+
+  // Update collapsed summary
+  var summary = document.getElementById('cal-summary');
+  if (summary) {
+    var blockedMembers = [];
+    (_calData.blackouts || []).forEach(function(b) { if (blockedMembers.indexOf(b.name) === -1) blockedMembers.push(b.name); });
+    summary.textContent = totalMembers + ' member' + (totalMembers !== 1 ? 's' : '') + (blockedMembers.length ? ', ' + blockedMembers.length + ' with conflicts' : '');
+  }
+
+  // Render 3 months at a time with navigation
+  var html = '';
+  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var dayNames = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+  for (var mo = 0; mo < _calMonthsToShow; mo++) {
+    var monthDate = new Date(today.getFullYear(), today.getMonth() + _calOffset + mo, 1);
+    var year = monthDate.getFullYear();
+    var month = monthDate.getMonth();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var firstDay = monthDate.getDay();
+
+    html += '<div>';
+    html += '<p class="text-xs font-semibold text-crab-sand-dim mb-2">' + monthNames[month] + ' ' + year + '</p>';
+    html += '<div class="cal-grid">';
+    dayNames.forEach(function(d) { html += '<div class="cal-header">' + d + '</div>'; });
+
+    for (var e = 0; e < firstDay; e++) {
+      html += '<div class="cal-day empty"></div>';
+    }
+
+    for (var day = 1; day <= daysInMonth; day++) {
+      var ds = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      var isPast = ds < todayStr;
+      var info = dateMap[ds] || {blocked: [], available: [], prefs: {}};
+      var blockedCount = info.blocked.length;
+      var uniqueAvail = info.available.slice();
+      flexMembers.forEach(function(fn) { if (uniqueAvail.indexOf(fn) === -1) uniqueAvail.push(fn); });
+
+      // Determine best preference level for this date
+      var prefs = info.prefs || {};
+      var idealCount = 0, ifNeededCount = 0;
+      Object.keys(prefs).forEach(function(n) {
+        if (prefs[n] === 'if_needed') ifNeededCount++;
+        else idealCount++; // 'ideal' and legacy 'works' both count as ideal
+      });
+
+      var colorClass = '';
+      if (!isPast && totalMembers > 0) {
+        if (blockedCount === 0 && uniqueAvail.length > 0) {
+          // Green if mostly ideal, amber if mostly if-needed
+          if (idealCount >= ifNeededCount) colorClass = 'green-ideal';
+          else colorClass = 'green-maybe';
+        }
+        else if (blockedCount > 0 && blockedCount < totalMembers) colorClass = 'yellow';
+        else if (blockedCount >= totalMembers) colorClass = 'red';
+      }
+
+      var title = ds;
+      if (info.blocked.length) title += ' | Blocked: ' + info.blocked.join(', ');
+      if (uniqueAvail.length) {
+        var availParts = uniqueAvail.map(function(n) {
+          var p = prefs[n];
+          return n + (p === 'if_needed' ? ' (if needed)' : ' (ideal)');
+        });
+        title += ' | Available: ' + availParts.join(', ');
+      }
+
+      // Build name labels for any dates with people marked
+      var namesHtml = '';
+      if (!isPast) {
+        var shortNames = [];
+        if (info.blocked.length > 0) {
+          shortNames = info.blocked.map(getFirstName);
+        } else if (uniqueAvail.length > 0) {
+          shortNames = uniqueAvail.map(getFirstName);
+        }
+        if (shortNames.length > 0) {
+          // Show each name on its own line; CSS overflow clips what doesn't fit
+          namesHtml = '<div class="cal-names">' + shortNames.map(function(n) { return '<span class="cal-name-line">' + n + '</span>'; }).join('') + '</div>';
+        }
+      }
+
+      var hasPeople = !isPast && (info.blocked.length > 0 || uniqueAvail.length > 0);
+      html += '<div class="cal-day ' + (isPast ? 'past' : '') + ' ' + colorClass + (hasPeople ? ' has-people' : '') + '" title="' + title + '" data-date="' + ds + '" onmouseenter="showCalInfo(this)"' + (hasPeople ? ' onclick="openCalModal(\'' + ds + '\')"' : '') + '>';
+      html += '<span>' + day + '</span>';
+      html += namesHtml;
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function showCalInfo(el) {
+  var info = document.getElementById('cal-hover-info');
+  if (!info) return;
+  var ds = el.dataset.date;
+  var d = dateMap_lookup(ds);
+  if (!d) { info.textContent = ds; return; }
+  var parts = [ds];
+  if (d.available.length) {
+    var availParts = d.available.map(function(n) {
+      var p = d.prefs[n];
+      return n + (p === 'if_needed' ? ' ~' : ' ★');
+    });
+    parts.push('Available: ' + availParts.join(', '));
+  }
+  if (d.blocked.length) parts.push('Blocked: ' + d.blocked.join(', '));
+  info.textContent = parts.join(' · ');
+}
+
+function dateMap_lookup(ds) {
+  var info = {blocked: [], available: [], prefs: {}};
+  (_calData.blackouts || []).forEach(function(b) {
+    if (ds >= b.start && ds <= b.end && info.blocked.indexOf(b.name) === -1) info.blocked.push(b.name);
+  });
+  (_calData.tentative || []).forEach(function(t) {
+    if (ds >= t.start && ds <= t.end) {
+      if (info.available.indexOf(t.name) === -1) info.available.push(t.name);
+      var pref = (t.preference === 'if_needed') ? 'if_needed' : 'ideal';
+      if (!info.prefs[t.name] || ({'ideal':0,'if_needed':1})[pref] < ({'ideal':0,'if_needed':1})[info.prefs[t.name]]) {
+        info.prefs[t.name] = pref;
+      }
+    }
+  });
+  var flexMembers = (_calData.members || []).filter(function(m) { return m.is_flexible; }).map(function(m) { return m.name; });
+  flexMembers.forEach(function(fn) { if (info.available.indexOf(fn) === -1) info.available.push(fn); });
+  return (info.blocked.length || info.available.length) ? info : null;
+}
+
+function openCalModal(ds) {
+  var d = dateMap_lookup(ds);
+  if (!d) return;
+  var modal = document.getElementById('cal-date-modal');
+  var content = document.getElementById('cal-date-modal-content');
+  var dateObj = new Date(ds + 'T00:00:00');
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var dateLabel = dayNames[dateObj.getDay()] + ', ' + monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate();
+
+  var html = '<h3 class="text-base font-display mb-3">' + dateLabel + '</h3>';
+
+  if (d.available.length) {
+    html += '<div class="mb-3"><div class="text-xs font-semibold text-crab-sand-dim mb-1.5 uppercase tracking-wide">Available</div>';
+    d.available.forEach(function(n) {
+      var pref = d.prefs[n];
+      var prefLabel = pref === 'if_needed' ? 'If needed' : 'Ideal';
+      var prefColor = pref === 'if_needed' ? '#F59E0B' : '#10B981';
+      html += '<div class="flex items-center justify-between py-1 border-b border-white/5">';
+      html += '<span class="text-sm">' + n + '</span>';
+      html += '<span class="text-xs font-medium" style="color:' + prefColor + ';">' + prefLabel + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  if (d.blocked.length) {
+    html += '<div class="mb-2"><div class="text-xs font-semibold text-crab-sand-dim mb-1.5 uppercase tracking-wide">Blocked</div>';
+    d.blocked.forEach(function(n) {
+      html += '<div class="flex items-center py-1 border-b border-white/5">';
+      html += '<span class="text-sm" style="color:#E8593A;">' + n + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+  modal.style.display = '';
+}
+
+function closeCalModal() {
+  document.getElementById('cal-date-modal').style.display = 'none';
+}
+
+if (!NEEDS_LOGIN) renderCalendar();
+
+// ── CrabAI Hunts ──────────────────────────────────────────
+var _watchesData = {{ watches_json|safe }};
+
+function renderWatches() {
+  var container = document.getElementById('watches-container');
+  var countEl = document.getElementById('watches-count');
+  if (!container) return;
+  if (!_watchesData || !_watchesData.length) {
+    container.innerHTML = '<p class="text-sm text-crab-sand-dim text-center py-4 opacity-50">No hunts yet — CrabAI starts hunting when a destination is locked.</p>';
+    return;
+  }
+
+  // Group by member
+  var byMember = {};
+  _watchesData.forEach(function(w) {
+    if (!byMember[w.member_id]) byMember[w.member_id] = {name: stripBot(w.member_name), watches: []};
+    byMember[w.member_id].watches.push(w);
+  });
+
+  var memberIds = Object.keys(byMember);
+
+  // Compute booking progress
+  var totalFlights = 0, bookedFlights = 0, totalHotels = 0, bookedHotels = 0;
+  _watchesData.forEach(function(w) {
+    if (w.watch_type === 'flight') { totalFlights++; if (w.status === 'booked') bookedFlights++; }
+    else { totalHotels++; if (w.status === 'booked') bookedHotels++; }
+  });
+  var totalWatches = totalFlights + totalHotels;
+  var bookedWatches = bookedFlights + bookedHotels;
+  var allBooked = totalWatches > 0 && bookedWatches === totalWatches;
+
+  if (countEl) {
+    countEl.textContent = allBooked ? 'All booked!' : bookedWatches + '/' + totalWatches + ' booked';
+  }
+
+  // Progress bar + stats
+  var html = '';
+
+  // All-booked celebration
+  if (allBooked) {
+    html += '<div class="text-center py-4 mb-4 bg-crab-teal/10 border border-crab-teal/30 rounded-xl">';
+    html += '<div class="text-2xl mb-1">🎉</div>';
+    html += '<div class="text-sm font-display text-crab-teal">Everyone\'s booked!</div>';
+    html += '<div class="text-xs text-crab-sand-dim mt-1">All flights and hotels are confirmed</div>';
+    html += '<a href="/plan/{{ plan.plan_id }}/summary" class="inline-block mt-3 px-5 py-2 bg-crab-teal text-white text-sm font-semibold rounded-lg hover:bg-crab-teal-light transition-colors">View Trip Summary &rarr;</a>';
+    html += '</div>';
+  } else {
+    // Progress bars
+    html += '<div class="mb-5 space-y-3">';
+
+    if (totalFlights > 0) {
+      var flightPct = Math.round((bookedFlights / totalFlights) * 100);
+      html += '<div>';
+      html += '<div class="flex justify-between items-center mb-1">';
+      html += '<span class="text-xs font-medium text-crab-sand-dim">✈️ Flights</span>';
+      html += '<span class="text-xs font-bold ' + (bookedFlights === totalFlights ? 'text-crab-teal' : 'text-crab-sand') + '">' + bookedFlights + '/' + totalFlights + '</span>';
+      html += '</div>';
+      html += '<div class="h-2 bg-white/5 rounded-full overflow-hidden">';
+      html += '<div class="h-full rounded-full transition-all duration-500 ' + (bookedFlights === totalFlights ? 'bg-crab-teal' : 'bg-crab-coral') + '" style="width:' + flightPct + '%"></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    if (totalHotels > 0) {
+      var hotelPct = Math.round((bookedHotels / totalHotels) * 100);
+      html += '<div>';
+      html += '<div class="flex justify-between items-center mb-1">';
+      html += '<span class="text-xs font-medium text-crab-sand-dim">🏨 Hotels</span>';
+      html += '<span class="text-xs font-bold ' + (bookedHotels === totalHotels ? 'text-crab-teal' : 'text-crab-sand') + '">' + bookedHotels + '/' + totalHotels + '</span>';
+      html += '</div>';
+      html += '<div class="h-2 bg-white/5 rounded-full overflow-hidden">';
+      html += '<div class="h-full rounded-full transition-all duration-500 ' + (bookedHotels === totalHotels ? 'bg-crab-teal' : 'bg-crab-coral') + '" style="width:' + hotelPct + '%"></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  // Member cards
+  html += '<div class="space-y-4">';
+  memberIds.forEach(function(mid) {
+    var m = byMember[mid];
+    var memberBooked = m.watches.filter(function(w) { return w.status === 'booked'; }).length;
+    var memberTotal = m.watches.length;
+    var memberDone = memberBooked === memberTotal;
+
+    html += '<div class="bg-white/[0.03] border border-white/6 rounded-xl p-4' + (memberDone ? ' border-crab-teal/20' : '') + '">';
+    html += '<div class="flex items-center justify-between mb-3">';
+    html += '<div class="flex items-center gap-2">';
+    html += '<span class="text-sm font-medium text-crab-sand">' + escapeHtml(m.name) + '</span>';
+    if (memberDone) {
+      html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal font-medium">All booked ✓</span>';
+    } else {
+      html += '<span class="text-[10px] text-crab-sand-dim">' + memberBooked + '/' + memberTotal + '</span>';
+    }
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="space-y-2">';
+    m.watches.forEach(function(w) {
+      html += renderWatchRow(w);
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderWatchRow(w) {
+  var statusBadge = '';
+  if (w.status === 'booked') {
+    var bookedLabel = 'Booked';
+    if (w.booked_price) bookedLabel += ' · $' + w.booked_price.toFixed(0);
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-teal/20 text-crab-teal">' + bookedLabel + '</span>';
+  } else if (w.status === 'paused') {
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-crab-sand-dim">Paused</span>';
+  } else {
+    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-crab-coral/20 text-crab-coral animate-pulse">Watching</span>';
+  }
+
+  var icon = w.watch_type === 'flight' ? '✈️' : '🏨';
+  var route = '';
+
+  // Format "HH:MM" (24h) to "H:MM AM/PM"
+  function fmt12(t) {
+    if (!t) return '';
+    var parts = t.split(':'), h = parseInt(parts[0]), m = parts[1];
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + m + ' ' + ampm;
+  }
+  // Format ISO date to "Mon DD"
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+  }
+
+  if (w.watch_type === 'flight' && w.origin) {
+    route = w.origin + ' → ' + escapeHtml(w.destination);
+    if (w.checkin) route += ' · ' + fmtDate(w.checkin);
+    if (w.departure_time) route += ' <span class="text-crab-teal/80">' + fmt12(w.departure_time) + '</span>';
+    if (w.arrival_time) route += ' → <span class="text-crab-teal/80">' + fmt12(w.arrival_time) + '</span>';
+  } else {
+    route = escapeHtml(w.destination);
+    if (w.checkin && w.checkout) route += ' · ' + fmtDate(w.checkin) + ' – ' + fmtDate(w.checkout);
+  }
+
+  var priceHtml = '';
+  if (w.last_price !== null && w.last_price !== undefined) {
+    priceHtml += '<span class="text-lg font-bold text-crab-sand">$' + w.last_price.toFixed(0) + '</span>';
+    if (w.best_price !== null && w.best_price !== undefined && w.best_price < w.last_price) {
+      priceHtml += '<span class="text-xs text-crab-teal ml-1">best: $' + w.best_price.toFixed(0) + '</span>';
+    } else if (w.best_price !== null && w.last_price <= w.best_price) {
+      priceHtml += '<span class="text-xs text-crab-teal ml-1">★ best price</span>';
+    }
+  } else {
+    priceHtml = '<span class="text-sm text-crab-sand-dim">Checking prices...</span>';
+  }
+
+  // Sparkline SVG from history
+  var sparkHtml = '';
+  if (w.history && w.history.length > 1) {
+    sparkHtml = renderSparkline(w.history);
+  }
+
+  var bookBtn = '';
+  if (w.deep_link && w.status === 'active') {
+    bookBtn = '<a href="' + escapeHtml(w.deep_link) + '" target="_blank" rel="noopener" class="px-3 py-1 rounded-lg text-xs font-medium bg-crab-coral text-white hover:bg-crab-coral/80 transition-colors">Book Now</a>';
+  }
+
+  var markBookedBtn = '';
+  if (w.status === 'active' && !NEEDS_LOGIN) {
+    markBookedBtn = '<button onclick="openBookedModal(' + w.pk_id + ', \'' + escapeHtml(w.watch_type) + '\')" class="px-2 py-1 rounded-lg text-[10px] border border-white/10 text-crab-sand-dim hover:text-crab-sand hover:border-white/20 transition-colors">Mark Booked</button>';
+  }
+
+  var lastChecked = '';
+  if (w.last_checked) {
+    var ago = Math.round((Date.now() - new Date(w.last_checked).getTime()) / 60000);
+    if (ago < 60) lastChecked = ago + 'm ago';
+    else if (ago < 1440) lastChecked = Math.round(ago/60) + 'h ago';
+    else lastChecked = Math.round(ago/1440) + 'd ago';
+  }
+
+  // AI recommendation
+  var recHtml = '';
+  if (w.recommendation && w.status !== 'booked') {
+    var rec = w.recommendation;
+    var verdictMap = {
+      'book_now':  {label: 'Book Now',  color: 'text-crab-teal',  bg: 'bg-crab-teal/10 border-crab-teal/20', icon: '🟢'},
+      'book_soon': {label: 'Book Soon', color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/20', icon: '🟡'},
+      'wait':      {label: 'Wait',      color: 'text-crab-sand-dim', bg: 'bg-white/[0.03] border-white/6', icon: '⏳'},
+      'watching':  {label: 'Watching',   color: 'text-crab-sand-dim', bg: 'bg-white/[0.03] border-white/6', icon: '👀'},
+    };
+    var v = verdictMap[rec.verdict] || verdictMap['watching'];
+    var meta = '';
+    if (rec.scans) meta += rec.scans + ' scans';
+    if (rec.days_out && rec.days_out < 900) meta += (meta ? ' · ' : '') + rec.days_out + 'd out';
+    if (rec.trend && rec.trend !== 'flat') meta += (meta ? ' · ' : '') + '↕ ' + rec.trend;
+
+    recHtml = '<div class="mt-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] leading-snug ' + v.bg + '">' +
+      '<div class="flex items-center gap-1.5 mb-0.5">' +
+        '<span>' + v.icon + '</span>' +
+        '<span class="font-semibold ' + v.color + '">' + v.label + '</span>' +
+        (meta ? '<span class="text-crab-sand-dim/60 ml-auto">' + meta + '</span>' : '') +
+      '</div>' +
+      '<div class="text-crab-sand-dim">' + escapeHtml(rec.reason) + '</div>' +
+    '</div>';
+  }
+
+  // Return flight line for flights
+  var returnHtml = '';
+  if (w.watch_type === 'flight' && w.checkout) {
+    returnHtml = '<div class="text-[11px] text-crab-sand-dim/60 ml-6 mt-0.5">Return ' + fmtDate(w.checkout);
+    if (w.return_departure_time) returnHtml += ' <span class="text-crab-teal/60">' + fmt12(w.return_departure_time) + '</span>';
+    if (w.return_arrival_time) returnHtml += ' → <span class="text-crab-teal/60">' + fmt12(w.return_arrival_time) + '</span>';
+    returnHtml += '</div>';
+  }
+
+  return '<div class="py-2 border-b border-white/[0.04] last:border-0">' +
+    '<div class="flex flex-col sm:flex-row sm:items-center gap-2">' +
+      '<div class="flex items-center gap-2 min-w-0 flex-1">' +
+        '<span class="text-base">' + icon + '</span>' +
+        '<span class="text-sm text-crab-sand font-medium truncate">' + route + '</span>' +
+        statusBadge +
+      '</div>' +
+      '<div class="flex items-center gap-3">' +
+        sparkHtml +
+        '<div class="text-right">' + priceHtml + '</div>' +
+        (lastChecked ? '<span class="text-[10px] text-crab-sand-dim">' + lastChecked + '</span>' : '') +
+        bookBtn + markBookedBtn +
+      '</div>' +
+    '</div>' +
+    returnHtml +
+    recHtml +
+  '</div>';
+}
+
+function renderSparkline(history) {
+  if (!history || history.length < 2) return '';
+  var prices = history.slice().reverse().map(function(h) { return h.price; });
+  var min = Math.min.apply(null, prices);
+  var max = Math.max.apply(null, prices);
+  var range = max - min || 1;
+  var w = 60, h = 20;
+  var step = w / (prices.length - 1);
+
+  var points = prices.map(function(p, i) {
+    var x = (i * step).toFixed(1);
+    var y = (h - ((p - min) / range) * (h - 2) - 1).toFixed(1);
+    return x + ',' + y;
+  }).join(' ');
+
+  var isDown = prices[prices.length - 1] < prices[0];
+  var color = isDown ? '#0D9488' : '#E8593A';
+
+  return '<svg width="' + w + '" height="' + h + '" class="opacity-60">' +
+    '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+}
+
+var _pendingBookWatchId = null;
+
+function openBookedModal(watchId, watchType) {
+  _pendingBookWatchId = watchId;
+  var modal = document.getElementById('mark-booked-modal');
+  var label = watchType === 'flight' ? 'flight' : 'hotel';
+  document.getElementById('booked-modal-label').textContent = 'Mark ' + label + ' as booked';
+  document.getElementById('booked-price-input').value = '';
+  document.getElementById('booked-conf-input').value = '';
+  modal.style.display = '';
+  setTimeout(function() { document.getElementById('booked-price-input').focus(); }, 100);
+}
+
+function closeBookedModal() {
+  document.getElementById('mark-booked-modal').style.display = 'none';
+  _pendingBookWatchId = null;
+}
+
+function submitMarkBooked() {
+  if (!_pendingBookWatchId) return;
+  var priceVal = document.getElementById('booked-price-input').value.trim();
+  var confVal = document.getElementById('booked-conf-input').value.trim();
+  var price = priceVal ? parseFloat(priceVal) : null;
+
+  var body = {status: 'booked'};
+  if (price && !isNaN(price)) body.booked_price = price;
+  if (confVal) body.confirmation = confVal;
+
+  var btn = document.getElementById('booked-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  fetch('/api/plan/' + PLAN_ID + '/watches/' + _pendingBookWatchId + '/status', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.success) {
+      _watchesData.forEach(function(w) {
+        if (w.pk_id === _pendingBookWatchId) {
+          w.status = 'booked';
+          if (price) w.booked_price = price;
+        }
+      });
+      renderWatches();
+      closeBookedModal();
+    }
+    btn.disabled = false;
+    btn.textContent = 'Confirm Booked';
+  });
+}
+
+renderWatches();
+
+// ── Member Detail Modal ────────────────────────────────────
+var _membersDetail = {{ members_detail_json|safe }};
+
+function showMemberDetail(memberId) {
+  var member = _membersDetail.find(function(m) { return m.member_id === memberId; });
+  if (!member) return;
+
+  var watches = (_watchesData || []).filter(function(w) { return w.member_id === memberId; });
+
+  var html = '<div class="space-y-4">';
+  // Header
+  html += '<div class="flex items-center gap-3 mb-2">';
+  html += '<div class="w-10 h-10 rounded-full bg-crab-coral/20 text-crab-coral flex items-center justify-center font-display text-lg">' + escapeHtml(member.name)[0] + '</div>';
+  html += '<div>';
+  html += '<div class="font-display text-lg text-crab-sand">' + escapeHtml(member.name) + '</div>';
+  html += '<div class="text-xs text-crab-sand-dim">' + (member.role === 'organizer' ? 'Organizer' : 'Member') + (member.airport ? ' · ' + member.airport : '') + '</div>';
+  html += '</div></div>';
+
+  // Preferences
+  if (member.completed) {
+    html += '<div class="bg-white/[0.03] rounded-xl p-4 space-y-2">';
+    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">Preferences</div>';
+    if (member.budget_min || member.budget_max) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Budget</span><span>$' + ((member.budget_min||0)/100).toFixed(0) + ' – $' + ((member.budget_max||0)/100).toFixed(0) + '</span></div>';
+    }
+    if (member.accommodation) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Accommodation</span><span>' + escapeHtml(member.accommodation) + '</span></div>';
+    }
+    if (member.dietary) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Dietary</span><span>' + escapeHtml(member.dietary) + '</span></div>';
+    }
+    if (member.room_pref) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Room</span><span>' + escapeHtml(member.room_pref) + '</span></div>';
+    }
+    if (member.mobility) {
+      html += '<div class="flex justify-between text-sm"><span class="text-crab-sand-dim">Mobility</span><span>' + escapeHtml(member.mobility) + '</span></div>';
+    }
+    if (member.interests && member.interests.length > 0) {
+      html += '<div class="pt-1"><span class="text-xs text-crab-sand-dim">Interests: </span>';
+      member.interests.forEach(function(i) {
+        html += '<span class="inline-block text-xs bg-crab-teal/15 text-crab-teal rounded-full px-2 py-0.5 mr-1 mb-1">' + escapeHtml(i) + '</span>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="text-sm text-crab-sand-dim opacity-50">Profile not yet completed</div>';
+  }
+
+  // Watches
+  if (watches.length > 0) {
+    html += '<div class="bg-white/[0.03] rounded-xl p-4">';
+    html += '<div class="text-xs font-medium text-crab-sand-dim uppercase tracking-wide mb-2">CrabAI Hunts</div>';
+    watches.forEach(function(w) {
+      html += renderWatchRow(w);
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+
+  document.getElementById('member-modal-content').innerHTML = html;
+  document.getElementById('member-modal').style.display = '';
+}
+
+function closeMemberModal() {
+  document.getElementById('member-modal').style.display = 'none';
+}
+</script>
+{% endblock %}
