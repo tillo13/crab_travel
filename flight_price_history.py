@@ -160,12 +160,22 @@ def _rollup_and_prune(conn):
             conn.commit()   # each day's slice lands independently
             day += timedelta(days=1)
 
-    cur.execute("""
-        DELETE FROM kumori_ops.flight_hunter_observations
-        WHERE observed_at < NOW() - make_interval(days => %s)
-    """, (RAW_RETENTION_DAYS,))
-    pruned = cur.rowcount
-    conn.commit()
+    # Prune in bounded slices for the same reason the rollup is day-sliced: a
+    # whole-day DELETE (~30-60K rows x 7 index updates) blew the 30s statement
+    # timeout on the shared f1-micro every day at 09:00 PT. Each slice is its
+    # own statement + commit, so no single statement can hit the wall.
+    pruned = 0
+    while True:
+        cur.execute("""
+            DELETE FROM kumori_ops.flight_hunter_observations
+            WHERE id IN (SELECT id FROM kumori_ops.flight_hunter_observations
+                         WHERE observed_at < NOW() - make_interval(days => %s)
+                         LIMIT 5000)
+        """, (RAW_RETENTION_DAYS,))
+        pruned += cur.rowcount
+        conn.commit()
+        if cur.rowcount < 5000:
+            break
 
     cur.execute("SELECT COUNT(*) FROM kumori_ops.flight_price_daily")
     hist_rows = cur.fetchone()[0]
