@@ -686,7 +686,13 @@ def task_seed_booked_trips():
         from datetime import date as _date
         import re as _re
 
-        MAX_ITINERARIES_PER_RUN = 10  # YouTube quota now 100k/day (approved 2026-04-06); LLM is the bottleneck
+        # LLM pacing only — each itinerary is one llm_generate through the kumori
+        # gateway, and 10 keeps a cron tick well inside the GAE request deadline.
+        # (No YouTube in this loop. The old "100k/day quota" note here was stale:
+        # kumori-404602's effective YouTube quota read 100/day on 2026-07-25 —
+        # kumori's account probes watch it now. That limit only affects
+        # watches_routes /api/youtube-search, at 100 units per search.)
+        MAX_ITINERARIES_PER_RUN = 10
         for pid in all_booked:
             if itineraries_added >= MAX_ITINERARIES_PER_RUN:
                 break
