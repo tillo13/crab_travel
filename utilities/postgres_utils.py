@@ -70,6 +70,11 @@ class PooledConnection:
                     self._conn.rollback()
                 except Exception:
                     pass
+                # putconn does NOT reset autocommit — without this, a borrower
+                # who flipped it would leak an autocommit connection to the
+                # next borrower.
+                if self._conn.autocommit:
+                    self._conn.autocommit = False
                 self._pool.putconn(self._conn)
             except Exception:
                 try:
@@ -80,6 +85,15 @@ class PooledConnection:
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        # Delegate writes symmetrically with __getattr__ — without this,
+        # `conn.autocommit = True` lands on the wrapper and silently no-ops
+        # (pilgrims 2026-08: three sessions "applied" DDL that rolled back on putconn).
+        if name.startswith('_'):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
 
     def __enter__(self):
         return self
@@ -119,6 +133,10 @@ def get_db_connection():
         _connection_pools.pop(GCP_PROJECT_ID, None)
         pool = _get_connection_pool()
         conn = pool.getconn()
+    # end the probe's implicit txn — hand the conn out clean, not
+    # idle-in-transaction (also lets callers set session flags like
+    # autocommit, which raise mid-transaction)
+    conn.rollback()
     return PooledConnection(conn, pool)
 
 

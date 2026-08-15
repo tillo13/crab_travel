@@ -44,10 +44,15 @@ _pacing_lock = None  # lazy-init threading.Lock when needed
 class KumoriAPIError(Exception):
     """Raised when kumori.ai/api/v1/* call fails after retry."""
 
-    def __init__(self, message, status_code=None, payload=None):
+    def __init__(self, message, status_code=None, payload=None, retry_after=None):
         super().__init__(message)
         self.status_code = status_code
         self.payload = payload
+        # Seconds until the server says this lane recovers (Retry-After header
+        # or retry_after_s/reset_in_s body field), None when the server gave no
+        # clock. Callers with their own bench/backoff (pilgrims souls) should
+        # honor this instead of a fixed cooldown.
+        self.retry_after = retry_after
 
 
 def init(get_secret_fn=None, api_key_name=None, min_inter_call_sec=0.0):
@@ -227,10 +232,29 @@ def _request(method, path, body=None, timeout=(5, 60), retry_on_5xx=True):
             })
         if r.status_code == 200:
             return data
+        # Server-declared recovery clock: Retry-After header, else
+        # retry_after_s / reset_in_s in the body (kumori gate contract).
+        retry_after = None
+        try:
+            retry_after = float(r.headers.get('Retry-After'))
+        except (TypeError, ValueError):
+            if isinstance(data, dict):
+                for k in ('retry_after_s', 'reset_in_s'):
+                    if isinstance(data.get(k), (int, float)):
+                        retry_after = float(data[k])
+                        break
         if 500 <= r.status_code < 600 and attempt == 1 and retry_on_5xx:
-            logger.warning(f"kumori {path} HTTP {r.status_code}, retrying")
-            _time.sleep(_backoff_sleep(r))
-            continue
+            # A 5xx carrying a recovery clock beyond the ~5s we're willing to
+            # sleep is a DELIBERATE gate (benched lane / monthly budget), not a
+            # transient — an instant retry is a guaranteed second 5xx and was
+            # doubling every gate hit fleet-wide (~950 dead req/day, 2026-07-25).
+            if retry_after is not None and retry_after > 5:
+                logger.info(f"kumori {path} HTTP {r.status_code} gated "
+                            f"(retry in {int(retry_after)}s) — not retrying")
+            else:
+                logger.warning(f"kumori {path} HTTP {r.status_code}, retrying")
+                _time.sleep(_backoff_sleep(r))
+                continue
         # Build a CLEAN error string from whatever structured fields the
         # server returned. Imggen failures now include error_code (kumori
         # classification: daily_cap_exhausted | cf_4006_capacity |
@@ -254,7 +278,8 @@ def _request(method, path, body=None, timeout=(5, 60), retry_on_5xx=True):
             msg = ' '.join(parts)
         else:
             msg = f'kumori {path} HTTP {r.status_code}: {str(data)[:200]}'
-        raise KumoriAPIError(msg, status_code=r.status_code, payload=data)
+        raise KumoriAPIError(msg, status_code=r.status_code, payload=data,
+                             retry_after=retry_after)
     # Should not reach
     raise KumoriAPIError(f'kumori {path} failed after retry: {last_exc}')
 
