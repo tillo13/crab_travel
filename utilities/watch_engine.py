@@ -86,6 +86,44 @@ def create_watches_for_plan(plan_id):
     return created
 
 
+def _expire_past_travel_dates():
+    """Lifecycle sweep — a watch/leg whose travel date has passed can never be
+    scanned again (discovery filters on checkin/depart >= CURRENT_DATE), so
+    leaving it 'active' pollutes every active-count downstream. The 2026-08-17
+    heartbeat showed 🔴 'last check 279h ago' over 7 past-checkin watches that
+    no scanner would ever touch again. Mirrors the discovery predicates in
+    opencrab_routes.py (watches-to-scan, legs-to-hunt).
+    """
+    from utilities.postgres_utils import get_db_connection
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE crab.member_watches
+            SET status = 'expired'
+            WHERE status = 'active'
+              AND checkin IS NOT NULL
+              AND checkin < CURRENT_DATE
+        """)
+        watches = cur.rowcount
+        cur.execute("""
+            UPDATE crab.trip_legs
+            SET status = 'expired', updated_at = NOW()
+            WHERE status = 'active'
+              AND depart_window_start IS NOT NULL
+              AND depart_window_start < CURRENT_DATE
+        """)
+        legs = cur.rowcount
+        conn.commit()
+        if watches or legs:
+            logger.info(f"lifecycle sweep: expired {watches} watch(es), "
+                        f"{legs} leg(s) with past travel dates")
+    except Exception as e:
+        logger.error(f"lifecycle sweep failed: {e}")
+    finally:
+        conn.close()
+
+
 def evaluate_pending_alerts(observation_window_minutes=90):
     """Decision-tier pass — called by /tasks/evaluate-alerts cron.
 
@@ -103,6 +141,8 @@ def evaluate_pending_alerts(observation_window_minutes=90):
     """
     from utilities.postgres_utils import get_db_connection
     import psycopg2.extras
+
+    _expire_past_travel_dates()
 
     watches = get_active_watches()  # joins plan_members + users; gives contact fields
     if not watches:

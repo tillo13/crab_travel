@@ -121,19 +121,34 @@ def _check_crons(cur):
                if last else "deals_cache empty")
     rows.append(('refresh-deals (every 24h)', _status_emoji(fresh), summary))
 
-    # OpenClaw scans every 30m → record_watch_scan bumps last_checked_at
+    # OpenClaw watch-scanner runs every 30m → record_watch_scan bumps
+    # last_checked_at. Freshness must be measured over SCANNABLE watches only
+    # (same filters as opencrab_watches_to_scan: active, non-[BOT] plan,
+    # checkin within [today, +60d]). Counting every active watch made this row
+    # scream 🔴 for 12 days over past-checkin fixtures the scanner deliberately
+    # never touches (2026-08-17).
     cur.execute("""
-        SELECT MAX(last_checked_at) AS last_check, COUNT(*) AS active
-        FROM crab.member_watches WHERE status = 'active'
+        SELECT MAX(mw.last_checked_at) AS last_check, COUNT(*) AS scannable
+        FROM crab.member_watches mw
+        JOIN crab.plans p ON p.plan_id = mw.plan_id
+        WHERE mw.status = 'active'
+          AND p.title NOT LIKE '[BOT]%'
+          AND mw.checkin IS NOT NULL
+          AND mw.checkin >= CURRENT_DATE
+          AND mw.checkin <= CURRENT_DATE + INTERVAL '60 days'
     """)
     r = cur.fetchone()
-    last = r['last_check']
-    age_h = int((datetime.now(timezone.utc) - last).total_seconds() / 3600) if last else None
-    fresh = age_h is not None and age_h < 10
-    summary = (f"last check {age_h}h ago, {r['active']} active watches"
-               if last else (f"{r['active']} active watches but never checked"
-                             if r['active'] else "no active watches"))
-    rows.append(('check-watches (every 8h)', _status_emoji(fresh), summary))
+    scannable = int(r['scannable'] or 0)
+    if scannable == 0:
+        rows.append(('watch-scanner (VPS, every 30m)', '✅',
+                     'no scannable watches — nothing due'))
+    else:
+        last = r['last_check']
+        age_h = int((datetime.now(timezone.utc) - last).total_seconds() / 3600) if last else None
+        fresh = age_h is not None and age_h < 10
+        summary = (f"last scan {age_h}h ago, {scannable} scannable watches"
+                   if last else f"{scannable} scannable watches, never scanned")
+        rows.append(('watch-scanner (VPS, every 30m)', _status_emoji(fresh), summary))
 
     return rows
 
@@ -151,8 +166,26 @@ def _check_opencrab(cur):
     sent = int(r['sent_24h'] or 0)
     plans = int(r['distinct_plans'] or 0)
     if sent == 0:
-        return ('OpenCrab', '🟠', 'no notifications recorded in last 24h '
-                                   '(OpenCrab silent? check VPS)')
+        # Silence is only suspicious when OpenCrab had eligible work. Mirror
+        # opencrab_plans_eligible: a non-booked, non-[BOT] plan with at least
+        # one future-dated flight watch. Zero eligible plans → the daily
+        # digest correctly sends nothing ('eligible plans: 0' in daily.log).
+        cur.execute("""
+            SELECT COUNT(DISTINCT p.plan_id) AS eligible
+            FROM crab.plans p
+            JOIN crab.member_watches w ON w.plan_id = p.plan_id
+            WHERE w.watch_type = 'flight'
+              AND w.checkin >= CURRENT_DATE
+              AND w.checkin <= CURRENT_DATE + INTERVAL '120 days'
+              AND COALESCE(p.status, '') <> 'booked'
+              AND p.title NOT LIKE '[BOT]%'
+        """)
+        eligible = int(cur.fetchone()['eligible'] or 0)
+        if eligible == 0:
+            return ('OpenCrab', '✅', 'no eligible plans — silence expected')
+        return ('OpenCrab', '🟠',
+                f'{eligible} eligible plan(s) but no notifications in last '
+                f'24h (OpenCrab silent? check VPS)')
     return ('OpenCrab', '✅',
             f"{sent} notification(s) recorded across {plans} plan(s) in last 24h")
 
@@ -372,11 +405,20 @@ def _waiting_plans(cur):
 
 
 def _waiting_leg_hunts(cur):
+    # Mirror opencrab_legs_to_hunt: only legs the VPS can actually be served
+    # (active, non-[BOT] plan, depart window not in the past). Without the
+    # join, past-date legs counted as 'due' forever — the 2026-08-17
+    # heartbeat's '31 leg-hunts due' were all past-date legs.
     cur.execute("""
-        SELECT modality, COUNT(*) AS due
-        FROM crab.leg_hunts
-        WHERE last_hunted_at IS NULL OR last_hunted_at < NOW() - INTERVAL '24 hours'
-        GROUP BY modality ORDER BY due DESC LIMIT 5
+        SELECT lh.modality, COUNT(*) AS due
+        FROM crab.leg_hunts lh
+        JOIN crab.trip_legs l ON l.pk_id = lh.leg_id
+        JOIN crab.plans p ON p.plan_id = l.plan_id
+        WHERE (lh.last_hunted_at IS NULL OR lh.last_hunted_at < NOW() - INTERVAL '24 hours')
+          AND l.status = 'active'
+          AND p.title NOT LIKE '[BOT]%'
+          AND (l.depart_window_start IS NULL OR l.depart_window_start >= CURRENT_DATE)
+        GROUP BY lh.modality ORDER BY due DESC LIMIT 5
     """)
     rows = cur.fetchall()
     if not rows:

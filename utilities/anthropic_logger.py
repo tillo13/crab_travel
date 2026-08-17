@@ -159,10 +159,23 @@ def _pricing_for(model: str) -> dict:
 _KEY_CACHE = None
 _CLIENT = None
 # Env-overridable so a fully-decoupled app (one fully-decoupled app) points at its OWN
-# project + key WITHOUT forking this canonical logger. Defaults preserve kumori
-# for every other app (env unset -> identical behavior).
-_KUMORI_PROJECT = os.environ.get('ANTHROPIC_SECRET_PROJECT', 'kumori-404602')
-_ANTHROPIC_SECRET_NAME = os.environ.get('ANTHROPIC_SECRET_NAME', 'KUMORI_ANTHROPIC_API_KEY')
+# project + key + telemetry DB WITHOUT forking this canonical logger. Defaults
+# preserve kumori for every other app (env unset -> identical behavior).
+# Read lazily (not at import) so a consumer that sets these via
+# os.environ.setdefault in its config module wins regardless of import order.
+def _secret_project() -> str:
+    return os.environ.get('ANTHROPIC_SECRET_PROJECT', 'kumori-404602')
+
+
+def _anthropic_secret_name() -> str:
+    return os.environ.get('ANTHROPIC_SECRET_NAME', 'KUMORI_ANTHROPIC_API_KEY')
+
+
+def _db_secret_prefix() -> str:
+    # Names the <PREFIX>_POSTGRES_* secrets holding the telemetry DB creds,
+    # fetched from _secret_project(). A decoupled app sets e.g. KICKSAW so its
+    # usage rows land in its OWN kumori_api_usage table, not the shared one.
+    return os.environ.get('ANTHROPIC_DB_SECRET_PREFIX', 'KUMORI')
 
 
 def _get_api_key() -> str:
@@ -178,15 +191,15 @@ def _get_api_key() -> str:
     try:
         from google.cloud import secretmanager
         client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{_KUMORI_PROJECT}/secrets/{_ANTHROPIC_SECRET_NAME}/versions/latest"
+        name = f"projects/{_secret_project()}/secrets/{_anthropic_secret_name()}/versions/latest"
         resp = client.access_secret_version(request={"name": name})
         _KEY_CACHE = resp.payload.data.decode("UTF-8")
         return _KEY_CACHE
     except Exception as e:
         raise RuntimeError(
-            f"anthropic_logger: could not fetch KUMORI_ANTHROPIC_API_KEY from "
-            f"{_KUMORI_PROJECT} Secret Manager: {e}. Ensure this process's "
-            f"service account has roles/secretmanager.secretAccessor on {_KUMORI_PROJECT}."
+            f"anthropic_logger: could not fetch {_anthropic_secret_name()} from "
+            f"{_secret_project()} Secret Manager: {e}. Ensure this process's "
+            f"service account has roles/secretmanager.secretAccessor on {_secret_project()}."
         ) from e
 
 
@@ -421,7 +434,7 @@ def _get_db_creds() -> dict:
     client = secretmanager.SecretManagerServiceClient()
 
     def fetch(name: str) -> str:
-        path = f"projects/{_KUMORI_PROJECT}/secrets/{name}/versions/latest"
+        path = f"projects/{_secret_project()}/secrets/{name}/versions/latest"
         return client.access_secret_version(request={"name": path}).payload.data.decode("UTF-8")
 
     def fetch_or(primary: str, fallback: str) -> str:
@@ -434,12 +447,13 @@ def _get_db_creds() -> dict:
         except Exception:
             return fetch(fallback)
 
+    prefix = _db_secret_prefix()
     _DB_CREDS_CACHE = {
-        'host': fetch('KUMORI_POSTGRES_IP'),
-        'dbname': fetch('KUMORI_POSTGRES_DB_NAME'),
-        'user': fetch_or('TELEMETRY_POSTGRES_USERNAME', 'KUMORI_POSTGRES_USERNAME'),
-        'password': fetch_or('TELEMETRY_POSTGRES_PASSWORD', 'KUMORI_POSTGRES_PASSWORD'),
-        'connection_name': fetch('KUMORI_POSTGRES_CONNECTION_NAME'),
+        'host': fetch(f'{prefix}_POSTGRES_IP'),
+        'dbname': fetch(f'{prefix}_POSTGRES_DB_NAME'),
+        'user': fetch_or('TELEMETRY_POSTGRES_USERNAME', f'{prefix}_POSTGRES_USERNAME'),
+        'password': fetch_or('TELEMETRY_POSTGRES_PASSWORD', f'{prefix}_POSTGRES_PASSWORD'),
+        'connection_name': fetch(f'{prefix}_POSTGRES_CONNECTION_NAME'),
     }
     return _DB_CREDS_CACHE
 
