@@ -299,12 +299,17 @@ def append_bot_block(existing_robots_txt: str) -> str:
 # when the queue hits FLUSH_BATCH_MAX, whichever comes first. Connection
 # count from this module drops from O(requests) to O(processes).
 #
-# ─── kumori-shared connection budget (per db-speed-first/SKILL.md) ───────────
-# Allocation: 1 connection per App Engine process per site (held by the
-# flusher daemon). At auto-scale of 1-3 instances per site × 11 sites, the
-# steady-state cap from visitor_logging is ~33 connections in the worst case,
-# typically ~11. The budget table in db-speed-first should be amended to add:
-#     visitor_logging: 1/process across all sites
+# ─── kumori-shared connection budget ─────────────────────────────────────────
+# THIS MODULE'S ALLOCATION: 1 connection per process while flushing, 0 when idle.
+# Fleet-wide numbers are deliberately not restated here — they go stale. Canonical
+# table: kumori/docs/postgres_connections.md; live: db_connection_monitor.
+#
+# telemetry_writer is shared by every project vendoring this module, so it is the
+# single largest consumer of the shared instance and appeared in no budget table
+# until 2026-08-21. Measured 11 held / 49 min max idle before IDLE_RELEASE_SEC;
+# 7 held / 29 min the same evening. It does not drop to the floor until every
+# vendoring app redeploys — shared_files copies this file at DEPLOY time, so an
+# app last deployed before 2026-08-21 is still running the hold-forever version.
 # Stale-connection probe (SELECT 1) is mandatory before reuse — same fix that
 # resolved a 2026-04-04 prod outage on a portfolio app.
 
@@ -314,10 +319,24 @@ FLUSH_INTERVAL_SEC = 5.0
 FLUSH_BATCH_MAX    = 200       # also flush when queue reaches this size
 QUEUE_HARD_CAP     = 5000      # drop oldest if we exceed (backpressure)
 
+# Give the connection BACK when there is nothing to write (2026-08-21).
+# Batching fixed the O(requests) problem, but the flusher then held its one
+# connection for the life of the process whether or not anything was queued.
+# Measured on the shared instance: telemetry_writer was the single largest
+# consumer at 11 connections, max idle 49 MINUTES — 22% of a 50-connection
+# instance held by loggers writing nothing. A quiet site should not cost a slot.
+#
+# After IDLE_RELEASE_SEC with no flush, close it; the next row reconnects
+# lazily. That reconnect (~300ms) happens on this daemon thread and never on a
+# request path, so it is invisible to users. Batching is untouched — a busy
+# site still holds exactly one connection and never reconnects.
+IDLE_RELEASE_SEC   = 120.0
+
 _log_queue: _q.Queue = _q.Queue(maxsize=QUEUE_HARD_CAP)
 _flusher_started = False
 _flusher_lock = threading.Lock()
 _persistent_conn = None  # module-level reusable connection
+_conn_last_used_at = 0.0  # monotonic; drives the idle release above
 
 
 def _get_persistent_conn():
@@ -328,7 +347,7 @@ def _get_persistent_conn():
     db-speed-first/SKILL.md (the same fix that resolved the portfolio-app
     2026-04-04 prod outage). `.closed` alone isn't enough: a TCP-half-open
     socket can read 0 from .closed yet fail on first execute()."""
-    global _persistent_conn
+    global _persistent_conn, _conn_last_used_at
     if _persistent_conn is not None:
         try:
             if getattr(_persistent_conn, 'closed', 1) == 0:
@@ -336,6 +355,7 @@ def _get_persistent_conn():
                 cur.execute("SELECT 1")
                 cur.fetchone()
                 cur.close()
+                _conn_last_used_at = time.monotonic()
                 return _persistent_conn
         except Exception:
             try:
@@ -344,6 +364,7 @@ def _get_persistent_conn():
                 pass
             _persistent_conn = None
     _persistent_conn = _connect()
+    _conn_last_used_at = time.monotonic()
     return _persistent_conn
 
 
@@ -420,6 +441,27 @@ def _maybe_ttl_purge():
         _persistent_conn = None
 
 
+def _release_idle_conn():
+    """Close the persistent connection after IDLE_RELEASE_SEC with no flush.
+
+    Only ever called from the flusher's empty branch, so it cannot race a
+    write. Returning the slot costs one reconnect when traffic resumes; holding
+    it costs a slot on a 50-connection instance shared by every app we run.
+    """
+    global _persistent_conn, _conn_last_used_at
+    if _persistent_conn is None:
+        return
+    if time.monotonic() - _conn_last_used_at < IDLE_RELEASE_SEC:
+        return
+    try:
+        _persistent_conn.close()
+        logger.debug("visitor_logging: released idle connection "
+                     f"(no flush for {IDLE_RELEASE_SEC:.0f}s)")
+    except Exception:
+        pass
+    _persistent_conn = None
+
+
 def _flusher_loop():
     """Daemon loop: drain queue every FLUSH_INTERVAL_SEC (or when full)."""
     while True:
@@ -428,6 +470,7 @@ def _flusher_loop():
             first = _log_queue.get(timeout=FLUSH_INTERVAL_SEC)
         except _q.Empty:
             _maybe_ttl_purge()  # opportunistic — empty cycle is a fine time
+            _release_idle_conn()  # ...and give the slot back if we're idle
             continue
         batch = [first]
         # Drain whatever else is already queued, up to FLUSH_BATCH_MAX.
