@@ -294,7 +294,7 @@ def llm_generate(prompt, max_tokens=500, temperature=1.0):
 
 
 def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None,
-             app_name=None, timeout=None):
+             app_name=None, timeout=None, timeout_s=None):
     """Pinned-backend multi-turn chat. Returns (text, backend_name).
 
     app_name: optional consumer attribution (e.g. 'dos_bros', 'galactica').
@@ -308,6 +308,8 @@ def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=Non
         body['system'] = system
     if app_name:
         body['app_name'] = app_name
+    if timeout_s:
+        body['timeout_s'] = int(timeout_s)   # server-side per-attempt ceiling (default 30, max 60): proofs need it
     data = _request('POST', '/api/v1/llm/chat', body, timeout=timeout or (5, 60))
     return data.get('text'), data.get('backend')
 
@@ -508,6 +510,46 @@ def emit_quality_sample(backend, score, ok=True, judge_kind='kindness_live_v1',
                  timeout=(3, 8), retry_on_5xx=False)
     except Exception as e:
         logger.warning(f"emit_quality_sample failed for {backend}/{judge_kind}: {e}")
+
+
+# ─── sparebrains (free-pool proof attempts) ───────────────────────────────────
+
+def sparebrains_attempt(row):
+    """Post one full proof-attempt transcript to sparebrains_attempts. Scoped via
+    'sparebrains.write'. Fire-and-forget like emit_quality_sample: failures are
+    logged and swallowed so a telemetry outage never stops the loop."""
+    try:
+        return _request('POST', '/api/v1/sparebrains/attempt', row,
+                        timeout=(5, 30), retry_on_5xx=False)
+    except Exception as e:
+        logger.warning(f"sparebrains_attempt failed for {row.get('target')}/{row.get('backend')}: {e}")
+        return None
+
+
+def sparebrains_previous(target_set, target, backend):
+    """The latest answered attempt for one cell (id, verdict, failure_kind, reason, proof,
+    lean_output, response_head) or {'found': False}. Read-only; errors return None."""
+    try:
+        q = f'/api/v1/sparebrains/previous?target_set={target_set}&target={target}&backend={backend}'
+        return _request('GET', q, None, timeout=(5, 20), retry_on_5xx=False)
+    except Exception as e:
+        logger.warning(f"sparebrains_previous failed for {target}/{backend}: {e}")
+        return None
+
+
+def sparebrains_heartbeat(row):
+    """Upsert the job's progress row (run_id, mode, status, cells_total, cells_owed, calls,
+    accepts, lanes, targets). Fire-and-forget like sparebrains_attempt."""
+    try:
+        return _request('POST', '/api/v1/sparebrains/heartbeat', row, timeout=(5, 20), retry_on_5xx=False)
+    except Exception as e:
+        logger.warning(f"sparebrains_heartbeat failed for {row.get('run_id')}: {e}")
+        return None
+
+
+def sparebrains_summary(run_id):
+    """Per-backend and per-target rollup of one run, straight from the table."""
+    return _request('GET', f'/api/v1/sparebrains/summary?run_id={run_id}', None)
 
 
 # ─── Image generation ─────────────────────────────────────────────────────────

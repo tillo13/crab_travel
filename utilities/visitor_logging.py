@@ -420,6 +420,7 @@ def _maybe_ttl_purge():
                 "DELETE FROM kumori_ops.visitor_log WHERE ctid IN ("
                 "  SELECT ctid FROM kumori_ops.visitor_log "
                 "  WHERE viewed_at < NOW() - (%s || ' days')::interval "
+                "  ORDER BY viewed_at "
                 "  LIMIT %s)",
                 (VISITOR_LOG_TTL_DAYS, TTL_PURGE_BATCH),
             )
