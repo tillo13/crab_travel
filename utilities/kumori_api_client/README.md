@@ -70,30 +70,69 @@ The `KUMORI_API_KEY` env var overrides everything else, so it's the easy escape 
 
 ---
 
-## 4. The four entry points
+## 4. The entry points
 
-### `llm_chat_resilient(backends, messages, ...)` — text LLM with fallback chain
+### `llm_chat_resilient(...)` — text LLM, resolved for you
+
+**Recommended — ask for a TIER, not backends.** You pick a capability tier and
+kumori resolves the best available free model; you never name a provider, and the
+catalog can shift underneath without you touching code. This is the
+Frontier/Pro/Standard/Fast storefront.
 
 ```python
 from utilities.kumori_api_client import llm_chat_resilient
 
 text, backend, attempts, debug_info = llm_chat_resilient(
-    backends=[
-        'openrouter-hermes',                       # 405B Hermes (strongest)
-        'mistral-mistral-large-latest',
-        'sambanova-meta-llama-3.3-70b-instruct',
-        'github-llama-70b',
-    ],
     messages=[{'role': 'user', 'content': 'hello'}],
-    system='You are a terse assistant.',
-    max_tokens=500,
-    temperature=0.4,
-    min_chars=20,        # short replies trigger fallback to next backend
-    debug=False,         # set True to capture every upstream HTTP call
+    min_quality_tier='high',   # Frontier=frontier · Pro=high · Standard=medium · Fast=low
+    budget_ms=30000,           # hard wall-clock cap — the cascade never hangs past this
+    allow_degrade=False,       # True = drop below the tier if exhausted, instead of failing
+    # require_capabilities=['reasoning'],   # optional: only reasoning / "thinking" lanes
+    max_tokens=500, temperature=0.4, min_chars=20,
 )
 ```
 
-Returns `(text, winning_backend, per_attempt_log, debug_info)`. First backend that returns ≥`min_chars` wins. `attempts` is a list of `{backend, ok, error, ms, chars}` for every backend tried.
+Tiers are **capability** classes — what the model IS (params + reasoning), provider hidden:
+
+| storefront | `min_quality_tier` | roughly |
+|---|---|---|
+| **Frontier** | `frontier` | 100B+ / flagship / reasoning — hardest tasks |
+| **Pro**      | `high`     | strong 30–90B |
+| **Standard** | `medium`   | solid mid workhorses |
+| **Fast**     | `low`      | small & quick |
+
+**Advanced — pin the exact fallback order** (when you need a specific rotation):
+
+```python
+text, backend, attempts, debug_info = llm_chat_resilient(
+    backends=['openrouter-hermes', 'mistral-mistral-large-latest', 'github-llama-70b'],
+    messages=[{'role': 'user', 'content': 'hello'}], max_tokens=500,
+)
+```
+
+Returns `(text, winning_backend, per_attempt_log, debug_info)`. `attempts` lists
+`{backend, ok, error, ms, chars}` for every lane tried; capacity-unreliable lanes
+are ordered last automatically. Provide EITHER `min_quality_tier` OR `backends`.
+
+### `emit_quality_sample(backend, score, ...)` — become a quality canary (optional)
+
+If your app can judge its own LLM responses, feed that signal back so the catalog
+learns which lanes are good on *your* workload (this is how kindness + pilgrims
+grade the catalog in production). Fire-and-forget — never blocks or raises.
+
+```python
+from utilities.kumori_api_client import emit_quality_sample
+
+emit_quality_sample(
+    backend='groq-qwen', score=88, ok=True,       # 0-100, your judgment
+    judge_kind='myapp_live_v1',                    # must be allowlisted server-side (ask Andy)
+    response_excerpt=text, judge_notes={'len': len(text), 'in_character': True},
+)
+```
+
+Requires the `quality.write` scope on your key (separate from `llm.chat`) and your
+`judge_kind` added to the server allowlist — a one-line change in kumori's
+`admin_llm/quality.py`. Until both are in place, emits 403-swallow harmlessly.
 
 ### `imggen_edit(prompt, target_image_b64, reference_images_b64=None, ...)` — Klein-4B multi-ref edit
 

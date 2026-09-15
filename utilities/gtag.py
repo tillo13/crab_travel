@@ -61,7 +61,12 @@ _TEMPLATE = """\
   window.dataLayer = window.dataLayer || [];
   function gtag(){{ dataLayer.push(arguments); }}
   gtag('js', new Date());
-  gtag('config', '{mid}');
+  // Google Signals posts to www.google.com/g/collect, which every site's CSP blocks, so each
+  // page logged two blocked-connection console errors for a call that never completed. Turning
+  // it off stops the call rather than widening every CSP to permit it. Costs GA4
+  // demographics/interests and cross-device; page views and events are unaffected. (2026-09-10)
+  gtag('consent', 'default', {{ ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' }});
+  gtag('config', '{mid}', {{ allow_google_signals: false, allow_ad_personalization_signals: false }});
 </script>
 """
 

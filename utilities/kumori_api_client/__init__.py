@@ -5,6 +5,7 @@ from .client import (
     llm_generate,
     llm_chat,
     llm_chat_resilient,
+    llm_chat_reserve,
     llm_chat_eval,
     llm_backends,
     llm_usage,
