@@ -52,10 +52,19 @@ logger = logging.getLogger('crab_travel.flight_price_history')
 
 bp = Blueprint('flight_price_history', __name__)
 
-# Raw observations older than this are pruned AFTER they're rolled up. 30 days
-# is generous slack over the longest live reader window (48h /explore) while
-# capping the raw table at ~1.5M rows / ~730MB steady-state instead of unbounded.
-RAW_RETENTION_DAYS = 30
+# Raw observations older than this are pruned AFTER they're rolled up.
+#
+# 30 -> 7 on 2026-09-16. 30 days was slack, not a requirement: the longest live
+# reader window is 48h (/explore) and jobs-to-run freshness is 6h, so 7 days is
+# still 3.5x the widest thing that reads this table, and the permanent
+# seasonality signal lives in flight_price_daily either way.
+#
+# The slack was expensive. At 507,892 rows / 726MB it was the largest table on
+# the shared instance without an already-tuned lifetime, on a db-f1-micro whose
+# shared_buffers is 128MB for all 16 apps — the main database was running an
+# 88.6% cache hit ratio against kumori's own 95% floor, and pages this table
+# touches evict everyone else's. Seven days puts it near ~120K rows / ~170MB.
+RAW_RETENTION_DAYS = 7
 
 
 @ensure_once
