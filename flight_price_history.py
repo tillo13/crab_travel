@@ -208,6 +208,11 @@ def cron_rollup_flight_prices():
         stats = _rollup_and_prune(conn)
     finally:
         conn.close()
+    # Ride this cron rather than add a second one: both are the same job, dropping
+    # rows nothing reads any more off the shared instance, and crab has no other
+    # daily slot. search_results is plan-scoped so it has no rollup to do first.
+    from utilities.postgres_search import prune_old_search_results
+    stats['pruned_search_results'] = prune_old_search_results()
     logger.info(f"rollup-flight-prices: {stats}")
     return jsonify({'ok': True, 'retention_days': RAW_RETENTION_DAYS, **stats}), 200
 

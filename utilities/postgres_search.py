@@ -696,3 +696,46 @@ def get_watch_history(watch_id, limit=50):
             cursor.close()
         if conn:
             conn.close()
+
+
+SEARCH_RESULT_RETENTION_DAYS = 90
+_SEARCH_PRUNE_BATCH = 5000
+
+
+def prune_old_search_results(days=SEARCH_RESULT_RETENTION_DAYS, max_batches=40):
+    """Drop search_results whose plan has gone cold. Returns rows deleted.
+
+    Every reader is plan-scoped (get_search_results takes a plan_id), so a row is
+    only reachable by reopening that specific plan. Left unbounded the table reached
+    463,467 rows / 469 MB by 2026-09-16 — 273 MB of it the `data` jsonb — for plans
+    whose newest row was 2026-05-11, four months stale. That is dead weight in a
+    128 MB buffer cache shared by every app on the instance.
+
+    Deletes in bounded slices for the same reason the flight pruner does: one
+    whole-table DELETE blows the 30s statement timeout on the shared f1-micro.
+    """
+    conn = None
+    deleted = 0
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for _ in range(max_batches):
+            cursor.execute("""
+                DELETE FROM crab.search_results
+                 WHERE pk_id IN (SELECT pk_id FROM crab.search_results
+                                  WHERE found_at < now() - make_interval(days => %s)
+                                  LIMIT %s)
+            """, (days, _SEARCH_PRUNE_BATCH))
+            n = cursor.rowcount
+            deleted += n
+            conn.commit()
+            if n < _SEARCH_PRUNE_BATCH:
+                break
+        cursor.close()
+        return deleted
+    except Exception as e:
+        logger.error(f"prune_old_search_results failed: {e}")
+        return deleted
+    finally:
+        if conn:
+            conn.close()
