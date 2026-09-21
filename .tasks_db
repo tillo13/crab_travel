@@ -1,0 +1,2 @@
+# Marker: this project's queue is in Postgres (kumori_tasks, project=crab_travel): https://kumori.ai/admin/tasks
+# `deploy --next "..."` appends there via kumori/dev/tools/tasks.py -P crab_travel.
