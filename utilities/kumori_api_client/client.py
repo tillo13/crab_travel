@@ -293,9 +293,41 @@ def llm_generate(prompt, max_tokens=500, temperature=1.0):
     return data.get('text'), data.get('backend')
 
 
+RECOVER_WAIT_S = 150    # after a cut-off: the router's own bound is 140 s from the start, so this is generous
+RECOVER_POLL_S = 10
+
+
+def _chat_recoverable(body, request_id, timeout):
+    """POST /llm/chat; if Cloudflare cuts it off (524) or the connection drops, fetch the saved answer."""
+    import time as _time
+    try:
+        return _request('POST', '/api/v1/llm/chat', body, timeout=timeout, retry_on_5xx=False)
+    except KumoriAPIError as e:
+        if not (e.status_code == 524 or (e.status_code is None and str(e).startswith('Network error'))):
+            raise
+        logger.info(f"kumori llm/chat {request_id}: cut off ({e.status_code or 'network'}), fetching the saved answer")
+    deadline = _time.monotonic() + RECOVER_WAIT_S
+    while True:
+        try:
+            return _request('GET', f'/api/v1/llm/result/{request_id}', timeout=(5, 30), retry_on_5xx=False)
+        except KumoriAPIError as e:
+            if not (e.status_code == 404 and (e.payload or {}).get('pending')):
+                raise                        # the saved answer was itself an error: raise it as the call would have
+            if _time.monotonic() >= deadline:
+                raise KumoriAPIError(f'kumori /api/v1/llm/chat HTTP 524: cut off by the proxy and no saved answer '
+                                     f'within {RECOVER_WAIT_S}s (request_id {request_id})', status_code=524)
+        _time.sleep(RECOVER_POLL_S)
+
+
 def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None,
-             app_name=None, timeout=None, timeout_s=None, include_metadata=False):
+             app_name=None, timeout=None, timeout_s=None, include_metadata=False, request_id=None):
     """Pinned-backend multi-turn chat. Returns (text, backend_name).
+
+    request_id: for calls that may outlast Cloudflare's 100 s cutoff (long proofs); 16-64 chars of
+    A-Z a-z 0-9 _ -, unique per call (uuid4().hex). kumori saves any answer that took 85 s+, and if the
+    call comes back 524 (or the connection drops) this polls /api/v1/llm/result/<id> until that answer
+    lands, then returns or raises exactly as the direct answer would have. No blind client-side
+    retry in this mode: a retried cut-off call would run the whole proof twice.
 
     app_name: optional consumer attribution (e.g. 'dos_bros', 'galactica').
     When set, lands in kumori_api_usage.app_name for this call's detail row.
@@ -312,7 +344,11 @@ def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=Non
         body['app_name'] = app_name
     if timeout_s:
         body['timeout_s'] = int(timeout_s)   # server-side per-attempt ceiling (default 30, max 60): proofs need it
-    data = _request('POST', '/api/v1/llm/chat', body, timeout=timeout or (5, 60))
+    if request_id:
+        body['request_id'] = request_id
+        data = _chat_recoverable(body, request_id, timeout or (5, 60))
+    else:
+        data = _request('POST', '/api/v1/llm/chat', body, timeout=timeout or (5, 60))
     if include_metadata:
         return data.get('text'), data.get('backend'), data.get('inference') or {}
     return data.get('text'), data.get('backend')

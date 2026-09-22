@@ -14,9 +14,7 @@ cron:
   schedule: every 24 hours
   timezone: America/Los_Angeles
 
-- description: "Evaluate watch alerts against OpenClaw-written observations (decision tier; scanning lives on the VPS)"
-  url: /tasks/evaluate-alerts
-  schedule: every 1 hours
+# /tasks/evaluate-alerts cron removed 2026-09-21: it judged observations the OpenClaw VPS wrote, and the VPS is retired.
 
 - description: "Daily crab heartbeat — health check + waiting queue (one email/day to admin)"
   url: /cron/daily-heartbeat

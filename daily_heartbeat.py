@@ -1,12 +1,9 @@
 """Daily heartbeat for crab.travel — one email/day, exception-report shape.
 
 Two sections:
-  1. Is Crab Healthy? — ✅/⚠️/🔴 status of every cron, DB, OpenCrab pipeline,
-     LLM routing. Quick-skim line per item.
+  1. Is Crab Healthy? — ✅/⚠️/🔴 status of every cron, DB, LLM routing. Quick-skim line per item.
   2. Things We're Waiting On — active price watches, II scrape position,
-     OpenCrab pass activity, plans with pending state.
-
-Folds the 5 separate OpenCrab test emails into a single line summary.
+     plans with pending state.
 Each subsystem query is wrapped in try/except so a single missing table
 or schema drift never silences the whole digest.
 
@@ -121,147 +118,7 @@ def _check_crons(cur):
                if last else "deals_cache empty")
     rows.append(('refresh-deals (every 24h)', _status_emoji(fresh), summary))
 
-    # OpenClaw watch-scanner runs every 30m → record_watch_scan bumps
-    # last_checked_at. Freshness must be measured over SCANNABLE watches only
-    # (same filters as opencrab_watches_to_scan: active, non-[BOT] plan,
-    # checkin within [today, +60d]). Counting every active watch made this row
-    # scream 🔴 for 12 days over past-checkin fixtures the scanner deliberately
-    # never touches (2026-08-17).
-    cur.execute("""
-        SELECT MAX(mw.last_checked_at) AS last_check, COUNT(*) AS scannable
-        FROM crab.member_watches mw
-        JOIN crab.plans p ON p.plan_id = mw.plan_id
-        WHERE mw.status = 'active'
-          AND p.title NOT LIKE '[BOT]%'
-          AND mw.checkin IS NOT NULL
-          AND mw.checkin >= CURRENT_DATE
-          AND mw.checkin <= CURRENT_DATE + INTERVAL '60 days'
-    """)
-    r = cur.fetchone()
-    scannable = int(r['scannable'] or 0)
-    if scannable == 0:
-        rows.append(('watch-scanner (VPS, every 30m)', '✅',
-                     'no scannable watches — nothing due'))
-    else:
-        last = r['last_check']
-        age_h = int((datetime.now(timezone.utc) - last).total_seconds() / 3600) if last else None
-        fresh = age_h is not None and age_h < 10
-        summary = (f"last scan {age_h}h ago, {scannable} scannable watches"
-                   if last else f"{scannable} scannable watches, never scanned")
-        rows.append(('watch-scanner (VPS, every 30m)', _status_emoji(fresh), summary))
-
     return rows
-
-
-def _check_opencrab(cur):
-    """Roll up today's OpenCrab activity into a single line."""
-    cur.execute("""
-        SELECT COUNT(*) AS sent_24h,
-               COUNT(DISTINCT plan_id) AS distinct_plans
-        FROM crab.notifications_sent
-        WHERE sent_at > NOW() - INTERVAL '24 hours'
-          AND notification_type LIKE 'opencrab%'
-    """)
-    r = cur.fetchone()
-    sent = int(r['sent_24h'] or 0)
-    plans = int(r['distinct_plans'] or 0)
-    if sent == 0:
-        # Silence is only suspicious when OpenCrab had eligible work. Mirror
-        # opencrab_plans_eligible: a non-booked, non-[BOT] plan with at least
-        # one future-dated flight watch. Zero eligible plans → the daily
-        # digest correctly sends nothing ('eligible plans: 0' in daily.log).
-        cur.execute("""
-            SELECT COUNT(DISTINCT p.plan_id) AS eligible
-            FROM crab.plans p
-            JOIN crab.member_watches w ON w.plan_id = p.plan_id
-            WHERE w.watch_type = 'flight'
-              AND w.checkin >= CURRENT_DATE
-              AND w.checkin <= CURRENT_DATE + INTERVAL '120 days'
-              AND COALESCE(p.status, '') <> 'booked'
-              AND p.title NOT LIKE '[BOT]%'
-        """)
-        eligible = int(cur.fetchone()['eligible'] or 0)
-        if eligible == 0:
-            return ('OpenCrab', '✅', 'no eligible plans — silence expected')
-        return ('OpenCrab', '🟠',
-                f'{eligible} eligible plan(s) but no notifications in last '
-                f'24h (OpenCrab silent? check VPS)')
-    return ('OpenCrab', '✅',
-            f"{sent} notification(s) recorded across {plans} plan(s) in last 24h")
-
-
-def _check_openclaw(cur):
-    """OpenClaw VPS hunter health (crab tenant only), last 24h.
-
-    Folds the retired standalone 'OpenClaw daily' email into the heartbeat as a
-    single exception-first row. Scoped to tenant='crab' — kumori_ops.openclaw_runs
-    also holds inroads' hunters, whose errors belong in inroads' own monitoring.
-
-    PRESERVES per-hunter silent-detection (the old digest's whole purpose, per
-    project_notification_emails memory): a flat error/run rollup would show GREEN
-    while a single hunter quietly dies behind noisy ones. So we compare hunters
-    active in the last 24h against a 24–72h baseline; any hunter that ran in the
-    baseline but went dark in the last 24h is surfaced as a 🔴, even with 0 errors.
-    """
-    # active hunters now (24h) vs baseline (prior 24–72h)
-    cur.execute("""
-        SELECT hunter,
-               COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '24 hours') AS recent,
-               COUNT(*) FILTER (WHERE started_at <  NOW() - INTERVAL '24 hours') AS prior,
-               COALESCE(SUM(errors) FILTER (WHERE started_at >= NOW() - INTERVAL '24 hours'), 0) AS errs
-        FROM kumori_ops.openclaw_runs
-        WHERE tenant = 'crab'
-          AND started_at >= NOW() - INTERVAL '72 hours'
-        GROUP BY hunter
-    """)
-    rows = cur.fetchall()
-    recent_hunters = [x for x in rows if int(x['recent'] or 0) > 0]
-    silent = [x['hunter'] for x in rows
-              if int(x['recent'] or 0) == 0 and int(x['prior'] or 0) > 0]
-    total_runs = sum(int(x['recent'] or 0) for x in recent_hunters)
-    total_errs = sum(int(x['errs'] or 0) for x in recent_hunters)
-
-    if total_runs == 0:
-        return ('OpenClaw VPS', '🔴', 'no hunter runs in 24h — VPS cron may be down')
-    if silent:
-        return ('OpenClaw VPS', '🔴',
-                f"{len(silent)} hunter(s) went silent (ran in prior 48h, nothing "
-                f"in 24h): {', '.join(silent)}")
-    if total_errs:
-        brk = ' · '.join(f"{x['hunter']}:{int(x['errs'])}"
-                         for x in sorted(recent_hunters, key=lambda y: -int(y['errs'] or 0))
-                         if int(x['errs'] or 0) > 0)
-        return ('OpenClaw VPS', '🟠',
-                f"{total_errs} error(s) across {len(recent_hunters)} hunters in 24h — {brk}")
-    return ('OpenClaw VPS', '✅',
-            f"{total_runs} runs across {len(recent_hunters)} hunters, clean")
-
-
-def _check_flight_hunter(cur):
-    """Flight scanner liveness from the observations the VPS writes.
-
-    Replaces the retired 'flight_hunter deal digest' email: the obs count proves
-    the scrape→write pipeline works (the only thing that email really told us)
-    without the fare board nobody reads.
-    """
-    cur.execute("""
-        SELECT COUNT(*) AS obs,
-               COUNT(DISTINCT (origin, destination, depart_date)) AS route_dates,
-               MAX(observed_at) AS newest
-        FROM kumori_ops.flight_hunter_observations
-        WHERE observed_at >= NOW() - INTERVAL '24 hours'
-    """)
-    r = cur.fetchone()
-    obs = int(r['obs'] or 0)
-    newest = r['newest']
-    if obs == 0 or newest is None:
-        return ('flight_hunter', '🔴', 'no observations in 24h — scanner silent')
-    age_h = (datetime.now(timezone.utc) - newest).total_seconds() / 3600
-    if age_h > 12:
-        return ('flight_hunter', '🟠',
-                f"newest obs {age_h:.0f}h old ({obs:,} in 24h) — may be lagging")
-    return ('flight_hunter', '✅',
-            f"{obs:,} obs / {int(r['route_dates'])} route-dates in 24h")
 
 
 def _check_db_pool(cur):
@@ -319,42 +176,6 @@ def _waiting_watches(cur):
             f"{age_str}")
 
 
-def _waiting_stale_watches(cur):
-    """Dead-man switch for the watch cron. Surface any active watch that is DUE
-    for scanning but whose last_checked_at is older than 24h — that means cron
-    stopped firing or is silently failing on that route.
-
-    Must mirror the scanner's own due-window (opencrab_routes.py
-    opencrab_watches_to_scan, ~line 1101): active, NOT a [BOT] plan, and checkin
-    within [today, today+60d]. A watch outside that window (checkin >60d out, or
-    already past) is DELIBERATELY not scanned by the VPS, so flagging it here is a
-    false 'cron wedged' alarm. This caught a real false positive 2026-06-04:
-    ORD→BOS checkin 2026-08-05 (62d out) sat at lag 123h purely because it was 2
-    days beyond the 60d horizon — not wedged at all.
-    """
-    cur.execute("""
-        SELECT COUNT(*) AS stale,
-               MAX(NOW() - mw.last_checked_at) AS oldest_lag
-        FROM crab.member_watches mw
-        JOIN crab.plans p ON p.plan_id = mw.plan_id
-        WHERE mw.status = 'active'
-          AND p.title NOT LIKE '[BOT]%%'
-          AND mw.checkin IS NOT NULL
-          AND mw.checkin >= CURRENT_DATE
-          AND mw.checkin <= CURRENT_DATE + INTERVAL '60 days'
-          AND mw.last_checked_at IS NOT NULL
-          AND mw.last_checked_at < NOW() - INTERVAL '24 hours'
-    """)
-    r = cur.fetchone()
-    stale = int(r['stale'] or 0)
-    if stale == 0:
-        return None
-    oldest_lag = r['oldest_lag']
-    lag_h = int(oldest_lag.total_seconds() / 3600) if oldest_lag else 0
-    return (f"⚠️  <b>{stale}</b> active watches not scanned in &gt;24h "
-            f"(oldest lag {lag_h}h) — cron may be wedged")
-
-
 def _waiting_alert_skips(cur):
     """Surface why the watch engine *didn't* send alerts in the last 24h.
     Each reason is a different class of quality issue; keeping them visible
@@ -404,30 +225,6 @@ def _waiting_plans(cur):
     return f"<b>{n}</b> open plans (members may be voting / contributing dates)"
 
 
-def _waiting_leg_hunts(cur):
-    # Mirror opencrab_legs_to_hunt: only legs the VPS can actually be served
-    # (active, non-[BOT] plan, depart window not in the past). Without the
-    # join, past-date legs counted as 'due' forever — the 2026-08-17
-    # heartbeat's '31 leg-hunts due' were all past-date legs.
-    cur.execute("""
-        SELECT lh.modality, COUNT(*) AS due
-        FROM crab.leg_hunts lh
-        JOIN crab.trip_legs l ON l.pk_id = lh.leg_id
-        JOIN crab.plans p ON p.plan_id = l.plan_id
-        WHERE (lh.last_hunted_at IS NULL OR lh.last_hunted_at < NOW() - INTERVAL '24 hours')
-          AND l.status = 'active'
-          AND p.title NOT LIKE '[BOT]%'
-          AND (l.depart_window_start IS NULL OR l.depart_window_start >= CURRENT_DATE)
-        GROUP BY lh.modality ORDER BY due DESC LIMIT 5
-    """)
-    rows = cur.fetchall()
-    if not rows:
-        return None
-    parts = ', '.join(f"{r['modality']}={r['due']}" for r in rows)
-    total = sum(int(r['due']) for r in rows)
-    return f"<b>{total}</b> leg-hunts due (>24h since last): {parts}"
-
-
 @bp.route('/cron/daily-heartbeat')
 def cron_daily_heartbeat():
     """Daily heartbeat email — health check + waiting queue. 8am PT."""
@@ -441,25 +238,17 @@ def cron_daily_heartbeat():
     crons = _safe('crons', lambda: _check_crons(cur), conn=conn)
     if isinstance(crons, list):
         health.extend(crons)
-    opencrab = _safe('opencrab', lambda: _check_opencrab(cur), conn=conn)
-    if isinstance(opencrab, tuple):
-        health.append(opencrab)
-    # OpenClaw VPS hunters + flight scanner — folded in from the two standalone
-    # emails (OpenClaw daily + flight_hunter digest), now retired in favor of
-    # this one exception-first email.
-    health.append(_safe('openclaw', lambda: _check_openclaw(cur), conn=conn))
-    health.append(_safe('flight_hunter', lambda: _check_flight_hunter(cur), conn=conn))
+    # OpenClaw VPS retired 2026-09-21: its OpenCrab, hunter, flight-scanner and
+    # watch-scan rows went with it.
     health.append(_safe('db_pool', lambda: _check_db_pool(cur), conn=conn))
     health.append(_safe('llm', lambda: _check_llm_routing(cur), conn=conn))
 
     waiting = []
     for label, fn in [
         ('watches', _waiting_watches),
-        ('stale_watches', _waiting_stale_watches),
         ('alert_skips', _waiting_alert_skips),
         ('ii_scrape', _waiting_ii_scrape),
         ('plans', _waiting_plans),
-        ('leg_hunts', _waiting_leg_hunts),
     ]:
         v = _safe(label, lambda f=fn: f(cur), conn=conn)
         if isinstance(v, str):
@@ -526,11 +315,8 @@ def cron_daily_heartbeat():
   <hr style="margin-top:30px;border:none;border-top:1px solid #e2e8f0;">
   <p style="color:#94a3b8;font-size:12px;margin:8px 0 0 0;">
     /cron/daily-heartbeat · daily 8am PT, suppress-on-unchanged with a 7-day
-    proof-of-life floor. Consolidates what used to be three emails — heartbeat,
-    OpenClaw daily, and the flight_hunter deal digest (both retired 2026-06-04).
-    Queries crab.deals_cache, member_watches, notifications_sent, ii_scrape_queue,
-    plans, leg_hunts, kumori_llm_daily_caps, kumori_ops.openclaw_runs,
-    kumori_ops.flight_hunter_observations.
+    proof-of-life floor. Queries crab.deals_cache, member_watches, ii_scrape_queue,
+    plans, kumori_llm_daily_caps.
   </p>
 </div>
 """
