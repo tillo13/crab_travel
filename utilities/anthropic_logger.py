@@ -98,18 +98,7 @@ def _load_db_pricing() -> dict:
         return _DB_PRICING_CACHE
     try:
         import psycopg2
-        creds = _get_db_creds()
-        is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
-        if is_gcp:
-            socket_dir = os.environ.get('DB_SOCKET_DIR', '/cloudsql')
-            host = f"{socket_dir}/{creds['connection_name']}"
-        else:
-            host = creds['host']
-        conn = psycopg2.connect(
-            host=host, dbname=creds['dbname'], user=creds['user'],
-            password=creds['password'], connect_timeout=5,
-            options='-c statement_timeout=5000',
-        )
+        conn = _telemetry_connect(5000)
         try:
             cur = conn.cursor()
             cur.execute("""
@@ -331,16 +320,7 @@ def _ensure_trace_table():
     if _TRACE_TABLE_READY:
         return
     import psycopg2
-    creds = _get_db_creds()
-    is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
-    if is_gcp:
-        host = f"{os.environ.get('DB_SOCKET_DIR', '/cloudsql')}/{creds['connection_name']}"
-    else:
-        host = creds['host']
-    conn = psycopg2.connect(
-        host=host, dbname=creds['dbname'], user=creds['user'],
-        password=creds['password'], connect_timeout=5,
-    )
+    conn = _telemetry_connect()
     try:
         import psycopg2.errors
         cur = conn.cursor()
@@ -388,17 +368,7 @@ def _record_trace_async(model, usage, caller_file, caller_line, caller_func, str
         try:
             _ensure_trace_table()
             import psycopg2
-            creds = _get_db_creds()
-            is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
-            if is_gcp:
-                host = f"{os.environ.get('DB_SOCKET_DIR', '/cloudsql')}/{creds['connection_name']}"
-            else:
-                host = creds['host']
-            conn = psycopg2.connect(
-                host=host, dbname=creds['dbname'], user=creds['user'],
-                password=creds['password'], connect_timeout=5,
-                options='-c statement_timeout=10000',
-            )
+            conn = _telemetry_connect(10000)
             try:
                 cur = conn.cursor()
                 cur.execute("""
@@ -490,6 +460,68 @@ def _wrap_for_trace(real_client):
 _DB_CREDS_CACHE = None
 
 
+_IAM_CREDS = None
+
+
+def _iam_login():
+    """(db_user, token) to log in to the shared Cloud SQL as this app's own service
+    account, when the app runs with KUMORI_DB_AUTH=iam (task #170); None otherwise.
+    The token is a one-hour OAuth access token used as the password; nothing stored."""
+    if os.environ.get('KUMORI_DB_AUTH') != 'iam':
+        return None
+    global _IAM_CREDS
+    import datetime
+    import google.auth
+    from google.auth.transport.requests import Request
+    if _IAM_CREDS is None:
+        _IAM_CREDS, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/sqlservice.login'])
+    exp = getattr(_IAM_CREDS, 'expiry', None)
+    if not _IAM_CREDS.valid or (exp and exp - datetime.datetime.utcnow() < datetime.timedelta(minutes=5)):
+        _IAM_CREDS.refresh(Request())
+    return _IAM_CREDS.service_account_email.removesuffix('.gserviceaccount.com'), _IAM_CREDS.token
+
+
+def _telemetry_connect(statement_timeout_ms=None):
+    """The one way this module opens a DB connection, as telemetry_writer. On GCP with
+    KUMORI_DB_AUTH=iam it logs in as the app's service account and SETs ROLE
+    telemetry_writer with its search_path (no password read); otherwise, or if that login fails, it uses
+    the TELEMETRY_* password pair."""
+    import psycopg2
+    opts = f'-c statement_timeout={statement_timeout_ms}' if statement_timeout_ms else ''
+    is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
+    socket_dir = os.environ.get('DB_SOCKET_DIR', '/cloudsql')
+    iam = _iam_login() if is_gcp and _db_secret_prefix() == 'KUMORI' else None
+    if iam:
+        try:
+            return psycopg2.connect(
+                host=f"{socket_dir}/{_db_location()['connection_name']}", dbname=_db_location()['dbname'],
+                user=iam[0], password=iam[1], connect_timeout=5,
+                options=f'{opts} -c role=telemetry_writer -c search_path=public,kumori_ops'.strip())
+        except Exception as e:
+            logger.warning(f"anthropic_logger: IAM DB login failed, using password login: {e}")
+    creds = _get_db_creds()
+    host = f"{socket_dir}/{creds['connection_name']}" if is_gcp else creds['host']
+    kw = {'options': opts} if opts else {}
+    return psycopg2.connect(host=host, dbname=creds['dbname'], user=creds['user'],
+                            password=creds['password'], connect_timeout=5, **kw)
+
+
+_DB_LOCATION_CACHE = None
+
+
+def _db_location() -> dict:
+    """Instance coordinates only (no credentials), for the IAM path."""
+    global _DB_LOCATION_CACHE
+    if _DB_LOCATION_CACHE is None:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        prefix = _db_secret_prefix()
+        _DB_LOCATION_CACHE = {k: client.access_secret_version(request={
+            "name": f"projects/{_secret_project()}/secrets/{prefix}_POSTGRES_{n}/versions/latest"
+        }).payload.data.decode("UTF-8") for k, n in (('dbname', 'DB_NAME'), ('connection_name', 'CONNECTION_NAME'))}
+    return _DB_LOCATION_CACHE
+
+
 def _get_db_creds() -> dict:
     global _DB_CREDS_CACHE
     if _DB_CREDS_CACHE:
@@ -501,17 +533,23 @@ def _get_db_creds() -> dict:
         path = f"projects/{_secret_project()}/secrets/{name}/versions/latest"
         return client.access_secret_version(request={"name": path}).payload.data.decode("UTF-8")
 
+    prefix = _db_secret_prefix()
+
     def fetch_or(primary: str, fallback: str) -> str:
         # Connect as the dedicated least-privilege telemetry_writer role (INSERT-
-        # only on the telemetry tables) rather than the shared postgres role, so
-        # the logger can never reach another tenant's data. Falls back to KUMORI_*
-        # until TELEMETRY_* is provisioned, so no flag day.
+        # only on the telemetry tables), so the logger can never reach another
+        # tenant's data. On the shared KUMORI instance there is NO fallback: the
+        # KUMORI_POSTGRES_* pair is the `postgres` superuser, and a fallback must
+        # never be more privileged than the primary (CWE-636; visitor_logging
+        # dropped the same fallback earlier). A decoupled app's own prefix
+        # (e.g. KICKSAW) keeps its fallback to that app's own role.
         try:
             return fetch(primary)
         except Exception:
+            if prefix == 'KUMORI':
+                raise
             return fetch(fallback)
 
-    prefix = _db_secret_prefix()
     _DB_CREDS_CACHE = {
         'host': fetch(f'{prefix}_POSTGRES_IP'),
         'dbname': fetch(f'{prefix}_POSTGRES_DB_NAME'),
@@ -582,14 +620,6 @@ def _insert_usage_row(*, app_name: str, model: str, usage: Any,
                       image_count: int):
     """Blocking INSERT into kumori_api_usage. Called from daemon thread."""
     import psycopg2
-    creds = _get_db_creds()
-
-    is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
-    if is_gcp:
-        socket_dir = os.environ.get('DB_SOCKET_DIR', '/cloudsql')
-        host = f"{socket_dir}/{creds['connection_name']}"
-    else:
-        host = creds['host']
 
     i = _usage_field(usage, 'input_tokens')
     o = _usage_field(usage, 'output_tokens')
@@ -607,11 +637,7 @@ def _insert_usage_row(*, app_name: str, model: str, usage: Any,
     model = _canonical_model_id(model)
     cost = _compute_cost(model, usage)
 
-    conn = psycopg2.connect(
-        host=host, dbname=creds['dbname'], user=creds['user'],
-        password=creds['password'], connect_timeout=5,
-        options='-c statement_timeout=10000',
-    )
+    conn = _telemetry_connect(10000)
     try:
         cur = conn.cursor()
         cur.execute("""

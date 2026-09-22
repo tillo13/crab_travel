@@ -1,143 +1,21 @@
 import logging
-import os
-import threading
 from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras
-import psycopg2.pool
 from utilities.google_auth_utils import get_secret
 
 logger = logging.getLogger(__name__)
 
 GCP_PROJECT_ID = "kumori-404602"
 
-_credentials_cache = {}
-_connection_pools = {}
-_pool_lock = threading.Lock()
-
-
-def _get_credentials():
-    global _credentials_cache
-    if GCP_PROJECT_ID in _credentials_cache:
-        return _credentials_cache[GCP_PROJECT_ID]
-    creds = {
-        'host': get_secret('CRAB_POSTGRES_IP'),
-        'dbname': get_secret('CRAB_POSTGRES_DB_NAME'),
-        'user': get_secret('CRAB_POSTGRES_USERNAME'),
-        'password': get_secret('CRAB_POSTGRES_PASSWORD'),
-        'connection_name': get_secret('CRAB_POSTGRES_CONNECTION_NAME'),
-    }
-    _credentials_cache[GCP_PROJECT_ID] = creds
-    return creds
-
-
-def _get_connection_pool():
-    global _connection_pools
-    with _pool_lock:
-        if GCP_PROJECT_ID in _connection_pools:
-            return _connection_pools[GCP_PROJECT_ID]
-        creds = _get_credentials()
-        is_gcp = os.environ.get('GAE_ENV', '').startswith('standard')
-        if is_gcp:
-            db_socket_dir = os.environ.get("DB_SOCKET_DIR", "/cloudsql")
-            host = f"{db_socket_dir}/{creds['connection_name']}"
-        else:
-            host = creds['host']
-        # Budget: 50 max_connections shared across 12 apps on kumori Cloud SQL
-        # Crab gets 6 max (active app with bots + watches + users)
-        pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1, maxconn=6,
-            dbname=creds['dbname'], user=creds['user'],
-            password=creds['password'], host=host,
-            connect_timeout=10,
-            options='-c statement_timeout=30000'  # 30s query timeout to prevent stuck connections
-        )
-        _connection_pools[GCP_PROJECT_ID] = pool
-        logger.info("🔌 Database connection pool created")
-        return pool
-
-
-class PooledConnection:
-    def __init__(self, conn, pool):
-        self._conn = conn
-        self._pool = pool
-
-    def close(self):
-        if self._conn:
-            try:
-                # Always rollback before returning — prevents "idle in transaction (aborted)" leaks
-                try:
-                    self._conn.rollback()
-                except Exception:
-                    pass
-                # putconn does NOT reset autocommit — without this, a borrower
-                # who flipped it would leak an autocommit connection to the
-                # next borrower.
-                if self._conn.autocommit:
-                    self._conn.autocommit = False
-                self._pool.putconn(self._conn)
-            except Exception:
-                try:
-                    self._conn.close()
-                except Exception:
-                    pass
-            self._conn = None
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
-
-    def __setattr__(self, name, value):
-        # Delegate writes symmetrically with __getattr__ — without this,
-        # `conn.autocommit = True` lands on the wrapper and silently no-ops
-        # (pilgrims 2026-08: three sessions "applied" DDL that rolled back on putconn).
-        if name.startswith('_'):
-            object.__setattr__(self, name, value)
-        else:
-            setattr(self._conn, name, value)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self._conn.rollback()
-        self.close()
-        return False
+# The connection itself is kumori's canonical module, vendored on every deploy (deploy.json
+# shared_files -> utilities/kumori_db.py); never edit that copy. crab's settings live in
+# app.yaml: KUMORI_DB_AUTH, DB_ROLE, DB_SECRET_PREFIX, DB_POOL_MAX, DB_SEARCH_PATH.
+from utilities.kumori_db import get_db_connection as _kumori_db_connection  # noqa: E402
 
 
 def get_db_connection():
-    pool = _get_connection_pool()
-    try:
-        conn = pool.getconn()
-    except psycopg2.pool.PoolError:
-        # Pool corrupted (all connections permanently "checked out" after startup failures).
-        # Nuke and recreate it.
-        logger.warning("⚠️ Pool exhausted — recreating connection pool")
-        with _pool_lock:
-            try:
-                pool.closeall()
-            except Exception:
-                pass
-            _connection_pools.pop(GCP_PROJECT_ID, None)
-        pool = _get_connection_pool()
-        conn = pool.getconn()
-    # Test if connection is alive — Cloud SQL kills idle connections
-    try:
-        conn.cursor().execute("SELECT 1")
-    except (psycopg2.OperationalError, psycopg2.InterfaceError):
-        logger.warning("Stale DB connection detected, reconnecting")
-        try:
-            pool.putconn(conn, close=True)
-        except Exception:
-            pass
-        _connection_pools.pop(GCP_PROJECT_ID, None)
-        pool = _get_connection_pool()
-        conn = pool.getconn()
-    # end the probe's implicit txn — hand the conn out clean, not
-    # idle-in-transaction (also lets callers set session flags like
-    # autocommit, which raise mid-transaction)
-    conn.rollback()
-    return PooledConnection(conn, pool)
+    return _kumori_db_connection(GCP_PROJECT_ID)
 
 
 @contextmanager

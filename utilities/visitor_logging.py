@@ -91,30 +91,71 @@ def _get_db_creds() -> dict:
     return _DB_CREDS_CACHE
 
 
-def _connect():
-    """Connect to kumori-404602 Postgres. Works with either psycopg2 (v2) or
-    psycopg (v3) installed — Andy's projects mix the two."""
-    creds = _get_db_creds()
-    is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
-    if is_gcp:
-        socket_dir = os.environ.get('DB_SOCKET_DIR', '/cloudsql')
-        host = f"{socket_dir}/{creds['connection_name']}"
-    else:
-        host = creds['host']
+_IAM_CREDS = None
+_DB_LOCATION_CACHE = None
+
+
+def _iam_login():
+    """(db_user, token) to log in to the shared Cloud SQL as this app's own service
+    account, when the app runs with KUMORI_DB_AUTH=iam (task #170); None otherwise.
+    The token is a one-hour OAuth access token used as the password; nothing stored."""
+    if os.environ.get('KUMORI_DB_AUTH') != 'iam':
+        return None
+    global _IAM_CREDS
+    import datetime
+    import google.auth
+    from google.auth.transport.requests import Request
+    if _IAM_CREDS is None:
+        _IAM_CREDS, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/sqlservice.login'])
+    exp = getattr(_IAM_CREDS, 'expiry', None)
+    if not _IAM_CREDS.valid or (exp and exp - datetime.datetime.utcnow() < datetime.timedelta(minutes=5)):
+        _IAM_CREDS.refresh(Request())
+    return _IAM_CREDS.service_account_email.removesuffix('.gserviceaccount.com'), _IAM_CREDS.token
+
+
+def _db_location() -> dict:
+    """Instance coordinates only (no credentials), for the IAM path."""
+    global _DB_LOCATION_CACHE
+    if _DB_LOCATION_CACHE is None:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        _DB_LOCATION_CACHE = {k: client.access_secret_version(request={
+            "name": f"projects/{_KUMORI_PROJECT}/secrets/KUMORI_POSTGRES_{n}/versions/latest"
+        }).payload.data.decode("UTF-8") for k, n in (('dbname', 'DB_NAME'), ('connection_name', 'CONNECTION_NAME'))}
+    return _DB_LOCATION_CACHE
+
+
+def _pg_connect(**kw):
+    """psycopg2 (v2) or psycopg (v3), whichever is installed: Andy's projects mix the two."""
     try:
         import psycopg2
-        return psycopg2.connect(
-            host=host, dbname=creds['dbname'], user=creds['user'],
-            password=creds['password'], connect_timeout=5,
-            options='-c statement_timeout=5000',
-        )
+        return psycopg2.connect(**kw)
     except ImportError:
         import psycopg
-        return psycopg.connect(
-            host=host, dbname=creds['dbname'], user=creds['user'],
-            password=creds['password'], connect_timeout=5,
-            options='-c statement_timeout=5000',
-        )
+        return psycopg.connect(**kw)
+
+
+def _connect():
+    """Connect to kumori-404602 Postgres as telemetry_writer. On GCP with
+    KUMORI_DB_AUTH=iam it logs in as the app's service account and SETs ROLE
+    telemetry_writer with its search_path (no password read); otherwise, or if that login fails, it uses
+    the TELEMETRY_* password pair."""
+    is_gcp = os.environ.get('GAE_ENV', '').startswith('standard') or os.path.exists('/cloudsql')
+    socket_dir = os.environ.get('DB_SOCKET_DIR', '/cloudsql')
+    iam = _iam_login() if is_gcp else None
+    if iam:
+        try:
+            loc = _db_location()
+            return _pg_connect(host=f"{socket_dir}/{loc['connection_name']}", dbname=loc['dbname'],
+                               user=iam[0], password=iam[1], connect_timeout=5,
+                               options='-c statement_timeout=5000 -c role=telemetry_writer -c search_path=public,kumori_ops')
+        except Exception as e:
+            logger.warning(f"visitor_logging: IAM DB login failed, using password login: {e}")
+    creds = _get_db_creds()
+    host = f"{socket_dir}/{creds['connection_name']}" if is_gcp else creds['host']
+    return _pg_connect(host=host, dbname=creds['dbname'], user=creds['user'],
+                       password=creds['password'], connect_timeout=5,
+                       options='-c statement_timeout=5000')
 
 
 # ─── Bot detection / source classification ───────────────────────────────────

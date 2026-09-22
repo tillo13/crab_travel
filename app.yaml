@@ -16,6 +16,13 @@ beta_settings:
 env_variables:
   FLASK_ENV: production
   GAE_ENV: standard
+  # DB connection = kumori's canonical module (utilities/kumori_db.py, vendored on deploy).
+  # IAM login as crab-travel@appspot, runs as crab_app; no DB password read.
+  KUMORI_DB_AUTH: iam
+  DB_ROLE: crab_app
+  DB_SECRET_PREFIX: CRAB
+  DB_POOL_MAX: "6"
+  DB_SEARCH_PATH: "crab, public"
 
 handlers:
   - url: /static

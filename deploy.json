@@ -26,6 +26,14 @@
     {
       "src": "gtag/gtag.py",
       "dst": "utilities/gtag.py"
+    },
+    {
+      "src": "kumori/utilities/postgres_utils/connection.py",
+      "dst": "utilities/kumori_db.py"
+    },
+    {
+      "src": "kumori/utilities/google_secrets_utils.py",
+      "dst": "utilities/google_secrets_utils.py"
     }
   ],
   "custom_domain": "https://crab.travel",
