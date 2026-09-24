@@ -51,6 +51,7 @@ from utilities.search_engine import trigger_search, is_searching
 from utilities.deals_engine import get_hot_deals, get_hot_deals_grouped, refresh_deals_cache
 
 from route_helpers import login_required, api_auth_required, bearer_auth_required, AUTH_ENABLED
+from utilities.parked import is_parked
 
 logger = logging.getLogger(__name__)
 
@@ -456,8 +457,8 @@ def api_deals():
         tabs = cache.get('tabs', []) if isinstance(cache, dict) else []
         last_updated = cache.get('last_updated') if isinstance(cache, dict) else None
 
-        # Cache empty — fall back to live fetch so the first visit still works
-        if not tabs:
+        # Cache empty — fall back to live fetch so the first visit still works (never while parked)
+        if not tabs and not is_parked():
             logger.info("💡 Deals cache empty — falling back to live fetch")
             tabs = get_hot_deals_grouped(group_size=group_size, origin=origin)
 
@@ -500,8 +501,8 @@ def api_plan_deals(plan_id):
             if d.get('deal_type') != 'hotel':
                 d['total_for_group'] = round(d['price_per_person'] * group_size, 2)
 
-        # Fall back to live fetch if cache empty
-        if not all_deals:
+        # Fall back to live fetch if cache empty (never while parked)
+        if not all_deals and not is_parked():
             all_deals = get_hot_deals(group_size=group_size, limit=limit)
 
         return jsonify({'success': True, 'data': {'deals': all_deals[:limit], 'group_size': group_size}})
@@ -514,7 +515,7 @@ def api_plan_deals(plan_id):
 def api_youtube_search():
     q = request.args.get('q', '')
     max_results = min(int(request.args.get('max_results', 6)), 12)
-    if not q:
+    if not q or is_parked():
         return jsonify({'success': False, 'videos': []})
     try:
         yt_key = get_secret('CRAB_YOUTUBE_API_KEY')
@@ -551,7 +552,7 @@ def api_youtube_search():
 def api_photo_search():
     q = request.args.get('q', '')
     per_page = min(int(request.args.get('per_page', 8)), 15)
-    if not q:
+    if not q or is_parked():
         return jsonify({'success': False, 'photos': []})
     try:
         pexels_key = get_secret('CRAB_PEXELS_API_KEY')

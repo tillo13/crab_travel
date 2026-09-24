@@ -57,6 +57,13 @@ try:
     _install_visitor_logging(app, 'crab_travel')
 except Exception as _vl_e:
     pass
+# Parked mode (deploy --park / --revive): read-only site with a 'paused' banner. A no-op
+# unless APP_MODE=parked, which only the deploy tool sets. See utilities/parked.py.
+try:
+    from utilities.parked import install_parked
+    install_parked(app)
+except ImportError:
+    pass
 app.secret_key = os.environ.get('SECRET_KEY', 'crab-dev-secret-change-me')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)

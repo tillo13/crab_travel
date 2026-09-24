@@ -75,6 +75,9 @@ def get_or_generate_blurb(country: str, areas: list[str] = None) -> str:
         row = cur.fetchone()
         if row and row[0]:
             return row[0]
+        from utilities.parked import is_parked
+        if is_parked():             # parked: serve what is cached, never generate new text
+            return ''
 
         blurb = fetch_blurb(country, areas=areas)
         if not blurb:

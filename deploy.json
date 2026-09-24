@@ -34,9 +34,19 @@
     {
       "src": "kumori/utilities/google_secrets_utils.py",
       "dst": "utilities/google_secrets_utils.py"
+    },
+    {
+      "src": "deploy/parked.py",
+      "dst": "utilities/parked.py"
     }
   ],
   "custom_domain": "https://crab.travel",
   "cron_yaml": true,
-  "pre_deploy_test": "/Users/at/Desktop/code/_local_infrastructure/anthropic_logger/check_violations.sh ."
+  "pre_deploy_test": "/Users/at/Desktop/code/_local_infrastructure/anthropic_logger/check_violations.sh .",
+  "parked": {
+    "since": "2026-09-24",
+    "why": "No users and no revenue right now; the site stays up read-only on its cached deals and plans, with no crons, no live travel-API, YouTube, Pexels or LLM calls, and no writes",
+    "keep_crons": [],
+    "paused_scheduler_jobs": []
+  }
 }
