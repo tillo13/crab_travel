@@ -8,6 +8,7 @@ from .client import (
     llm_chat_reserve,
     llm_chat_eval,
     llm_backends,
+    lane_status,
     llm_usage,
     llm_registry,
     llm_backoff_state,

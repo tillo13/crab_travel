@@ -6,7 +6,8 @@ Layers (checked in order; first hit wins):
 3.  User-Agent blocklist — curl / python-requests / wget / generic libs
 4.  Timing check — client sends time_open, reject under 3s
 5.  IP rate limiting — in-memory, per-site, resets on deploy (2/hr)
-6.  Email domain blocklist — disposable / known-spam domains
+6.  Email domain blocklist — disposable / known-spam domains, plus lookalikes
+    of the site's own domain (`domains@search-sunnier.day` writing to sunnier.day)
 7.  Excessive-dots gmail check — ≥4 dots in a gmail localpart is a bot tell
     (`b.r.igg.ses.ma.nd.tt.198.6@gmail.com`-style addresses)
 8.  Normalized-email rate limiting — collapses Gmail dot/plus variants
@@ -51,6 +52,10 @@ SPAM_PATTERNS = [
      'lead generation pitch'),
     (re.compile(r'(first page|page one|top\s+(of\s+)?google)', re.I),
      'Google ranking promise'),
+    # Search-index submission scam (sunnier.day SUN-3, 2026-09-25: "Submit sunnier.day in
+    # Google's Search Index ... domainsubmit.pro"; says "search index", not "search engine").
+    (re.compile(r'submit.{0,40}search\s*(index|engines)|(add|list|register).{0,40}search\s*index|domain\s*submi', re.I),
+     'search-index submission scam'),
     # Lottery / jackpot / crypto-windfall spam (kindness.social 'Russellattib'
     # wave, 2026-06/07: one shortlink + $27,000,000 jackpot pitch per message —
     # sailed under the SEO-shaped patterns above).
@@ -231,6 +236,21 @@ def _check_stopforumspam(ip: str, email: str) -> str | None:
     return None
 
 
+def _lookalike_of(domain, expected_hosts):
+    """The site's own domain if `domain` impersonates it (contains it, or it minus the
+    dot, without being it or a subdomain of it), else None. Nobody legitimate writes to
+    sunnier.day from search-sunnier.day or sunnierday-seo.com."""
+    for host in expected_hosts or []:
+        site = host.lower().removeprefix('www.')
+        if '.' not in site or site.replace('.', '').isdigit():
+            continue  # localhost / IPs
+        if domain == site or domain.endswith('.' + site):
+            continue
+        if site in domain or site.replace('.', '') in domain.replace('.', '').replace('-', ''):
+            return site
+    return None
+
+
 def check_spam(data: dict, ip: str, fields: list[str] | None = None,
                origin: str | None = None, user_agent: str | None = None,
                expected_hosts: list[str] | None = None) -> str | None:
@@ -292,6 +312,9 @@ def check_spam(data: dict, ip: str, fields: list[str] | None = None,
         domain = normalized.rsplit('@', 1)[1]
         if domain in BLOCKED_DOMAINS:
             return f'blocked_domain:{domain}'
+        lookalike = _lookalike_of(domain, expected_hosts)
+        if lookalike:
+            return f'lookalike_domain:{domain}~{lookalike}'
 
     # 7. Excessive-dots gmail localpart (bot dot-trick)
     if _excessive_gmail_dots(email):

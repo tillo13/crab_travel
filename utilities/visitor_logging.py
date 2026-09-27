@@ -125,6 +125,30 @@ def _db_location() -> dict:
     return _DB_LOCATION_CACHE
 
 
+_LOCAL_ROUTE = None
+
+
+def _local_route(public_ip):
+    """Off Google Cloud: the Cloud SQL Auth Proxy on 127.0.0.1:5433 when it listens, else the public IP
+    (kumori #205, 2026-09-26). A copy of kumori's canonical kumori_db._local_host, kept here because this
+    module is vendored into apps that do not carry kumori_db. KUMORI_DB_LOCAL = auto | direct | proxy."""
+    global _LOCAL_ROUTE
+    if _LOCAL_ROUTE is None:
+        import socket
+        mode = os.environ.get('KUMORI_DB_LOCAL', 'auto').strip().lower()
+        port = int(os.environ.get('KUMORI_DB_PROXY_PORT', '5433'))
+        proxy = mode == 'proxy'
+        if mode == 'auto':
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.3):
+                    proxy = True
+            except OSError:
+                proxy = False
+        _LOCAL_ROUTE = ({'host': '127.0.0.1', 'port': port, 'sslmode': 'disable'} if proxy
+                        else {'host': public_ip})
+    return _LOCAL_ROUTE
+
+
 def _pg_connect(**kw):
     """psycopg2 (v2) or psycopg (v3), whichever is installed: Andy's projects mix the two."""
     try:
@@ -152,8 +176,8 @@ def _connect():
         except Exception as e:
             logger.warning(f"visitor_logging: IAM DB login failed, using password login: {e}")
     creds = _get_db_creds()
-    host = f"{socket_dir}/{creds['connection_name']}" if is_gcp else creds['host']
-    return _pg_connect(host=host, dbname=creds['dbname'], user=creds['user'],
+    where = {'host': f"{socket_dir}/{creds['connection_name']}"} if is_gcp else _local_route(creds['host'])
+    return _pg_connect(**where, dbname=creds['dbname'], user=creds['user'],
                        password=creds['password'], connect_timeout=5,
                        options='-c statement_timeout=5000')
 
