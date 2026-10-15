@@ -359,7 +359,8 @@ def _get_connection_pool(gcp_project_id: str) -> psycopg2.pool.ThreadedConnectio
         if not is_gcp:
             host, _port, _ssl = _local_host(host)
 
-        # Budget: 50 max_connections shared across 8+ apps on db-f1-micro
+        # Budget: 50 max_connections (pinned by flag) shared across ~20 apps on the
+        # shared instance (db-custom-1-3840 since 2026-10-15; db-f1-micro before)
         # See kumori/docs/postgres_connections.md for allocation
         # kumori app's documented allotment is min=1 max=10. History: 3 -> 5 after
         # the 2026-05-09 pool-exhaustion incident (Sarah's streaming SSE chat held
@@ -583,7 +584,7 @@ def get_db_connection(gcp_project_id: str):
 #     runtime N+1 the static linter can't: a cursor opened inside a helper that's
 #     called in a loop.
 #   • slow log — any cursor held >= SLOW_QUERY_MS logs its caller site, surfacing
-#     slow single queries + connections held too long on the shared f1-micro pool.
+#     slow single queries + connections held too long on the shared instance's 50-slot pool.
 from time import perf_counter as _perf_counter
 _db_tls = threading.local()
 DB_CALL_WARN_THRESHOLD = 15

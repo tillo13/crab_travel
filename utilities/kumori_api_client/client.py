@@ -276,7 +276,9 @@ def _request(method, path, body=None, timeout=(5, 60), retry_on_5xx=True,
             reset = data.get('reset_in_human')
             if reset:
                 parts.append(f'resets in {reset}')
-            verbatim = data.get('error') or data.get('detail') or 'unknown'
+            # 'raw' is a body that was not JSON. Cloudflare swaps an origin 502/504 body for
+            # 'error code: 50x', and before 2026-10-15 that read as "unknown".
+            verbatim = data.get('error') or data.get('detail') or data.get('raw') or 'unknown'
             parts.append(f': {verbatim}')
             msg = ' '.join(parts)
         else:

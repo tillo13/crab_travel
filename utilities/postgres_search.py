@@ -708,11 +708,11 @@ def prune_old_search_results(days=SEARCH_RESULT_RETENTION_DAYS, max_batches=40):
     Every reader is plan-scoped (get_search_results takes a plan_id), so a row is
     only reachable by reopening that specific plan. Left unbounded the table reached
     463,467 rows / 469 MB by 2026-09-16 — 273 MB of it the `data` jsonb — for plans
-    whose newest row was 2026-05-11, four months stale. That is dead weight in a
-    128 MB buffer cache shared by every app on the instance.
+    whose newest row was 2026-05-11, four months stale. That was dead weight in the
+    128 MB buffer cache (db-f1-micro, until 2026-10-15) shared by every app on the instance.
 
     Deletes in bounded slices for the same reason the flight pruner does: one
-    whole-table DELETE blows the 30s statement timeout on the shared f1-micro.
+    whole-table DELETE blew the 30s statement timeout on the shared instance (measured on db-f1-micro, 2026-09-16).
     """
     conn = None
     deleted = 0

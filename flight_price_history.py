@@ -2,7 +2,8 @@
 
 PROBLEM: kumori_ops.flight_hunter_observations grows ~49K rows/day (every VPS
 scan of every route-date, every adapter) and was never pruned — 1.2M rows /
-595MB in 24 days, unbounded, on the shared db-f1-micro all 20 apps share.
+595MB in 24 days, unbounded, on the shared instance (db-f1-micro then; db-custom-1-3840
+since 2026-10-15).
 
 SOLUTION (two tables, two lifetimes):
   1. flight_hunter_observations (raw) — fine-grained, every observation. Now
@@ -60,8 +61,9 @@ bp = Blueprint('flight_price_history', __name__)
 # seasonality signal lives in flight_price_daily either way.
 #
 # The slack was expensive. At 507,892 rows / 726MB it was the largest table on
-# the shared instance without an already-tuned lifetime, on a db-f1-micro whose
-# shared_buffers is 128MB for all 16 apps — the main database was running an
+# the shared instance without an already-tuned lifetime, on what was then a db-f1-micro
+# whose shared_buffers was 128MB for all 16 apps (2026-09-16; since 2026-10-15 the tier is
+# db-custom-1-3840 with 1.19 GB, so the cache argument needs re-measuring, the growth one does not) — the main database was running an
 # 88.6% cache hit ratio against kumori's own 95% floor, and pages this table
 # touches evict everyone else's. Seven days puts it near ~120K rows / ~170MB.
 RAW_RETENTION_DAYS = 7
