@@ -90,9 +90,70 @@ def _iam_db_user():
 
 class _IAMConnectionPool(psycopg2.pool.ThreadedConnectionPool):
     """Every new physical connection gets a fresh token; pooled connections outlive their token."""
+    _token = staticmethod(_iam_token)
+
     def _connect(self, key=None):
-        self._kwargs['password'] = _iam_token()
+        self._kwargs['password'] = self._token()
         return super()._connect(key)
+
+
+# Local sessions (2026-10-11): a machine that is not on Google Cloud logs in as this service
+# account through the Auth Proxy and runs as the app's role, the way production does. Before
+# this, every local session of an app shared that app's password role, capped at 3 or 4, and
+# one busy script got the rest refused ("too many connections for role", paged as an outage on
+# 2026-10-10). The gcloud-authenticated human mints the one-hour token (application-default
+# credentials, Token Creator on the account); nothing is stored. The account is a member of
+# fleet_maint only: it can act as any *_app role and was refused cloudsqlsuperuser when tested.
+LOCAL_IAM_USER = 'local-sessions@kumori-404602.iam'
+_local_iam_creds = None
+
+
+def _local_iam_token():
+    """A Cloud SQL login token for LOCAL_IAM_USER, refreshed 5 minutes before expiry."""
+    global _local_iam_creds
+    import datetime
+    import google.auth
+    from google.auth import impersonated_credentials
+    from google.auth.transport.requests import Request
+    if _local_iam_creds is None:
+        source, _ = google.auth.default()
+        _local_iam_creds = impersonated_credentials.Credentials(
+            source_credentials=source, target_principal=f'{LOCAL_IAM_USER}.gserviceaccount.com',
+            target_scopes=['https://www.googleapis.com/auth/sqlservice.login'], lifetime=3600)
+    expiry = getattr(_local_iam_creds, 'expiry', None)
+    if not _local_iam_creds.valid or (expiry and expiry - datetime.datetime.utcnow() < datetime.timedelta(minutes=5)):
+        _local_iam_creds.refresh(Request())
+    return _local_iam_creds.token
+
+
+class _LocalIAMConnectionPool(_IAMConnectionPool):
+    _token = staticmethod(_local_iam_token)
+
+
+def _fit_pool_to_login(pool, role):
+    """Size the pool to its login's connection limit and give it the app role's own settings.
+
+    Every local session shares the login's limit, so a pool sized past it would be refused by the
+    server where it should queue at the gate. And ALTER ROLE ... SET applies only to the role
+    that logs in: logging in as someone else and running as `role` drops that role's search_path
+    (crab, pilgrim, inroads, twomanspades and others set one on 2026-10-11) unless it is passed
+    per connection. Settings already in the pool's options (DB_SEARCH_PATH) are left alone."""
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT (SELECT rolconnlimit FROM pg_roles WHERE rolname = session_user) AS lim,
+                                  (SELECT rolconfig FROM pg_roles WHERE rolname = %s) AS cfg""", (role,))
+            row = cur.fetchone()
+        conn.rollback()
+    finally:
+        pool.putconn(conn, close=True)      # opened before the role's settings were known
+    limit, config = (row['lim'], row['cfg']) if isinstance(row, dict) else row
+    if 0 < limit < pool.maxconn:
+        pool.maxconn = limit
+    for setting in config or []:
+        name, _, value = setting.partition('=')
+        if name != 'role' and f'-c {name}=' not in pool._kwargs['options']:
+            pool._kwargs['options'] += f" -c {name}={value.replace(' ', '')}"
 # Background work (a cron and the threads it fans out) may hold at most this many of the pool's
 # connections at once, so a user request always finds a slot. Measured 2026-09-18: the 21:00 PT
 # LLM canary fanned 50 probe threads into this 10-connection pool every night, each probe writing
@@ -259,7 +320,31 @@ def _get_connection_pool(gcp_project_id: str) -> psycopg2.pool.ThreadedConnectio
                 logger.info(f"Created IAM-auth connection pool for {gcp_project_id} as {SESSION_ROLE}")
                 return pool
             except Exception as e:
+                # kumori_batch has had no password since 2026-10-12 (#170). The fallback only
+                # ever fired when the database itself was unreachable (the stalls of 10-11 and
+                # 10-12), and then added a second, differently worded failure.
+                if DB_TIER == 'batch':
+                    raise
                 logger.error(f"IAM DB auth failed, falling back to password login: {e}")
+
+        if not is_gcp:
+            _host, _port, _ssl = _local_host(get_secret('KUMORI_POSTGRES_IP', 'kumori-404602'))
+            if _ssl == 'disable':                           # the Auth Proxy is listening
+                try:
+                    pool = _LocalIAMConnectionPool(
+                        minconn=1, maxconn=POOL_MAX,
+                        dbname=get_secret('KUMORI_POSTGRES_DB_NAME', 'kumori-404602'),
+                        user=LOCAL_IAM_USER, password='', host=_host, port=_port, sslmode=_ssl,
+                        connect_timeout=10, keepalives=1, keepalives_idle=30, keepalives_interval=10,
+                        keepalives_count=3, application_name=_app_identity(),
+                        options=f'{_SESSION_OPTS} -c role={SESSION_ROLE}', **_CURSOR_KW)
+                    _fit_pool_to_login(pool, SESSION_ROLE)
+                    _connection_pools[gcp_project_id] = pool
+                    _pool_semaphores[gcp_project_id] = threading.BoundedSemaphore(pool.maxconn)
+                    logger.info(f"Created local IAM connection pool as {SESSION_ROLE} (login {LOCAL_IAM_USER})")
+                    return pool
+                except Exception as e:
+                    logger.warning(f"local IAM DB login failed, using the {DB_ROLE} password login: {e}")
 
         db_credentials = get_postgres_credentials(gcp_project_id)
         _socket_dir = socket_dir()
@@ -365,7 +450,7 @@ class PooledConnection:
         self.close()
         return False
 
-def get_admin_connection(gcp_project_id: str = 'kumori-404602', dbname: str = 'postgres'):
+def get_admin_connection(gcp_project_id: str = 'kumori-404602', dbname: str = 'postgres', as_role: str = None):
     """The ONE way to do role/DDL admin on the shared instance. Local machines only, never app code.
 
     Logs in as the gcloud-authenticated human through Cloud SQL IAM database authentication
@@ -377,6 +462,11 @@ def get_admin_connection(gcp_project_id: str = 'kumori-404602', dbname: str = 'p
     This replaced the stored `postgres` password: KUMORI_POSTGRES_SUPERUSER_PASSWORD stopped
     authenticating some time between 2026-08-21 and 2026-09-20, and a vault holding a dead
     superuser password was pushing sessions to improvise privileged logins instead.
+
+    as_role='ooqio_app' (any *_app role) acts as that app instead, to fix an app's own rows:
+    cloudsqlsuperuser is not a real superuser and owns none of the apps' tables. It works
+    through fleet_maint (NOLOGIN NOINHERIT, member of every *_app role, granted to
+    andy.tillo@gmail.com, 2026-10-03): no passive access, only this explicit SET ROLE.
     """
     import subprocess
     if on_gcp():
@@ -391,7 +481,11 @@ def get_admin_connection(gcp_project_id: str = 'kumori-404602', dbname: str = 'p
     conn = psycopg2.connect(host=host, port=port, dbname=dbname,
                             user=account, password=token, sslmode=ssl, connect_timeout=15)
     with conn.cursor() as cur:
-        cur.execute('SET ROLE cloudsqlsuperuser')
+        if as_role:
+            from psycopg2 import sql
+            cur.execute(sql.SQL('SET ROLE {}').format(sql.Identifier(as_role)))
+        else:
+            cur.execute('SET ROLE cloudsqlsuperuser')
     conn.commit()   # SET ROLE is session-level; end the implicit transaction it opened
     return conn
 

@@ -38,6 +38,10 @@
     {
       "src": "deploy/parked.py",
       "dst": "utilities/parked.py"
+    },
+    {
+      "src": "spam_control/csrf_guard.py",
+      "dst": "utilities/csrf_guard.py"
     }
   ],
   "custom_domain": "https://crab.travel",

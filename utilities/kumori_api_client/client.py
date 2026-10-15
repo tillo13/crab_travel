@@ -296,7 +296,7 @@ def llm_generate(prompt, max_tokens=500, temperature=1.0):
     return data.get('text'), data.get('backend')
 
 
-RECOVER_WAIT_S = 150    # after a cut-off: the router's own bound is 140 s from the start, so this is generous
+RECOVER_WAIT_S = 200    # after a cut-off at 100 s: the router's bound is 140 s from the start, 260 s for a long_call
 RECOVER_POLL_S = 10
 
 
@@ -324,7 +324,7 @@ def _chat_recoverable(body, request_id, timeout):
 
 def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=None,
              app_name=None, timeout=None, timeout_s=None, include_metadata=False, request_id=None,
-             substitute=False, spread_key=None):
+             substitute=False, spread_key=None, long_call=False, reasoning_effort=None):
     """Pinned-backend multi-turn chat. Returns (text, backend_name).
 
     request_id: for calls that may outlast Cloudflare's 100 s cutoff (long proofs); 16-64 chars of
@@ -358,6 +358,10 @@ def llm_chat(backend_name, messages, max_tokens=500, temperature=0.3, system=Non
         body['app_name'] = app_name
     if timeout_s:
         body['timeout_s'] = int(timeout_s)   # server-side per-attempt ceiling (default 30, max 60): proofs need it
+    if long_call:
+        body['long_call'] = True             # one attempt up to 240 s; honored only for sparebrains.write keys
+    if reasoning_effort:
+        body['reasoning_effort'] = reasoning_effort   # low/medium/high; OpenRouter and Groq GPT-OSS honor it
     if request_id:
         body['request_id'] = request_id
         data = _chat_recoverable(body, request_id, timeout or (5, 60))
@@ -413,7 +417,13 @@ def llm_chat_resilient(backends=None, messages=None, max_tokens=500, temperature
     # retry_on_5xx=False for interactive chat: the router already cascaded every
     # eligible lane inside budget_ms, so a client-side second try just doubles the
     # user-facing stall (2manspades Marta 2026-09-05: 8 s budget became 20 s).
-    data = _request('POST', '/api/v1/llm/chat-resilient', body, timeout=(5, 120),
+    # Read-timeout follows the budget: the server clamps budget_ms to 55 s and
+    # answers inside it once the cascade starts, so anything past budget+15 s is
+    # the router stuck BEFORE the cascade, and waiting 120 s for it only outlives
+    # the caller's own gunicorn timeout (inroads /cron/health-deep 2026-09-28:
+    # 40 s budget, router took 106 s, worker aborted at 120 s with SystemExit).
+    read_s = 120 if budget_ms is None else min(120, int(budget_ms) / 1000 + 15)
+    data = _request('POST', '/api/v1/llm/chat-resilient', body, timeout=(5, read_s),
                     retry_on_5xx=retry_on_5xx)
     return data.get('text'), data.get('backend'), data.get('attempts', []), data.get('_debug')
 
@@ -626,6 +636,23 @@ def sparebrains_previous(target_set, target, backend):
         return None
 
 
+def sparebrains_ablation_todo(slice_spec, after_id=0, limit=100):
+    """One page of stored cold rejects not yet re-run for the loop's ablation (id, target_set, target, backend,
+    quality_tier, rung, proof, lean_output), the attempt ids in `slice_spec` (k/N). Raises on failure: a
+    re-run that cannot read its queue must stop, not report an empty one."""
+    q = f'/api/v1/sparebrains/ablation/todo?slice={slice_spec}&after_id={int(after_id)}&limit={int(limit)}'
+    return _request('GET', q, None, timeout=(5, 60)).get('rows', [])
+
+
+def sparebrains_ablation(row):
+    """Upsert one stored cold try's B and C results by attempt_id. Fire-and-forget like sparebrains_attempt."""
+    try:
+        return _request('POST', '/api/v1/sparebrains/ablation', row, timeout=(5, 30), retry_on_5xx=True)
+    except Exception as e:
+        logger.warning(f"sparebrains_ablation failed for attempt {row.get('attempt_id')}: {e}")
+        return None
+
+
 def sparebrains_heartbeat(row):
     """Upsert the job's progress row (run_id, mode, status, cells_total, cells_owed, calls,
     accepts, lanes, targets). Fire-and-forget like sparebrains_attempt."""
@@ -633,6 +660,17 @@ def sparebrains_heartbeat(row):
         return _request('POST', '/api/v1/sparebrains/heartbeat', row, timeout=(5, 20), retry_on_5xx=False)
     except Exception as e:
         logger.warning(f"sparebrains_heartbeat failed for {row.get('run_id')}: {e}")
+        return None
+
+
+def sparebrains_thread(payload):
+    """Upsert one problem's GitHub comments into sparebrains_threads: {target_set, target,
+    issue_number, comments: [{id, author, author_type, created_at, updated_at, body, url}]}.
+    Returns {ok, comments} or None; the dossier simply shows the last sync on failure."""
+    try:
+        return _request('POST', '/api/v1/sparebrains/thread', payload, timeout=(5, 30), retry_on_5xx=False)
+    except Exception as e:
+        logger.warning(f"sparebrains_thread failed for {payload.get('target')}: {e}")
         return None
 
 

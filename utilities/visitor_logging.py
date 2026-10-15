@@ -661,10 +661,15 @@ def install_middleware(flask_app, app_name: str, *,
         except Exception:
             return ''
 
+    # A local dev server is not a visitor. Until 2026-10-12 every local run wrote its page
+    # views to the shared log as human traffic (1,192 inroads rows from 127.0.0.1, kumori #281).
+    on_gcp = bool(os.environ.get('GAE_ENV', '').startswith('standard') or os.environ.get('K_SERVICE')
+                  or os.path.exists('/cloudsql'))
+
     @flask_app.before_request
     def _visitor_log_hook():
         try:
-            if request.method != 'GET':
+            if not on_gcp or request.method != 'GET':
                 return None
             path = request.path or ''
             for p in skip_prefixes:
